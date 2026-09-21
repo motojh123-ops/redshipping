@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "dev": "tsc --watch --preserveWatchOutput"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

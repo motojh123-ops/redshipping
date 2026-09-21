@@ -38,6 +38,7 @@ import { api } from '../../services/api';
 import { CreateShipmentModal } from '../shipments/CreateShipmentModal';
 import { CreateQuotationModal } from '../quotations/CreateQuotationModal';
 import { AnimatedCaptainRed } from '../../components/ui/AnimatedCaptainRed';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 
 /* ============================================================
    Speed & Telematics Dial Gauge (Fleetly Styling, App Data)
@@ -689,7 +690,7 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
       shippingLine: { name: 'MSC Mediterranean Shipping' },
       pol: 'Ningbo (CNNGB)',
       pod: 'Alexandria (EGALY)',
-      currentStage: 'IN_TRANSIT',
+      currentStage: 'in_transit',
       containersCount: 4,
     },
     {
@@ -699,7 +700,7 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
       shippingLine: { name: 'Maersk Line Egypt' },
       pol: 'Shanghai (CNSHA)',
       pod: 'Sokhna (EGSOK)',
-      currentStage: 'CUSTOMS_CLEARANCE',
+      currentStage: 'clearance_in_progress',
       containersCount: 6,
     },
     {
@@ -709,7 +710,7 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
       shippingLine: { name: 'COSCO Shipping Lines' },
       pol: 'Qingdao (CNQDG)',
       pod: 'Damietta (EGDAM)',
-      currentStage: 'PORT_ARRIVAL',
+      currentStage: 'arrived_destination',
       containersCount: 2,
     },
     {
@@ -719,7 +720,7 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
       shippingLine: { name: 'Hapag-Lloyd Egypt' },
       pol: 'Valencia (ESVLC)',
       pod: 'Alexandria (EGALY)',
-      currentStage: 'DELIVERED',
+      currentStage: 'delivered',
       containersCount: 3,
     },
     {
@@ -729,31 +730,17 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
       shippingLine: { name: 'CMA CGM Egypt' },
       pol: 'Jebel Ali (AEJEA)',
       pod: '6th of October Dry Port',
-      currentStage: 'BOOKING',
+      currentStage: 'booking_confirmed',
       containersCount: 5,
     },
   ];
 
+  // Filter against the API's ShipmentStage enum values (lowercase, per Prisma schema)
   const displayList = (shipments && shipments.length > 0 ? shipments : defaultShipments).filter((s) => {
-    if (filter === 'in_transit') return s.currentStage === 'IN_TRANSIT';
-    if (filter === 'customs') return s.currentStage === 'CUSTOMS_CLEARANCE' || s.currentStage === 'PORT_ARRIVAL';
+    if (filter === 'in_transit') return s.currentStage === 'in_transit';
+    if (filter === 'customs') return s.currentStage === 'customs_submitted' || s.currentStage === 'clearance_in_progress' || s.currentStage === 'arrived_destination';
     return true;
   });
-
-  const getStageBadge = (stage: string) => {
-    switch (stage) {
-      case 'IN_TRANSIT':
-        return { label: 'في البحر (In Transit)', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' };
-      case 'CUSTOMS_CLEARANCE':
-        return { label: 'تخليص جمركي (ACID)', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20', dot: 'bg-amber-500' };
-      case 'PORT_ARRIVAL':
-        return { label: 'وصلت الميناء', color: 'bg-sky-500/10 text-sky-500 border-sky-500/20', dot: 'bg-sky-500' };
-      case 'DELIVERED':
-        return { label: 'تم التسليم والمصادقة', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20', dot: 'bg-purple-500' };
-      default:
-        return { label: 'حجز مؤكد (Booking)', color: 'bg-blue-500/10 text-blue-500 border-blue-500/20', dot: 'bg-blue-500' };
-    }
-  };
 
   return (
     <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm space-y-4">
@@ -815,7 +802,6 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-[#262E40]/60">
             {displayList.map((s) => {
-              const badge = getStageBadge(s.currentStage);
               const clientName = s.client?.name || s.clientName || 'عميل محلي';
               const lineName = s.shippingLine?.name || s.carrier || 'MSC';
               const route = `${s.polPort?.nameEn || s.pol || 'CNSHA'} ← ${s.podPort?.nameEn || s.pod || 'EGALY'}`;
@@ -841,12 +827,7 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
                     {s.containersCount || s.containers?.length || 2} FCL
                   </td>
                   <td className="py-3">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${badge.color}`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                      {badge.label}
-                    </span>
+                    <StatusBadge status={s.currentStage} />
                   </td>
                   <td className="py-3 text-end">
                     <Link

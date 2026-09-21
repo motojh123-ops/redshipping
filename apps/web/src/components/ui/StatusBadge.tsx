@@ -12,10 +12,13 @@ const STATUS_CONFIG: Record<string, { label: string; variant: BadgeVariant }> = 
   // Shipment stages
   booking_confirmed: { label: 'تأكيد الحجز', variant: 'info' },
   cargo_received: { label: 'استلام البضاعة', variant: 'brand' },
+  customs_submitted: { label: 'إيداع المستندات جمركياً', variant: 'warning' },
   acid_issued: { label: 'صدور نافذة (ACID)', variant: 'warning' },
   in_transit: { label: 'في البحر (In Transit)', variant: 'brand' },
   arrived_destination: { label: 'وصول الميناء', variant: 'info' },
   clearance_in_progress: { label: 'قيد التخليص الجمركي', variant: 'warning' },
+  release_issued: { label: 'إفراج جمركي صادر', variant: 'success' },
+  out_for_delivery: { label: 'خارج للتسليم', variant: 'brand' },
   delivered: { label: 'تم التسليم', variant: 'success' },
   closed: { label: 'مغلق ومسوى', variant: 'neutral' },
 
