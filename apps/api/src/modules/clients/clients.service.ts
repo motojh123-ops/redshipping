@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DataStoreService } from '../../database/data-store.service';
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     private prisma: PrismaService,
     private dataStore: DataStoreService,
@@ -21,7 +23,7 @@ export class ClientsService {
         ];
       }
 
-      const clients = await this.prisma.client.findMany({
+      return await this.prisma.client.findMany({
         where,
         include: {
           contacts: true,
@@ -29,9 +31,11 @@ export class ClientsService {
         },
         orderBy: { createdAt: 'desc' },
       });
-      if (clients && clients.length > 0) return clients;
-    } catch (err) {
-      // Use resilient persistent store
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error in clients.findAll: ${err.message}`, err.stack);
+        throw err;
+      }
     }
 
     let result = [...this.dataStore.clients];
@@ -73,8 +77,13 @@ export class ClientsService {
       });
 
       if (client) return client;
-    } catch (err) {
-      // Use resilient store
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw new NotFoundException(`Client with ID ${id} not found`);
+      }
+    } catch (err: any) {
+      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const found = this.dataStore.clients.find((c) => c.id === id) || this.dataStore.clients[0];
@@ -110,7 +119,11 @@ export class ClientsService {
         },
         include: { contacts: true },
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error in clients.create: ${err.message}`, err.stack);
+        throw err;
+      }
       // Fallback persistent storage
       const newClient = {
         id: `client-${Date.now()}`,

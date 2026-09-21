@@ -16,10 +16,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const isProd = process.env.NODE_ENV === 'production';
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Internal server error occurred';
-    let code = 'INTERNAL_ERROR';
+    let message = 'An unexpected internal server error occurred';
+    let code = 'INTERNAL_SERVER_ERROR';
     let details: any[] | undefined = undefined;
 
     if (exception instanceof HttpException) {
@@ -38,9 +39,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           code = 'VALIDATION_FAILED';
         }
       }
+
+      // In production, sanitize 500-level HttpException messages
+      if (isProd && status >= 500) {
+        message = 'An unexpected server error occurred';
+        code = 'INTERNAL_SERVER_ERROR';
+      }
     } else if (exception instanceof Error) {
-      this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
-      message = exception.message;
+      this.logger.error(`Unhandled Exception at ${request.method} ${request.url}: ${exception.message}`, exception.stack);
+      message = isProd ? 'An internal server error occurred' : exception.message;
+    } else {
+      this.logger.error(`Unknown Exception at ${request.method} ${request.url}: ${String(exception)}`);
     }
 
     response.status(status).json({

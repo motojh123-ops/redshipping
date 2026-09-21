@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DataStoreService } from '../../database/data-store.service';
 import { InvoiceStatus, InvoiceType } from '@banna/shared-types';
+import { extractSequenceNumber, parseNextSequence } from '../../common/utils/numbering.util';
 
 const FALLBACK_INVOICES = [
   {
@@ -49,6 +50,7 @@ const FALLBACK_INVOICES = [
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
   private readonly collectionKey = 'invoices';
 
   constructor(
@@ -62,7 +64,7 @@ export class InvoicesService {
       if (query?.status) where.status = query.status;
       if (query?.clientId) where.clientId = query.clientId;
 
-      const invoices = await this.prisma.invoice.findMany({
+      return await this.prisma.invoice.findMany({
         where,
         include: {
           client: { select: { id: true, name: true } },
@@ -71,9 +73,11 @@ export class InvoicesService {
         },
         orderBy: { createdAt: 'desc' },
       });
-      if (invoices && invoices.length > 0) return invoices;
-    } catch (err) {
-      // Use resilient store
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error in findAll: ${err.message}`, err.stack);
+        throw err;
+      }
     }
 
     let result = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
@@ -99,8 +103,13 @@ export class InvoicesService {
       });
 
       if (invoice) return invoice;
-    } catch (err) {
-      // Fallback
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw new NotFoundException(`Invoice with ID ${id} not found`);
+      }
+    } catch (err: any) {
+      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const invoices = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
@@ -140,9 +149,18 @@ export class InvoicesService {
     const total = subtotal + taxAmount;
 
     try {
-      const count = await this.prisma.invoice.count({ where: { companyId: tenantId } });
       const year = new Date().getFullYear();
-      const invoiceNumber = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
+      const latest = await this.prisma.invoice.findFirst({
+        where: {
+          companyId: tenantId,
+          invoiceNumber: { startsWith: `INV-${year}-` },
+        },
+        orderBy: { invoiceNumber: 'desc' },
+        select: { invoiceNumber: true },
+      });
+
+      const nextSeq = extractSequenceNumber(latest?.invoiceNumber) + 1;
+      const invoiceNumber = `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
 
       return await this.prisma.invoice.create({
         data: {
@@ -167,10 +185,17 @@ export class InvoicesService {
         },
         include: { items: true, client: true },
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error creating invoice: ${err.message}`, err.stack);
+        throw err;
+      }
+
       // Resilient store fallback
       const invoices = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, '0')}`;
+      const year = new Date().getFullYear();
+      const invoiceNumber = parseNextSequence('INV', year, invoices.map((i: any) => i.invoiceNumber), 4, invoices.length);
+
       const newInvoice = {
         id: `inv-${Date.now()}`,
         invoiceNumber,
@@ -199,7 +224,10 @@ export class InvoicesService {
         where: { id },
         data: { status },
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
       const inv: any = await this.findOne(tenantId, id);
       inv.status = status;
       return this.dataStore.saveItem(tenantId, this.collectionKey, id, inv);

@@ -20,8 +20,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response.data?.data ?? response.data,
   (error) => {
-    const isDemoToken = localStorage.getItem('banna_access_token')?.startsWith('demo-');
-    if (error.response?.status === 401 && !window.location.pathname.includes('/login') && !isDemoToken) {
+    if (error.response?.status === 401 && !window.location.pathname.includes('/login')) {
       localStorage.removeItem('banna_access_token');
       localStorage.removeItem('banna_user');
       window.location.href = '/login';

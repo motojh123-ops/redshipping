@@ -1,10 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DataStoreService, StoredShipment } from '../../database/data-store.service';
 import { ShipmentStage } from '@banna/shared-types';
+import { extractSequenceNumber, parseNextSequence } from '../../common/utils/numbering.util';
 
 @Injectable()
 export class ShipmentsService {
+  private readonly logger = new Logger(ShipmentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private dataStore: DataStoreService,
@@ -23,7 +26,7 @@ export class ShipmentsService {
         ];
       }
 
-      const shipments = await this.prisma.shipment.findMany({
+      return await this.prisma.shipment.findMany({
         where,
         include: {
           client: { select: { id: true, name: true } },
@@ -34,9 +37,11 @@ export class ShipmentsService {
         },
         orderBy: { createdAt: 'desc' },
       });
-      if (shipments && shipments.length > 0) return shipments;
-    } catch (err) {
-      // Use resilient store
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error in shipments.findAll: ${err.message}`, err.stack);
+        throw err;
+      }
     }
 
     let result = [...this.dataStore.shipments];
@@ -61,9 +66,18 @@ export class ShipmentsService {
 
   async create(tenantId: string, userId: string, data: any) {
     try {
-      const count = await this.prisma.shipment.count({ where: { companyId: tenantId } });
       const year = new Date().getFullYear();
-      const jobFileNumber = `BAN-${year}-${String(count + 1).padStart(4, '0')}`;
+      const latest = await this.prisma.shipment.findFirst({
+        where: {
+          companyId: tenantId,
+          jobFileNumber: { startsWith: `BAN-${year}-` },
+        },
+        orderBy: { jobFileNumber: 'desc' },
+        select: { jobFileNumber: true },
+      });
+
+      const nextSeq = extractSequenceNumber(latest?.jobFileNumber) + 1;
+      const jobFileNumber = `BAN-${year}-${String(nextSeq).padStart(4, '0')}`;
 
       const created = await this.prisma.shipment.create({
         data: {
@@ -117,13 +131,15 @@ export class ShipmentsService {
         },
       });
       if (created) return created;
-    } catch (err) {
-      // Fallback persistent storage
+    } catch (err: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        this.logger.error(`Database error in shipments.create: ${err.message}`, err.stack);
+        throw err;
+      }
     }
 
     const year = new Date().getFullYear();
-    const count = this.dataStore.shipments.length;
-    const jobFileNumber = `RED-${year}-${String(count + 1).padStart(4, '0')}`;
+    const jobFileNumber = parseNextSequence('RED', year, this.dataStore.shipments.map((s) => s.jobFileNumber), 4, this.dataStore.shipments.length);
 
     const newShipment: StoredShipment = {
       id: `ship-${Date.now()}`,
@@ -254,8 +270,13 @@ export class ShipmentsService {
           },
         };
       }
-    } catch (err) {
-      // Fallback
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw new NotFoundException(`Shipment with ID ${id} not found`);
+      }
+    } catch (err: any) {
+      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const found = this.dataStore.shipments.find((s) => s.id === id) || this.dataStore.shipments[0];

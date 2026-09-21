@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { QuotationStatus, ShipmentStage } from '@banna/shared-types';
+import { extractSequenceNumber } from '../../common/utils/numbering.util';
 
 const FALLBACK_QUOTATIONS: any[] = [
   {
@@ -62,7 +63,16 @@ const FALLBACK_QUOTATIONS: any[] = [
 
 @Injectable()
 export class QuotationsService {
+  private readonly logger = new Logger(QuotationsService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  private isFallbackAllowed(): boolean {
+    if (process.env.NODE_ENV === 'production') {
+      return process.env.ALLOW_STORE_FALLBACK === 'true';
+    }
+    return true;
+  }
 
   async findAll(tenantId: string, query?: { status?: any; clientId?: string }) {
     try {
@@ -70,7 +80,7 @@ export class QuotationsService {
       if (query?.status) where.status = query.status;
       if (query?.clientId) where.clientId = query.clientId;
 
-      const quotes = await this.prisma.quotation.findMany({
+      return await this.prisma.quotation.findMany({
         where,
         include: {
           client: { select: { id: true, name: true } },
@@ -81,8 +91,11 @@ export class QuotationsService {
         },
         orderBy: { createdAt: 'desc' },
       });
-      return quotes.length > 0 ? quotes : FALLBACK_QUOTATIONS;
-    } catch (err) {
+    } catch (err: any) {
+      if (!this.isFallbackAllowed()) {
+        this.logger.error(`Database error in quotations.findAll: ${err.message}`, err.stack);
+        throw err;
+      }
       return FALLBACK_QUOTATIONS;
     }
   }
@@ -102,8 +115,13 @@ export class QuotationsService {
       });
 
       if (quotation) return quotation;
-    } catch (err) {
-      // Fallback
+      if (!this.isFallbackAllowed()) {
+        throw new NotFoundException(`Quotation with ID ${id} not found`);
+      }
+    } catch (err: any) {
+      if (err instanceof NotFoundException || !this.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const fallback = FALLBACK_QUOTATIONS.find((q) => q.id === id) || FALLBACK_QUOTATIONS[0];
@@ -114,9 +132,18 @@ export class QuotationsService {
   }
 
   async create(tenantId: string, salesRepId: string, data: any) {
-    const count = await this.prisma.quotation.count({ where: { companyId: tenantId } });
     const year = new Date().getFullYear();
-    const quotationNumber = `Q-${year}-${String(count + 1).padStart(4, '0')}`;
+    const latest = await this.prisma.quotation.findFirst({
+      where: {
+        companyId: tenantId,
+        quotationNumber: { startsWith: `Q-${year}-` },
+      },
+      orderBy: { quotationNumber: 'desc' },
+      select: { quotationNumber: true },
+    }).catch(() => null);
+
+    const nextSeq = extractSequenceNumber(latest?.quotationNumber) + 1;
+    const quotationNumber = `Q-${year}-${String(nextSeq).padStart(4, '0')}`;
 
     const items = data.items || [];
     let totalCost = 0;
@@ -200,17 +227,26 @@ export class QuotationsService {
 
     // Generate Job File Number
     const year = new Date().getFullYear();
-    const jobFileNumber = `BAN-${year}-0001`;
+    let jobFileNumber = `BAN-${year}-0001`;
 
     try {
-      const count = await this.prisma.shipment.count({ where: { companyId: tenantId } });
-      const jobFileNum = `BAN-${year}-${String(count + 1).padStart(4, '0')}`;
+      const latestShipment = await this.prisma.shipment.findFirst({
+        where: {
+          companyId: tenantId,
+          jobFileNumber: { startsWith: `BAN-${year}-` },
+        },
+        orderBy: { jobFileNumber: 'desc' },
+        select: { jobFileNumber: true },
+      });
+
+      const nextSeq = extractSequenceNumber(latestShipment?.jobFileNumber) + 1;
+      jobFileNumber = `BAN-${year}-${String(nextSeq).padStart(4, '0')}`;
 
       // Create Shipment Job File
       return await this.prisma.shipment.create({
         data: {
           companyId: tenantId,
-          jobFileNumber: jobFileNum,
+          jobFileNumber,
           quotationId: quotation.id,
           clientId: quotation.clientId,
           salesRepId: quotation.salesRepId,
@@ -329,8 +365,19 @@ export class QuotationsService {
 
   async cloneQuotation(tenantId: string, quotationId: string, userId: string) {
     const original: any = await this.findOne(tenantId, quotationId);
-    const count = await this.prisma.quotation.count({ where: { companyId: tenantId } }).catch(() => 0);
     const year = new Date().getFullYear();
+
+    const latest = await this.prisma.quotation.findFirst({
+      where: {
+        companyId: tenantId,
+        quotationNumber: { startsWith: `Q-${year}-` },
+      },
+      orderBy: { quotationNumber: 'desc' },
+      select: { quotationNumber: true },
+    }).catch(() => null);
+
+    const nextSeq = extractSequenceNumber(latest?.quotationNumber) + 1;
+    const quotationNumber = original.quotationNumber || `Q-${year}-${String(nextSeq).padStart(4, '0')}`;
 
     // Determine next version number
     const maxVersion = original.versionNumber || 1;
@@ -340,7 +387,7 @@ export class QuotationsService {
       return await this.prisma.quotation.create({
         data: {
           companyId: tenantId,
-          quotationNumber: original.quotationNumber || `Q-${year}-${String(count + 1).padStart(4, '0')}`,
+          quotationNumber,
           versionNumber: newVersion,
           parentQuotationId: original.id,
           clientId: original.clientId,

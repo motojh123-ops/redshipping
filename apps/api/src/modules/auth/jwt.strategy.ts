@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+import { DataStoreService } from '../../database/data-store.service';
 
 export interface JwtPayload {
   sub: string;
@@ -16,57 +17,55 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private dataStore: DataStoreService,
   ) {
+    const secret = configService.get<string>('JWT_SECRET') || 'banna_super_secret_jwt_key_2026';
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'banna_super_secret_jwt_key_2026',
+      secretOrKey: secret,
     });
   }
 
   async validate(payload: JwtPayload) {
-    if (payload.sub?.startsWith('demo-')) {
-      return {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.role === 'ADMIN' ? 'عمر البنا (مدير عام)' : payload.role === 'OPERATIONS' ? 'سارة حسين (مسؤولة عمليات)' : 'أحمد الشريف (مسؤول مبيعات)',
-        role: payload.role,
-        companyId: payload.companyId || 'comp-demo-1',
-        companyName: 'البنا للوجستيات والنقل الدولي',
-      };
+    if (!payload || !payload.sub) {
+      throw new UnauthorizedException('Invalid token payload');
     }
 
+    let user: any = null;
+
     try {
-      const user = await this.prisma.user.findUnique({
+      user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         include: { company: true },
       });
-
-      if (!user || !user.isActive || !user.company.isActive) {
-        throw new UnauthorizedException('User or tenant account is deactivated');
-      }
-
-      return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        companyId: user.companyId,
-        companyName: user.company.name,
-      };
-    } catch (err: any) {
-      if (err instanceof UnauthorizedException) {
-        throw err;
-      }
-      // If DB is offline or unreachable, fallback to payload claims
-      return {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.email?.split('@')[0] || 'User',
-        role: payload.role,
-        companyId: payload.companyId || 'comp-demo-1',
-        companyName: 'البنا للوجستيات والنقل الدولي',
-      };
+    } catch {
+      // Prisma unavailable, check data store
     }
+
+    if (!user) {
+      user = this.dataStore.users.find((u) => u.id === payload.sub);
+    }
+
+    if (!user) {
+      throw new UnauthorizedException('User no longer exists or session has expired');
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException('User account has been deactivated');
+    }
+
+    if (user.company && user.company.isActive === false) {
+      throw new UnauthorizedException('Tenant company has been deactivated');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      companyId: user.companyId,
+      companyName: user.company?.name || user.companyName || 'RED SHIPPING International Logistics',
+    };
   }
 }

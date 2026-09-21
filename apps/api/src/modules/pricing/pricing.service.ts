@@ -242,13 +242,16 @@ export class PricingService {
       result = result.filter((t) => t.category === filter.category);
     }
     if (filter?.carrierCode) {
-      result = result.filter((t) => t.carrierCode.toLowerCase().includes(filter.carrierCode.toLowerCase()));
+      const code = filter.carrierCode.toLowerCase();
+      result = result.filter((t) => t.carrierCode.toLowerCase().includes(code));
     }
     if (filter?.origin) {
-      result = result.filter((t) => t.originPortCode === filter.origin || t.originPortName.toLowerCase().includes(filter.origin.toLowerCase()));
+      const origin = filter.origin.toLowerCase();
+      result = result.filter((t) => t.originPortCode === filter.origin || t.originPortName.toLowerCase().includes(origin));
     }
     if (filter?.destination) {
-      result = result.filter((t) => t.destinationPortCode === filter.destination || t.destinationPortName.toLowerCase().includes(filter.destination.toLowerCase()));
+      const dest = filter.destination.toLowerCase();
+      result = result.filter((t) => t.destinationPortCode === filter.destination || t.destinationPortName.toLowerCase().includes(dest));
     }
     if (filter?.containerType) {
       result = result.filter((t) => t.containerType === filter.containerType);

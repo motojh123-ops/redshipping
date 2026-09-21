@@ -91,12 +91,25 @@ export interface StoredRate {
   createdAt: string;
 }
 
+export interface StoredUser {
+  id: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  role: string;
+  companyId: string;
+  companyName: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 @Injectable()
 export class DataStoreService {
   private readonly logger = new Logger(DataStoreService.name);
   private readonly dataDir = path.resolve(process.cwd(), 'data');
   private readonly storeFilePath = path.join(this.dataDir, 'store.json');
 
+  public users: StoredUser[] = [];
   public clients: StoredClient[] = [];
   public shipments: StoredShipment[] = [];
   public customs: StoredCustomsDossier[] = [];
@@ -116,11 +129,16 @@ export class DataStoreService {
       if (fs.existsSync(this.storeFilePath)) {
         const content = fs.readFileSync(this.storeFilePath, 'utf-8');
         const parsed = JSON.parse(content);
+        this.users = parsed.users || [];
         this.clients = parsed.clients || [];
         this.shipments = parsed.shipments || [];
         this.customs = parsed.customs || [];
         this.rates = parsed.rates || [];
         this.customCollections = parsed.customCollections || {};
+        if (this.users.length === 0) {
+          this.seedUsers();
+          this.persist();
+        }
         this.logger.log(`Loaded ${this.shipments.length} shipments and ${this.clients.length} clients from store.json`);
       } else {
         this.seedInitialData();
@@ -135,6 +153,7 @@ export class DataStoreService {
   public persist() {
     try {
       const data = {
+        users: this.users,
         clients: this.clients,
         shipments: this.shipments,
         customs: this.customs,
@@ -146,6 +165,13 @@ export class DataStoreService {
     } catch (err: any) {
       this.logger.error(`Error saving store.json: ${err.message}`);
     }
+  }
+
+  public isFallbackAllowed(): boolean {
+    if (process.env.NODE_ENV === 'production') {
+      return process.env.ALLOW_STORE_FALLBACK === 'true';
+    }
+    return true;
   }
 
   public async getItems<T = any>(tenantId: string, collectionKey: string, fallbackData?: T[]): Promise<T[]> {
@@ -191,7 +217,68 @@ export class DataStoreService {
     return deleted;
   }
 
+  public seedUsers() {
+    this.users = [
+      {
+        id: 'usr-admin-1',
+        email: 'admin@redshipping.com',
+        name: 'عمر السيد (مدير عام)',
+        passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
+        role: 'super_admin',
+        companyId: 'comp-red-1',
+        companyName: 'RED SHIPPING International Logistics',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-sales-1',
+        email: 'sales@redshipping.com',
+        name: 'أحمد الشريف (مسؤول مبيعات)',
+        passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
+        role: 'sales_rep',
+        companyId: 'comp-red-1',
+        companyName: 'RED SHIPPING International Logistics',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-ops-1',
+        email: 'ops@redshipping.com',
+        name: 'سارة حسين (مسؤولة عمليات وتخليص)',
+        passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
+        role: 'ops_officer',
+        companyId: 'comp-red-1',
+        companyName: 'RED SHIPPING International Logistics',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-acc-1',
+        email: 'accountant@redshipping.com',
+        name: 'سامي كمال (المدير المالي)',
+        passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
+        role: 'accountant',
+        companyId: 'comp-red-1',
+        companyName: 'RED SHIPPING International Logistics',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-banna-1',
+        email: 'admin@banna-logistics.com',
+        name: 'عمر البنا',
+        passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
+        role: 'super_admin',
+        companyId: 'comp-banna-1',
+        companyName: 'البنا للخدمات اللوجستية ش.م.م',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  }
+
   private seedInitialData() {
+    this.seedUsers();
     this.clients = [
       {
         id: 'client-1',

@@ -6,7 +6,7 @@ import { InvoiceStatus, InvoiceType } from '@banna/shared-types';
 describe('InvoicesService', () => {
   let service: InvoicesService;
   let prisma: { invoice: Record<string, jest.Mock> };
-  let dataStore: { getItems: jest.Mock; saveItem: jest.Mock };
+  let dataStore: { getItems: jest.Mock; saveItem: jest.Mock; isFallbackAllowed?: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -21,8 +21,16 @@ describe('InvoicesService', () => {
     dataStore = {
       getItems: jest.fn().mockResolvedValue([]),
       saveItem: jest.fn().mockImplementation(async (_t, _k, _id, item) => item),
+      isFallbackAllowed: jest.fn().mockReturnValue(true),
     };
     service = new InvoicesService(prisma as unknown as PrismaService, dataStore as unknown as DataStoreService);
+  });
+
+  describe('production fail-fast behavior', () => {
+    it('throws database error directly when fallback is disabled', async () => {
+      (dataStore.isFallbackAllowed as jest.Mock).mockReturnValue(false);
+      await expect(service.findAll('tenant-1')).rejects.toThrow('no db');
+    });
   });
 
   describe('create — resilient fallback math', () => {

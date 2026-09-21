@@ -22,20 +22,7 @@ export const Login: React.FC = () => {
       loginStore(res.user, res.accessToken, res.refreshToken);
       navigate('/');
     } catch (err: any) {
-      // Direct demo login fallback so system is immediately operational
-      const demoRole = loginEmail.includes('admin') ? 'super_admin' : loginEmail.includes('sales') ? 'sales_rep' : 'ops_officer';
-      const demoName = loginEmail.includes('admin') ? 'عمر السيد (مدير عام RED SHIPPING)' : loginEmail.includes('sales') ? 'أحمد الشريف (مسؤول مبيعات)' : 'سارة حسين (مسؤولة عمليات)';
-      const demoUser = {
-        id: `demo-${demoRole}`,
-        name: demoName,
-        email: loginEmail,
-        role: demoRole,
-        companyId: 'comp-demo-1',
-        companyName: 'RED SHIPPING للخدمات اللوجستية والنقل الدولي',
-        currencyDefault: 'USD',
-      };
-      loginStore(demoUser, `demo-jwt-${demoRole}-token`, 'demo-refresh-token-val');
-      navigate('/');
+      setError(err?.message || 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.');
     } finally {
       setLoading(false);
     }
