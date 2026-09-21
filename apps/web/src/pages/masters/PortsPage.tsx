@@ -13,7 +13,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Modal } from '../../components/ui/Modal';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import { exportWorkbook } from '../../utils/excelExport';
 import Papa from 'papaparse';
 import {
   PORTS_REGISTRY,
@@ -107,25 +107,35 @@ export const PortsPage: React.FC = () => {
   }, [amount, fromCurrency, toCurrency]);
 
   // Export ports to Excel
-  const handleExportPortsExcel = () => {
+  const handleExportPortsExcel = async () => {
     try {
-      const data = allPorts.map((p, idx) => ({
-        '#': idx + 1,
-        'UN/LOCODE': p.unlocode,
-        'Port Name (EN)': p.name,
-        'Port Name (AR)': p.nameAr,
-        'Country': p.country,
-        'Latitude': p.coordinates?.lat,
-        'Longitude': p.coordinates?.lng,
-        'Type': p.isDryPort ? 'Dry Port' : 'Marine Seaport',
-        'Terminals': p.terminals?.join(' | ') || 'N/A',
-        'Customs Code': p.customsAuthorityCode || 'N/A',
-      }));
+      const headers = [
+        '#',
+        'UN/LOCODE',
+        'Port Name (EN)',
+        'Port Name (AR)',
+        'Country',
+        'Latitude',
+        'Longitude',
+        'Type',
+        'Terminals',
+        'Customs Code',
+      ];
 
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'UNLOCODE Ports');
-      XLSX.writeFile(wb, 'Maritime_Ports_Registry.xlsx');
+      const rows = allPorts.map((p, idx) => [
+        idx + 1,
+        p.unlocode,
+        p.name,
+        p.nameAr,
+        p.country,
+        p.coordinates?.lat || '',
+        p.coordinates?.lng || '',
+        p.isDryPort ? 'Dry Port' : 'Marine Seaport',
+        p.terminals?.join(' | ') || 'N/A',
+        p.customsAuthorityCode || 'N/A',
+      ]);
+
+      await exportWorkbook('Maritime_Ports_Registry', 'UNLOCODE Ports', [headers, ...rows]);
       toast.success('تم تصدير سجل الموانئ بنجاح إلى ملف Excel');
     } catch {
       toast.error('فشل تصدير ملف Excel');

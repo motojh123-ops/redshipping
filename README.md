@@ -6,7 +6,7 @@ A comprehensive SaaS platform for freight forwarding companies managing clients,
 
 - **Frontend**: React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
 - **Backend**: NestJS + TypeScript + Prisma
-- **Database**: PostgreSQL 16 (with Row-Level Security)
+- **Database**: PostgreSQL 16 (Multi-tenant scoped queries via Prisma)
 - **Cache/Queue**: Redis 7 + BullMQ
 - **PDF Engine**: Gotenberg
 - **Storage**: Cloudflare R2 (S3-compatible)
@@ -17,13 +17,13 @@ A comprehensive SaaS platform for freight forwarding companies managing clients,
 ```
 banna-monorepo/
 ├── apps/
-│   ├── web/          # React + Vite SPA (ERP Dashboard)
-│   ├── api/          # NestJS Backend API
-│   └── workers/      # Background queue processors
+│   ├── web/          # React + Vite SPA (TanStack Query + RHF + Zod)
+│   ├── api/          # NestJS Backend API (RBAC + Validation Pipes)
+│   └── workers/      # Background queue processors (BullMQ)
 ├── packages/
-│   └── shared-types/ # Shared TypeScript types & enums
-├── docker/           # Docker Compose & configs
-└── docs/             # Documentation
+│   └── shared-types/ # Shared Zod schemas, TypeScript types & enums
+├── docs/             # Architecture, domain specifications, and assets
+└── docker-compose.yml# Local infrastructure (Postgres 16, Redis, Gotenberg)
 ```
 
 ## Getting Started
@@ -33,7 +33,7 @@ banna-monorepo/
 npm install
 
 # Start infrastructure (PostgreSQL, Redis, Gotenberg)
-docker compose -f docker/docker-compose.yml up -d
+docker compose up -d
 
 # Run database migrations
 npm run db:migrate
@@ -42,6 +42,9 @@ npm run db:migrate
 npm run dev
 ```
 
-## Architecture
+## Architecture & Documentation
 
-See `docs/` for the full architecture documentation.
+See [docs/](file:///docs) for full architecture blueprints, integration manuals, and domain specifications:
+- `docs/banna_master_architecture.md`
+- `docs/architecture_review.md`
+- `docs/INTEGRATION_DOCUMENTATION.md`

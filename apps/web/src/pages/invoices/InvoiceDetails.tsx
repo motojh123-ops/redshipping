@@ -13,7 +13,7 @@ import { useApi } from '../../hooks/useApi';
 import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import { exportWorkbook } from '../../utils/excelExport';
 import { toast } from 'sonner';
 
 const DEMO_INVOICE = {
@@ -92,9 +92,9 @@ export const InvoiceDetails: React.FC = () => {
     }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     try {
-      const worksheetData = [
+      const worksheetData: (string | number | null | undefined)[][] = [
         ['Invoice Number', inv.invoiceNumber],
         ['Client', inv.client.nameAr],
         ['Tax ID', inv.client.taxId],
@@ -108,10 +108,7 @@ export const InvoiceDetails: React.FC = () => {
         ['VAT 14%', '', '', '', vatAmount],
         ['Grand Total', '', '', '', grandTotal],
       ];
-      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
-      XLSX.writeFile(wb, `${inv.invoiceNumber}.xlsx`);
+      await exportWorkbook(inv.invoiceNumber, 'Invoice', worksheetData);
       toast.success('تم تصدير الفاتورة إلى ملف Excel بنجاح');
     } catch (e) {
       toast.error('حدث خطأ أثناء تصدير Excel');
