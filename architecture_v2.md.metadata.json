@@ -1,0 +1,5 @@
+{
+  "summary": "Architecture v2 for Banna Freight Forwarding & Logistics ERP/CRM. Contains a thorough architectural critique/post-mortem of v1 (bottlenecks, unnecessary complexity, security flaws, cost leaks), followed by the complete, hardened, production-ready v2 architecture: React+Vite SPA, NestJS Modular Monolith, Postgres with native Row Level Security (RLS), isolated PDF engine (Gotenberg), BullMQ workers, realistic infrastructure sizing ($50/mo vs $1,200/mo), and exact logistics workflows.",
+  "updatedAt": "2026-09-17T22:39:28.667346100Z",
+  "userFacing": true
+}

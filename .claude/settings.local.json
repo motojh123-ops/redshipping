@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls:*)",
+      "Bash(rtk find:*)",
+      "Bash(rtk grep:*)",
+      "Bash(npm install:*)",
+      "Bash(rtk npm:*)"
+    ]
+  }
+}

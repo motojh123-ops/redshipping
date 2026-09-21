@@ -1,0 +1,26 @@
+{
+  "name": "banna-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:migrate": "npm run -w apps/api db:migrate",
+    "db:seed": "npm run -w apps/api db:seed",
+    "db:studio": "npm run -w apps/api db:studio"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "turbo": "^2.4.0",
+    "vitest": "^2.1.9"
+  },
+  "packageManager": "npm@11.4.2",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

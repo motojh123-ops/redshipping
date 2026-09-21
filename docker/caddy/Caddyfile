@@ -1,0 +1,23 @@
+{
+    admin off
+    auto_https off
+}
+
+:80 {
+    # API endpoints
+    handle /api/* {
+        reverse_proxy localhost:4000
+    }
+
+    # PDF Service
+    handle /pdf/* {
+        reverse_proxy localhost:3000
+    }
+
+    # Frontend SPA
+    handle {
+        reverse_proxy localhost:5173
+    }
+
+    encode gzip zstd
+}

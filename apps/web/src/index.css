@@ -1,0 +1,230 @@
+/* ─── Custom Typography: Thmanya (ثمانية) [Primary] & Ghaith Sans [Secondary] ─── */
+@font-face {
+  font-family: 'Thmanya Sans';
+  src: url('/fonts/thmanya/thmanyahsans-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanya Sans';
+  src: url('/fonts/thmanya/thmanyahsans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanya Sans';
+  src: url('/fonts/thmanya/thmanyahsans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanya Sans';
+  src: url('/fonts/thmanya/thmanyahsans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanya Sans';
+  src: url('/fonts/thmanya/thmanyahsans-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Thmanya Serif Display (for luxury official certificates & headings) ─── */
+@font-face {
+  font-family: 'Thmanya Serif';
+  src: url('/fonts/thmanya_serif/thmanyahserifdisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanya Serif';
+  src: url('/fonts/thmanya_serif/thmanyahserifdisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Secondary Maritime Companion: Ghaith Sans (غيث سانس) ─── */
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-LIGHT.OTF') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-REGULAR.OTF') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-MEDIUM.OTF') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-SEMIBOLD.OTF') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-BOLD.OTF') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ghaith Sans';
+  src: url('/fonts/ghaith/GHAITHSANS-BLACK.OTF') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Thmanya Sans', 'Ghaith Sans', 'Outfit', 'Inter', system-ui, sans-serif;
+    @apply selection:bg-[#FF5E1E] selection:text-white transition-colors duration-200;
+  }
+
+  html[dir="ltr"] body,
+  html[lang="en"] body {
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.011em;
+  }
+
+  html[dir="rtl"] body,
+  html[lang="ar"] body {
+    font-family: 'Thmanya Sans', 'Ghaith Sans', system-ui, sans-serif;
+    letter-spacing: normal;
+  }
+}
+
+/* Glassmorphism & Card Utilities */
+.glass-panel {
+  @apply bg-white/90 dark:bg-[#121620]/90 backdrop-blur-md border border-slate-200/80 dark:border-[#262E40]/80 shadow-sm dark:shadow-card-dark;
+}
+
+.glass-card {
+  @apply bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] shadow-sm hover:shadow-md transition-all duration-200;
+}
+
+.portal-rail-item {
+  @apply relative flex flex-col items-center justify-center w-12 h-12 rounded-xl text-slate-400 dark:text-slate-400 hover:text-white hover:bg-slate-100 dark:hover:bg-[#1E2638] transition-all duration-200;
+}
+
+.portal-rail-item.active {
+  @apply bg-gradient-to-br from-[#FF5E1E] to-[#EA580C] text-white shadow-lg shadow-orange-500/30 scale-105;
+}
+
+/* Custom scrollbars for enterprise data tables */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-[#262E40] rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400 dark:bg-[#323D54];
+}
+
+/* ─── Animated Mascot Keyframes ─── */
+@keyframes mascot-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-8px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-10px) rotate(2deg);
+  }
+}
+
+@keyframes mascot-wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  20%, 60% {
+    transform: rotate(14deg);
+  }
+  40%, 80% {
+    transform: rotate(-10deg);
+  }
+}
+
+@keyframes radar-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes speech-pop {
+  0% {
+    transform: scale(0.8) translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-mascot-float {
+  animation: mascot-float 4.5s ease-in-out infinite;
+}
+
+.animate-mascot-wave {
+  animation: mascot-wave 1.8s ease-in-out infinite;
+}
+
+.animate-radar-pulse {
+  animation: radar-pulse 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+.animate-speech-pop {
+  animation: speech-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

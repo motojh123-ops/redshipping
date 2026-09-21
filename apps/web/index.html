@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/captain_red.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#DC2626" />
+    <meta name="description" content="RED SHIPPING — Next-Gen Freight Forwarding, Maritime Tariffs & Customs Clearance Operating System" />
+    <title>RED SHIPPING — المنظومة البحرية واللوجستية الذكية</title>
+    <!-- Modern Typography: Thmanya (ثمانية) [Primary] & Ghaith Sans [Secondary] -->
+    <link rel="preload" href="/fonts/thmanya/thmanyahsans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/thmanya/thmanyahsans-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Anti-flicker theme initialization -->
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('redshipping_theme') || localStorage.getItem('banna_theme');
+          var isDark = saved ? saved === 'dark' : true;
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-50 dark:bg-[#0B0E14] text-slate-900 dark:text-slate-100 antialiased font-sans transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

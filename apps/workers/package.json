@@ -1,0 +1,21 @@
+{
+  "name": "@banna/workers",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "ts-node src/main.ts"
+  },
+  "dependencies": {
+    "@banna/shared-types": "*",
+    "bullmq": "^5.7.14",
+    "ioredis": "^5.4.1",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

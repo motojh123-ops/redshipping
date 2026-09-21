@@ -1,0 +1,5 @@
+{
+  "summary": "Complete technical architecture document for 'Banna' — a Freight Forwarding & Logistics CRM/ERP platform. Covers all 20 sections: product requirements, user flows, system architecture, frontend/backend architecture, database schema (full SQL), API design, auth/RBAC, file storage, third-party integrations, AI agent architecture, scalability, security, caching, background jobs/queues, deployment (AWS), folder structure, technology choices, MVP vs future roadmap, and 28-week implementation roadmap.",
+  "updatedAt": "2026-09-17T22:33:09.236725400Z",
+  "userFacing": true
+}
