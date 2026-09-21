@@ -1,8 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useForm, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  createShipmentSchema,
+  CreateShipmentInput,
+  ShipmentType,
+  Incoterm,
+  ContainerType,
+  ContainerStatus,
+  ShipmentStage,
+} from '@banna/shared-types';
 import { Modal } from '../../components/ui/Modal';
-import { Ship, Plus, Trash2, Check } from 'lucide-react';
+import { Ship, Plus, Trash2, Check, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { PortSelect } from '../../components/ui/PortSelect';
+import { useCreateShipment } from '../../hooks/queries/useShipments';
+import { useClients } from '../../hooks/queries/useClients';
 
 interface CreateShipmentModalProps {
   isOpen: boolean;
@@ -15,84 +28,77 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [clients, setClients] = useState<any[]>([]);
   const [shippingLines, setShippingLines] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: clients = [] } = useClients();
+  const createShipmentMutation = useCreateShipment();
 
-  // Form State
-  const [clientId, setClientId] = useState('');
-  const [shippingLineId, setShippingLineId] = useState('');
-  const [shipmentType, setShipmentType] = useState('fcl');
-  const [incoterm, setIncoterm] = useState('FOB');
-  const [blNumber, setBlNumber] = useState('');
-  const [vesselName, setVesselName] = useState('');
-  const [voyageNumber, setVoyageNumber] = useState('');
-  const [originPort, setOriginPort] = useState('Shanghai (CNSHA)');
-  const [destinationPort, setDestinationPort] = useState('Alexandria (EGALY)');
-  const [freeDaysAllowed, setFreeDaysAllowed] = useState(14);
-  const [cargoDescription, setCargoDescription] = useState('');
-  const [notes, setNotes] = useState('');
+  const {
+    register,
+    control,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateShipmentInput>({
+    resolver: zodResolver(createShipmentSchema) as any,
+    defaultValues: {
+      clientId: '',
+      shippingLineId: '',
+      shipmentType: ShipmentType.FCL,
+      incoterm: Incoterm.FOB,
+      currentStage: ShipmentStage.BOOKING_CONFIRMED,
+      originPortId: 'Shanghai (CNSHA)',
+      destinationPortId: 'Alexandria (EGALY)',
+      freeDaysAllowed: 14,
+      blNumber: '',
+      vesselName: '',
+      voyageNumber: '',
+      cargoDescription: '',
+      notes: '',
+      containers: [
+        {
+          containerNumber: '',
+          containerType: ContainerType.HQ_40,
+          tareWeightKg: 3800,
+          cargoWeightKg: 22000,
+          status: ContainerStatus.BOOKED,
+        },
+      ],
+    },
+  });
 
-  // Containers
-  const [containers, setContainers] = useState<any[]>([
-    { containerNumber: '', containerType: '40HQ', tareWeightKg: 3800, cargoWeightKg: 22000 },
-  ]);
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'containers',
+  });
 
   useEffect(() => {
     if (isOpen) {
-      api.get('/clients').then((res: any) => setClients(res || [])).catch(() => {});
       api.get('/masters/shipping-lines').then((res: any) => setShippingLines(res || [])).catch(() => {});
     }
   }, [isOpen]);
 
-  const handleAddContainer = () => {
-    setContainers([
-      ...containers,
-      { containerNumber: '', containerType: '40HQ', tareWeightKg: 3800, cargoWeightKg: 22000 },
-    ]);
-  };
+  const originPort = watch('originPortId') || 'Shanghai (CNSHA)';
+  const destinationPort = watch('destinationPortId') || 'Alexandria (EGALY)';
 
-  const handleRemoveContainer = (index: number) => {
-    setContainers(containers.filter((_, i) => i !== index));
-  };
-
-  const handleContainerChange = (index: number, field: string, value: any) => {
-    const updated = [...containers];
-    updated[index] = { ...updated[index], [field]: value };
-    setContainers(updated);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clientId) {
-      alert('برجاء اختيار العميل أولاً');
-      return;
-    }
-
-    setLoading(true);
+  const onSubmit = async (data: CreateShipmentInput) => {
     try {
-      await api.post('/shipments', {
-        clientId,
-        shippingLineId: shippingLineId || undefined,
-        shipmentType,
-        incoterm,
-        blNumber,
-        vesselName,
-        voyageNumber,
-        freeDaysAllowed: Number(freeDaysAllowed),
-        cargoDescription,
-        notes,
-        originPortId: originPort,
-        destinationPortId: destinationPort,
-        containers: containers.filter((c) => c.containerNumber.trim() !== ''),
+      // Filter out empty container rows
+      const validContainers = (data.containers || []).filter(
+        (c) => c.containerNumber && c.containerNumber.trim() !== '',
+      );
+
+      await createShipmentMutation.mutateAsync({
+        ...data,
+        containers: validContainers,
       });
 
+      reset();
       onSuccess();
       onClose();
     } catch (err: any) {
       alert(err?.message || 'فشل في إنشاء ملف الشحنة');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -101,10 +107,10 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="فتح ملف شحنة تشغيلية جديد (Job File)"
-      subtitle="تسجيل تفاصيل البوليصة الملاحية B/L، الخط الملاحي، السفينة، والحاويات"
+      subtitle="تسجيل تفاصيل البوليصة الملاحية B/L، الخط الملاحي، السفينة، والحاويات بعقود تحقق معتمدة"
       maxWidth="4xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Row 1: Client & Shipping Line */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -112,18 +118,22 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               العميل صاحب الشحنة *
             </label>
             <select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              required
+              {...register('clientId')}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500"
             >
               <option value="">-- اختر العميل --</option>
-              {clients.map((c) => (
+              {clients.map((c: any) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </select>
+            {errors.clientId && (
+              <p className="text-rose-500 text-xs mt-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                <span>{errors.clientId.message}</span>
+              </p>
+            )}
           </div>
 
           <div>
@@ -131,8 +141,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               الخط الملاحي (Carrier)
             </label>
             <select
-              value={shippingLineId}
-              onChange={(e) => setShippingLineId(e.target.value)}
+              {...register('shippingLineId')}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500"
             >
               <option value="">-- اختر الخط الملاحي --</option>
@@ -151,8 +160,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <input
               type="text"
               placeholder="مثال: MSCU1892819"
-              value={blNumber}
-              onChange={(e) => setBlNumber(e.target.value)}
+              {...register('blNumber')}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 font-mono font-bold"
             />
           </div>
@@ -164,14 +172,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             label="ميناء الشحن والمنشأ (POL)"
             direction="pol"
             value={originPort}
-            onChange={(code) => setOriginPort(code)}
+            onChange={(code) => setValue('originPortId', code)}
             placeholder="اختر ميناء المنشأ من موانئ العالم..."
           />
           <PortSelect
             label="ميناء الوصول والمقصد (POD)"
             direction="pod"
             value={destinationPort}
-            onChange={(code) => setDestinationPort(code)}
+            onChange={(code) => setValue('destinationPortId', code)}
             placeholder="اختر ميناء المقصد من موانئ العالم..."
           />
         </div>
@@ -185,8 +193,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <input
               type="text"
               placeholder="مثال: MSC OSCAR"
-              value={vesselName}
-              onChange={(e) => setVesselName(e.target.value)}
+              {...register('vesselName')}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500"
             />
           </div>
@@ -198,8 +205,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <input
               type="text"
               placeholder="مثال: 2601W"
-              value={voyageNumber}
-              onChange={(e) => setVoyageNumber(e.target.value)}
+              {...register('voyageNumber')}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 font-mono"
             />
           </div>
@@ -210,24 +216,22 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </label>
             <div className="flex gap-2">
               <select
-                value={shipmentType}
-                onChange={(e) => setShipmentType(e.target.value)}
+                {...register('shipmentType')}
                 className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-2 text-xs focus:ring-2 focus:ring-brand-500"
               >
-                <option value="fcl">FCL</option>
-                <option value="lcl">LCL</option>
-                <option value="air">Air</option>
-                <option value="clearance_only">Clearance</option>
+                <option value={ShipmentType.FCL}>FCL</option>
+                <option value={ShipmentType.LCL}>LCL</option>
+                <option value={ShipmentType.AIR}>Air</option>
+                <option value={ShipmentType.CLEARANCE_ONLY}>Clearance</option>
               </select>
               <select
-                value={incoterm}
-                onChange={(e) => setIncoterm(e.target.value)}
+                {...register('incoterm')}
                 className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-2 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
               >
-                <option value="FOB">FOB</option>
-                <option value="CIF">CIF</option>
-                <option value="CFR">CFR</option>
-                <option value="EXW">EXW</option>
+                <option value={Incoterm.FOB}>FOB</option>
+                <option value={Incoterm.CIF}>CIF</option>
+                <option value={Incoterm.CFR}>CFR</option>
+                <option value={Incoterm.EXW}>EXW</option>
               </select>
             </div>
           </div>
@@ -238,9 +242,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </label>
             <input
               type="number"
-              value={freeDaysAllowed}
-              onChange={(e) => setFreeDaysAllowed(Number(e.target.value))}
               min={0}
+              {...register('freeDaysAllowed', { valueAsNumber: true })}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 font-mono"
             />
           </div>
@@ -254,7 +257,15 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </span>
             <button
               type="button"
-              onClick={handleAddContainer}
+              onClick={() =>
+                append({
+                  containerNumber: '',
+                  containerType: ContainerType.HQ_40,
+                  tareWeightKg: 3800,
+                  cargoWeightKg: 22000,
+                  status: ContainerStatus.BOOKED,
+                })
+              }
               className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-500"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -263,38 +274,35 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           </div>
 
           <div className="p-3 space-y-2.5">
-            {containers.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-center text-xs">
+            {fields.map((field, idx) => (
+              <div key={field.id} className="grid grid-cols-12 gap-2 items-center text-xs">
                 <div className="col-span-4">
                   <input
                     type="text"
-                    placeholder="رقم الحاوية (مثال: MSCU8912830)"
-                    value={c.containerNumber}
-                    onChange={(e) => handleContainerChange(idx, 'containerNumber', e.target.value.toUpperCase())}
+                    placeholder="رقم الحاوية (مثال: MSCU9041280)"
+                    {...register(`containers.${idx}.containerNumber` as const)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-2 text-xs font-mono uppercase focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
                 <div className="col-span-3">
                   <select
-                    value={c.containerType}
-                    onChange={(e) => handleContainerChange(idx, 'containerType', e.target.value)}
+                    {...register(`containers.${idx}.containerType` as const)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-2 text-xs focus:ring-2 focus:ring-brand-500"
                   >
-                    <option value="40HQ">40' High Cube (40HQ)</option>
-                    <option value="20GP">20' General Purpose (20GP)</option>
-                    <option value="40GP">40' General Purpose (40GP)</option>
-                    <option value="40RF">40' Reefer (مبرد)</option>
-                    <option value="20RF">20' Reefer (مبرد)</option>
-                    <option value="FLAT_RACK">Flat Rack</option>
-                    <option value="OPEN_TOP">Open Top</option>
+                    <option value={ContainerType.HQ_40}>40' High Cube (40HQ)</option>
+                    <option value={ContainerType.GP_20}>20' General Purpose (20GP)</option>
+                    <option value={ContainerType.GP_40}>40' General Purpose (40GP)</option>
+                    <option value={ContainerType.REEFER_40}>40' Reefer (مبرد)</option>
+                    <option value={ContainerType.REEFER_20}>20' Reefer (مبرد)</option>
+                    <option value={ContainerType.FLAT_RACK}>Flat Rack</option>
+                    <option value={ContainerType.OPEN_TOP}>Open Top</option>
                   </select>
                 </div>
                 <div className="col-span-2">
                   <input
                     type="number"
                     placeholder="وزن البضاعة (كجم)"
-                    value={c.cargoWeightKg || ''}
-                    onChange={(e) => handleContainerChange(idx, 'cargoWeightKg', Number(e.target.value))}
+                    {...register(`containers.${idx}.cargoWeightKg` as const, { valueAsNumber: true })}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-2 text-xs font-mono"
                   />
                 </div>
@@ -302,16 +310,15 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   <input
                     type="text"
                     placeholder="رقم الرصاصة (Seal #)"
-                    value={c.sealNumber || ''}
-                    onChange={(e) => handleContainerChange(idx, 'sealNumber', e.target.value)}
+                    {...register(`containers.${idx}.sealNumber` as const)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-2 text-xs font-mono"
                   />
                 </div>
                 <div className="col-span-1 text-center">
-                  {containers.length > 1 && (
+                  {fields.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => handleRemoveContainer(idx)}
+                      onClick={() => remove(idx)}
                       className="text-rose-500 hover:text-rose-700 p-1"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -331,8 +338,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           <textarea
             rows={2}
             placeholder="مثال: مواد غذائية معلبة، قطع غيار سيارات، كيماويات صناعية غير خطرة..."
-            value={cargoDescription}
-            onChange={(e) => setCargoDescription(e.target.value)}
+            {...register('cargoDescription')}
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500"
           />
         </div>
@@ -348,11 +354,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           </button>
           <button
             type="submit"
-            disabled={loading}
+            disabled={isSubmitting || createShipmentMutation.isPending}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold shadow-lg shadow-brand-600/30 transition disabled:opacity-50"
           >
             <Check className="w-4 h-4" />
-            <span>{loading ? 'جاري الفتح...' : 'إنشاء ملف الشحنة'}</span>
+            <span>
+              {isSubmitting || createShipmentMutation.isPending ? 'جاري الفتح...' : 'إنشاء ملف الشحنة'}
+            </span>
           </button>
         </div>
       </form>

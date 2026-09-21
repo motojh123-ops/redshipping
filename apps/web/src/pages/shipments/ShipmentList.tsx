@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Ship, Filter, Search, ChevronRight, Container, MapPin, Calendar, Plus, Download, FileBadge, AlertTriangle, Clock, CheckCircle2 } from 'lucide-react';
-import { api } from '../../services/api';
+import { useShipments } from '../../hooks/queries/useShipments';
 import { CreateShipmentModal } from './CreateShipmentModal';
 import { exportToCsv } from '../../utils/exportUtils';
 import { PortOptions } from '../../components/ui/PortSelect';
@@ -71,33 +71,21 @@ const getShipmentDemurrageStatus = (s: any) => {
 };
 
 export const ShipmentList: React.FC = () => {
-  const [shipments, setShipments] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('');
   const [portFilter, setPortFilter] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const fetchShipments = async () => {
-    setLoading(true);
-    try {
-      const data: any = await api.get('/shipments', {
-        params: { search: search || undefined, stage: stageFilter || undefined, port: portFilter || undefined },
-      });
-      setShipments(data || []);
-      setIsLiveConnected(true);
-    } catch (e) {
-      console.error('Failed to load shipments', e);
-      setIsLiveConnected(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchShipments();
-  }, [search, stageFilter, portFilter]);
+  const {
+    data: shipments = [],
+    isLoading: loading,
+    isSuccess: isLiveConnected,
+    refetch,
+  } = useShipments({
+    search: search || undefined,
+    stage: stageFilter || undefined,
+    port: portFilter || undefined,
+  });
 
   const handleExportShipments = () => {
     exportToCsv('redshipping_shipments_report', shipments, [
@@ -132,7 +120,7 @@ export const ShipmentList: React.FC = () => {
           </div>
 
           <button
-            onClick={fetchShipments}
+            onClick={() => refetch()}
             disabled={loading}
             title="تحديث البيانات من السيرفر"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
@@ -161,7 +149,7 @@ export const ShipmentList: React.FC = () => {
       <CreateShipmentModal
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        onSuccess={fetchShipments}
+        onSuccess={() => refetch()}
       />
 
       {/* Filter and Search Bar */}

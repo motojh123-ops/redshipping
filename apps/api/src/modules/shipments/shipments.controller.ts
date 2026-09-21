@@ -2,7 +2,9 @@ import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@ne
 import { ShipmentsService } from './shipments.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantId, CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ShipmentStage } from '@banna/shared-types';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { ShipmentStage, UserRole } from '@banna/shared-types';
+import { CreateShipmentDto, UpdateShipmentStageDto } from './dto/create-shipment.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('shipments')
@@ -25,22 +27,24 @@ export class ShipmentsController {
   }
 
   @Post()
+  @Roles(UserRole.OPS_OFFICER, UserRole.COMPANY_ADMIN, UserRole.SALES_REP)
   async create(
     @TenantId() tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() data: any,
+    @Body() dto: CreateShipmentDto,
   ) {
-    return this.shipmentsService.create(tenantId, userId, data);
+    return this.shipmentsService.create(tenantId, userId, dto);
   }
 
   @Patch(':id/stage')
+  @Roles(UserRole.OPS_OFFICER, UserRole.COMPANY_ADMIN)
   async updateStage(
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { stage: ShipmentStage; notes?: string },
+    @Body() dto: UpdateShipmentStageDto,
   ) {
-    return this.shipmentsService.updateStage(tenantId, id, userId, body.stage, body.notes);
+    return this.shipmentsService.updateStage(tenantId, id, userId, dto.stage, dto.notes);
   }
 
   @Post(':id/containers')

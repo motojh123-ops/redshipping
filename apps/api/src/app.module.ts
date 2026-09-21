@@ -21,6 +21,8 @@ import { MaritimeModule } from './maritime/maritime.module';
 import { DisbursementsModule } from './modules/disbursements/disbursements.module';
 import { CrmModule } from './modules/crm/crm.module';
 
+import { RolesGuard } from './common/guards/roles.guard';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -53,6 +55,10 @@ import { CrmModule } from './modules/crm/crm.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })
