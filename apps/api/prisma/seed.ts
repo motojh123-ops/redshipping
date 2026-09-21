@@ -1,7 +1,14 @@
+import 'dotenv/config';
 import { PrismaClient, UserRole, ClientStatus, VendorType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL || 'postgresql://banna_admin:banna_secure_pass_2026@127.0.0.1:5432/banna_db?schema=public',
+    },
+  },
+});
 
 async function main() {
   console.log('🌱 Starting database seeding for Banna Freight ERP...');

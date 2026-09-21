@@ -4,6 +4,11 @@ import { DataStoreService, StoredShipment } from '../../database/data-store.serv
 import { ShipmentStage } from '@banna/shared-types';
 import { extractSequenceNumber, parseNextSequence } from '../../common/utils/numbering.util';
 
+function isUuid(val?: string): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+}
+
 @Injectable()
 export class ShipmentsService {
   private readonly logger = new Logger(ShipmentsService.name);
@@ -207,8 +212,12 @@ export class ShipmentsService {
 
   async findOne(tenantId: string, id: string) {
     try {
+      const where: any = isUuid(id)
+        ? { id, companyId: tenantId }
+        : { jobFileNumber: id, companyId: tenantId };
+
       const shipment = await this.prisma.shipment.findFirst({
-        where: { id, companyId: tenantId },
+        where,
         include: {
           client: true,
           salesRep: { select: { id: true, name: true } },
@@ -250,57 +259,55 @@ export class ShipmentsService {
           else actualCostEgp += amt;
         });
 
-        const consolidatedRevUsd = invoicedUsd + (invoicedEgp / usdRate);
-        const consolidatedCostUsd = actualCostUsd + (actualCostEgp / usdRate);
-        const netProfitUsd = consolidatedRevUsd - consolidatedCostUsd;
-        const netProfitEgp = (consolidatedRevUsd * usdRate) - (consolidatedCostUsd * usdRate);
-        const profitMarginPercent = consolidatedRevUsd > 0 ? (netProfitUsd / consolidatedRevUsd) * 100 : 0;
+        const netProfitUsd = invoicedUsd - actualCostUsd;
+        const netProfitEgp = invoicedEgp - actualCostEgp;
+        const consolidatedRevUsd = invoicedUsd + invoicedEgp / usdRate;
+        const totalCostConsolidatedUsd = actualCostUsd + actualCostEgp / usdRate;
+        const profitMarginPercent =
+          consolidatedRevUsd > 0
+            ? Math.round(((consolidatedRevUsd - totalCostConsolidatedUsd) / consolidatedRevUsd) * 1000) / 10
+            : 0;
 
         return {
           ...shipment,
           financialSummary: {
-            invoicedUsd: Math.round(invoicedUsd * 100) / 100,
-            invoicedEgp: Math.round(invoicedEgp * 100) / 100,
-            actualCostUsd: Math.round(actualCostUsd * 100) / 100,
-            actualCostEgp: Math.round(actualCostEgp * 100) / 100,
-            netProfitUsd: Math.round(netProfitUsd * 100) / 100,
-            netProfitEgp: Math.round(netProfitEgp * 100) / 100,
-            consolidatedRevUsd: Math.round(consolidatedRevUsd * 100) / 100,
-            profitMarginPercent: Number(profitMarginPercent.toFixed(1)),
+            invoicedUsd,
+            invoicedEgp,
+            actualCostUsd,
+            actualCostEgp,
+            netProfitUsd,
+            netProfitEgp,
+            consolidatedRevUsd,
+            profitMarginPercent,
           },
         };
       }
+
       if (!this.dataStore.isFallbackAllowed()) {
-        throw new NotFoundException(`Shipment with ID ${id} not found`);
+        throw new NotFoundException(`Shipment '${id}' not found`);
       }
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
         throw err;
       }
     }
 
-    const found = this.dataStore.shipments.find((s) => s.id === id) || this.dataStore.shipments[0];
+    const s = this.dataStore.shipments.find((x) => x.id === id || x.jobFileNumber === id);
+    if (!s) return null;
+
     return {
-      ...found,
-      salesRep: { id: 'user-sales', name: 'أحمد الشريف' },
-      opsOfficer: { id: 'user-ops', name: 'سارة حسين' },
-      overseasAgent: { id: 'agent-1', name: 'Sinotrans Global Logistics Shanghai' },
-      events: found?.events || [
-        { id: 'ev-1', toStage: found?.currentStage, eventAt: new Date().toISOString(), notes: 'تم تحديث المرحلة بنجاح', changedBy: { id: 'u-1', name: 'سارة حسين' } },
-        { id: 'ev-2', toStage: 'BOOKING_CONFIRMED', eventAt: new Date(Date.now() - 14 * 86400000).toISOString(), notes: 'تأكيد الحجز لدى الخط الملاحي', changedBy: { id: 'u-1', name: 'عمر البنا' } },
-      ],
-      costs: [
-        { id: 'cst-1', actualCost: 1850, currency: 'USD', vendor: { id: 'v-1', name: 'Maersk Line' }, chargeItem: { id: 'chg-1', nameEn: 'Ocean Freight' } },
-        { id: 'cst-2', actualCost: 4500, currency: 'EGP', vendor: { id: 'v-2', name: 'الفرسان للتخليص' }, chargeItem: { id: 'chg-4', nameEn: 'Customs Clearance' } },
-        { id: 'cst-3', actualCost: 8500, currency: 'EGP', vendor: { id: 'v-3', name: 'أسطول الصعيد للنقل' }, chargeItem: { id: 'chg-5', nameEn: 'Inland Haulage' } },
-      ],
+      ...s,
+      salesRep: { id: 'u-1', name: 'عمر البنا' },
+      opsOfficer: { id: 'u-2', name: 'أحمد محمود' },
+      overseasAgent: { id: 'agent-1', name: 'Cosco Freight Agent Ningbo' },
+      events: s.events || [],
+      costs: [],
       customsDossier: {
         id: 'cust-1',
-        acidNumber: '4829104829',
-        acidIssueDate: new Date(Date.now() - 20 * 86400000).toISOString(),
-        acidExpiryDate: new Date(Date.now() + 70 * 86400000).toISOString(),
-        form46Number: 'F46-2026-9921',
-        status: 'UNDER_CLEARANCE',
+        acidNumber: '192837465019283',
+        daysLeft: 42,
+        status: 'customs_cleared',
+        customsBroker: { name: 'المكتب الدولي للتخليص الجمركي' },
       },
       invoices: [],
       financialSummary: {
@@ -318,10 +325,14 @@ export class ShipmentsService {
 
   async updateStage(tenantId: string, id: string, userId: string, newStage: ShipmentStage, notes?: string) {
     try {
-      const shipment = await this.prisma.shipment.findFirst({ where: { id, companyId: tenantId } });
+      const where: any = isUuid(id)
+        ? { id, companyId: tenantId }
+        : { jobFileNumber: id, companyId: tenantId };
+
+      const shipment = await this.prisma.shipment.findFirst({ where });
       if (shipment) {
         return await this.prisma.shipment.update({
-          where: { id },
+          where: { id: shipment.id },
           data: {
             currentStage: newStage,
             events: {
@@ -337,11 +348,13 @@ export class ShipmentsService {
           include: { events: true },
         });
       }
-    } catch (e) {
-      // Fallback
+    } catch (e: any) {
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw e;
+      }
     }
 
-    const ship = this.dataStore.shipments.find((s) => s.id === id);
+    const ship = this.dataStore.shipments.find((s) => s.id === id || s.jobFileNumber === id);
     if (ship) {
       ship.currentStage = newStage as any;
       if (!ship.events) ship.events = [];
@@ -360,20 +373,43 @@ export class ShipmentsService {
   }
 
   async addContainer(tenantId: string, shipmentId: string, data: any) {
+    const where: any = isUuid(shipmentId)
+      ? { id: shipmentId, companyId: tenantId }
+      : { jobFileNumber: shipmentId, companyId: tenantId };
+
+    const shipment = await this.prisma.shipment.findFirst({ where });
+    const resolvedId = shipment ? shipment.id : shipmentId;
+
+    let containerType = data.containerType;
+    if (containerType === '40HQ') containerType = 'HQ_40';
+    else if (containerType === '20GP') containerType = 'GP_20';
+    else if (containerType === '40GP') containerType = 'GP_40';
+    else if (containerType === '45HQ') containerType = 'HQ_45';
+    else if (containerType === '20RF') containerType = 'RF_20';
+    else if (containerType === '40RF') containerType = 'RF_40';
+
     return this.prisma.shipmentContainer.create({
       data: {
         ...data,
-        shipmentId,
+        containerType,
+        shipmentId: resolvedId,
         companyId: tenantId,
       },
     });
   }
 
   async addCost(tenantId: string, shipmentId: string, data: any) {
+    const where: any = isUuid(shipmentId)
+      ? { id: shipmentId, companyId: tenantId }
+      : { jobFileNumber: shipmentId, companyId: tenantId };
+
+    const shipment = await this.prisma.shipment.findFirst({ where });
+    const resolvedId = shipment ? shipment.id : shipmentId;
+
     return this.prisma.shipmentCost.create({
       data: {
         ...data,
-        shipmentId,
+        shipmentId: resolvedId,
         companyId: tenantId,
       },
     });

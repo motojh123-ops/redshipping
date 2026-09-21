@@ -2,6 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DataStoreService, StoredCustomsDossier } from '../../database/data-store.service';
 
+function isUuid(val?: string): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+}
+
 @Injectable()
 export class CustomsService {
   constructor(
@@ -30,8 +35,13 @@ export class CustomsService {
         orderBy: { createdAt: 'desc' },
       });
       if (dossiers && dossiers.length > 0) return dossiers;
+      if (!this.dataStore.isFallbackAllowed()) {
+        return dossiers || [];
+      }
     } catch (err) {
-      // Use resilient store
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     let result = [...this.dataStore.customs];
@@ -43,8 +53,12 @@ export class CustomsService {
 
   async findOne(tenantId: string, id: string) {
     try {
+      const where: any = isUuid(id)
+        ? { companyId: tenantId, OR: [{ id }, { shipmentId: id }] }
+        : { companyId: tenantId, shipment: { jobFileNumber: id } };
+
       const dossier = await this.prisma.customsDossier.findFirst({
-        where: { id, companyId: tenantId },
+        where,
         include: {
           shipment: {
             include: {
@@ -59,8 +73,13 @@ export class CustomsService {
       });
 
       if (dossier) return dossier;
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw new NotFoundException(`Customs dossier '${id}' not found`);
+      }
     } catch (err) {
-      // Fallback
+      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const found = this.dataStore.customs.find((c) => c.id === id) || this.dataStore.customs[0];
@@ -80,22 +99,44 @@ export class CustomsService {
 
   async createOrUpdate(tenantId: string, shipmentId: string, data: any) {
     try {
-      const shipment = await this.prisma.shipment.findFirst({
-        where: { id: shipmentId, companyId: tenantId },
-      });
+      const where: any = isUuid(shipmentId)
+        ? { id: shipmentId, companyId: tenantId }
+        : { jobFileNumber: shipmentId, companyId: tenantId };
+
+      const shipment = await this.prisma.shipment.findFirst({ where });
       if (shipment) {
+        const payload: any = {};
+        if (data.acidNumber !== undefined) payload.acidNumber = data.acidNumber;
+        if (data.acidIssueDate !== undefined) payload.acidIssueDate = new Date(data.acidIssueDate);
+        if (data.acidExpiryDate !== undefined) payload.acidExpiryDate = new Date(data.acidExpiryDate);
+        if (data.customsCertificateNumber !== undefined) payload.customsCertificateNumber = data.customsCertificateNumber;
+        if (data.customsBrokerId !== undefined) payload.customsBrokerId = data.customsBrokerId;
+        if (data.customsValueDeclared !== undefined) payload.customsValueDeclared = data.customsValueDeclared;
+        if (data.dutiesPaid !== undefined) payload.dutiesPaid = data.dutiesPaid;
+        if (data.vatPaid !== undefined) payload.vatPaid = data.vatPaid;
+        if (data.inspectionDate !== undefined) payload.inspectionDate = new Date(data.inspectionDate);
+        if (data.releaseDate !== undefined) payload.releaseDate = new Date(data.releaseDate);
+        if (data.status !== undefined) payload.status = data.status;
+        if (data.notes !== undefined) payload.notes = data.notes;
+
         return await this.prisma.customsDossier.upsert({
-          where: { shipmentId },
+          where: { shipmentId: shipment.id },
           create: {
-            ...data,
-            shipmentId,
+            ...payload,
+            shipmentId: shipment.id,
             companyId: tenantId,
           },
-          update: data,
+          update: payload,
         });
       }
+
+      if (!this.dataStore.isFallbackAllowed()) {
+        throw new NotFoundException(`Shipment '${shipmentId}' not found for customs dossier`);
+      }
     } catch (err) {
-      // Fallback
+      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw err;
+      }
     }
 
     const existingIdx = this.dataStore.customs.findIndex((c) => c.id === shipmentId || c.shipmentFile === shipmentId);

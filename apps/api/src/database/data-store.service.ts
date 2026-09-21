@@ -168,6 +168,9 @@ export class DataStoreService {
   }
 
   public isFallbackAllowed(): boolean {
+    if (process.env.ALLOW_STORE_FALLBACK === 'false' || process.env.DISABLE_DATA_FALLBACKS === 'true') {
+      return false;
+    }
     if (process.env.NODE_ENV === 'production') {
       return process.env.ALLOW_STORE_FALLBACK === 'true';
     }

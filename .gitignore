@@ -27,6 +27,8 @@ apps/web/.env
 
 # Local ephemeral data
 /apps/api/data/*.json
+data/
+/data/
 
 # Logs
 npm-debug.log*

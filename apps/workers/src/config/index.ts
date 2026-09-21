@@ -7,7 +7,7 @@ export const config = {
     password: process.env.REDIS_PASSWORD || 'banna_redis_pass',
   },
   gotenberg: {
-    url: process.env.GOTENBERG_URL || 'http://localhost:3000',
+    url: process.env.GOTENBERG_URL || 'http://localhost:3002',
     timeoutMs: Number(process.env.GOTENBERG_TIMEOUT_MS) || 30000,
   },
   storage: {

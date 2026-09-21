@@ -40,7 +40,7 @@ services:
     container_name: banna-gotenberg
     restart: unless-stopped
     ports:
-      - "${GOTENBERG_PORT:-3000}:3000"
+      - "${GOTENBERG_PORT:-3002}:3000"
     command:
       - "gotenberg"
       - "--chromium-disable-javascript=false"
