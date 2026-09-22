@@ -417,6 +417,22 @@ export class ShipmentsService {
 
   async updateContainerStatus(tenantId: string, shipmentId: string, containerId: string, data: any) {
     try {
+      // Tenant guard: resolve the container through its parent shipment scoped to this tenant
+      const where: any = isUuid(shipmentId)
+        ? { id: shipmentId, companyId: tenantId }
+        : { jobFileNumber: shipmentId, companyId: tenantId };
+      const shipment = await this.prisma.shipment.findFirst({
+        where,
+        select: { id: true, containers: { select: { id: true } } },
+      });
+      if (!shipment) {
+        throw new NotFoundException(`Shipment '${shipmentId}' not found`);
+      }
+      const containerBelongsToShipment = shipment.containers.some((c) => c.id === containerId);
+      if (!containerBelongsToShipment) {
+        throw new NotFoundException(`Container '${containerId}' not found on shipment '${shipmentId}'`);
+      }
+
       return await this.prisma.shipmentContainer.update({
         where: { id: containerId },
         data: {
@@ -426,7 +442,10 @@ export class ShipmentsService {
           notes: data.notes,
         },
       });
-    } catch (e) {
+    } catch (e: any) {
+      if (e instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw e;
+      }
       return {
         id: containerId,
         shipmentId,
@@ -438,6 +457,21 @@ export class ShipmentsService {
 
   async reconcileCost(tenantId: string, shipmentId: string, costId: string, data: any) {
     try {
+      // Tenant guard: verify the cost belongs to a shipment of this tenant before updating
+      const where: any = isUuid(shipmentId)
+        ? { id: shipmentId, companyId: tenantId }
+        : { jobFileNumber: shipmentId, companyId: tenantId };
+      const shipment = await this.prisma.shipment.findFirst({
+        where,
+        select: { id: true, costs: { select: { id: true } } },
+      });
+      if (!shipment) {
+        throw new NotFoundException(`Shipment '${shipmentId}' not found`);
+      }
+      if (!shipment.costs.some((c) => c.id === costId)) {
+        throw new NotFoundException(`Cost '${costId}' not found on shipment '${shipmentId}'`);
+      }
+
       return await this.prisma.shipmentCost.update({
         where: { id: costId },
         data: {
@@ -447,7 +481,10 @@ export class ShipmentsService {
         },
         include: { vendor: true, chargeItem: true },
       });
-    } catch (e) {
+    } catch (e: any) {
+      if (e instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
+        throw e;
+      }
       return {
         id: costId,
         shipmentId,
