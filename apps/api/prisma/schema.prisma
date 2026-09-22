@@ -165,6 +165,7 @@ model Company {
   shipmentEvents     ShipmentEvent[]
   shipmentCosts      ShipmentCost[]
   customsDossiers    CustomsDossier[]
+  notifications      Notification[]
   invoices           Invoice[]
   invoiceItems       InvoiceItem[]
   crmActivities      CrmActivity[]
@@ -539,6 +540,7 @@ model CustomsDossier {
   inspectionDate           DateTime? @map("inspection_date") @db.Date
   releaseDate              DateTime? @map("release_date") @db.Date
   status                   String    @default("acid_requested") @db.VarChar(50)
+  nafezaVerifiedAt         DateTime? @map("nafeza_verified_at") @db.Timestamptz
   notes                    String?   @db.Text
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -578,6 +580,24 @@ model Invoice {
 
   @@unique([companyId, invoiceNumber])
   @@map("invoices")
+}
+
+model Notification {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  type      String    @db.VarChar(30)
+  severity  String    @default("info") @db.VarChar(20)
+  title     String    @db.VarChar(255)
+  message   String    @db.Text
+  link      String?   @db.VarChar(255)
+  entityId  String?   @map("entity_id") @db.VarChar(64)
+  isRead    Boolean   @default(false) @map("is_read")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isRead, createdAt])
+  @@map("notifications")
 }
 
 model InvoiceItem {

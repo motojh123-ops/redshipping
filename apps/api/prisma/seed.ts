@@ -215,50 +215,448 @@ async function main() {
   }
   console.log('✅ Created 15 Standard Charge Items (البنود)');
 
-  // 8. Create Demo Client
-  let client = await prisma.client.findFirst({
-    where: { companyId: company.id, name: 'Al-Ahram Food Industries' },
+  // 8. Create Demo Clients (العملاء)
+  const clients = [
+    { name: 'Al-Ahram Food Industries', tradeName: 'الأهرام للصناعات الغذائية', status: ClientStatus.active, category: 'مصنع ومستورد مواد غذائية', city: 'الجيزة' },
+    { name: 'Delta Chemicals & Polymers', tradeName: 'دلتا للكيماويات والبوليمرات', status: ClientStatus.active, category: 'استيراد وتوزيع خامات صناعية', city: 'الإسكندرية' },
+  ];
+
+  for (const cl of clients) {
+    const existing = await prisma.client.findFirst({
+      where: { companyId: company.id, name: cl.name },
+    });
+    if (!existing) {
+      await prisma.client.create({
+        data: { ...cl, companyId: company.id, salesRepId: salesUser?.id },
+      });
+    }
+  }
+  console.log('✅ Created Demo Clients');
+
+  // 9. Create Demo Shipments with ports, containers & full event timelines (ملفات الشحن)
+  const ahramClient = await prisma.client.findFirst({ where: { companyId: company.id, name: 'Al-Ahram Food Industries' } });
+  const deltaClient = await prisma.client.findFirst({ where: { companyId: company.id, name: 'Delta Chemicals & Polymers' } });
+  const adminUser = await prisma.user.findFirst({ where: { companyId: company.id, email: 'admin@banna-logistics.com' } });
+  const mscLine = await prisma.shippingLine.findFirst({ where: { companyId: company.id, scac: 'MSCU' } });
+  const maerskLine = await prisma.shippingLine.findFirst({ where: { companyId: company.id, scac: 'MAEU' } });
+  const cmaLine = await prisma.shippingLine.findFirst({ where: { companyId: company.id, scac: 'CMDU' } });
+  const coscoLine = await prisma.shippingLine.findFirst({ where: { companyId: company.id, scac: 'COSU' } });
+  const hapagLine = await prisma.shippingLine.findFirst({ where: { companyId: company.id, scac: 'HLCU' } });
+
+  const portByCode = (code: string) => prisma.port.findFirst({ where: { code } });
+  const portAlexandria = await portByCode('EGALY');
+  const portSaidEast = await portByCode('EGPSD');
+  const portDamietta = await portByCode('EGDAM');
+  const portSokhna = await portByCode('EGSOK');
+  const portShanghai = await portByCode('CNSHA');
+  const portNingbo = await portByCode('CNNGB');
+  const portJebelAli = await portByCode('AEJEA');
+  const portRotterdam = await portByCode('NLRTM');
+
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86400000);
+  const daysAhead = (n: number) => new Date(Date.now() + n * 86400000);
+
+  // Builds a nested ShipmentEvent history following the real ShipmentStage flow
+  const eventChain = (steps: { from: string | null; to: string; daysAgo: number; notes: string }[]) => ({
+    create: steps.map((s) => ({
+      companyId: company!.id,
+      fromStage: s.from,
+      toStage: s.to,
+      changedById: adminUser?.id,
+      notes: s.notes,
+      eventAt: daysAgo(s.daysAgo),
+    })),
   });
 
-  if (!client) {
-    client = await prisma.client.create({
-      data: {
-        companyId: company.id,
-        name: 'Al-Ahram Food Industries',
-        tradeName: 'الأهرام للصناعات الغذائية',
-        taxNumber: 'EG-TAX-28394721',
-        commercialReg: 'CR-2021-8372',
-        status: ClientStatus.active,
-        salesRepId: salesUser?.id,
-        category: 'مصنع ومستورد مواد غذائية',
-        address: 'المنطقة الصناعية الثالثة، مدينة 6 أكتوبر، الجيزة',
-        city: 'القاهرة / الجيزة',
-        country: 'Egypt',
-        contacts: {
-          create: [
-            {
-              companyId: company.id,
-              name: 'أحمد محمد الشريف',
-              title: 'مدير المشتريات وسلاسل الإمداد',
-              phone: '+20 2 3833 0000',
-              mobile: '+20 100 123 4567',
-              email: 'ahmed@alahram-foods.com',
-              isPrimary: true,
-            },
-            {
-              companyId: company.id,
-              name: 'محمود فتحي',
-              title: 'المدير المالي',
-              phone: '+20 2 3833 0001',
-              mobile: '+20 122 345 6789',
-              email: 'mahmoud@alahram-foods.com',
-              isPrimary: false,
-            },
-          ],
-        },
+  const shipmentSpecs = [
+    // 0001 — Reefer food import: arrived, discharged, customs documents submitted
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0001',
+      clientId: ahramClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: mscLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'FOB' as const,
+      originPortId: portShanghai?.id,
+      destinationPortId: portAlexandria?.id,
+      currentStage: 'customs_submitted' as const,
+      blNumber: 'MSCU8912839',
+      vesselName: 'MSC TINA',
+      voyageNumber: '2603W',
+      etd: daysAgo(15),
+      eta: daysAgo(4),
+      ata: daysAgo(4),
+      freeDaysAllowed: 21,
+      cargoDescription: 'Frozen Foodstuffs & Raw Ingredients in Reefer 40HQ',
+      grossWeightKg: 24500,
+      volumeCbm: 68,
+      packageCount: 940,
+      packageType: 'CTN',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'MSKU8849120',
+            containerType: 'HQ_40' as const,
+            sealNumber: 'SL-99120',
+            status: 'discharged' as const,
+            dischargedAt: daysAgo(4),
+            tareWeightKg: 3820,
+            cargoWeightKg: 20680,
+          },
+        ],
       },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 20, notes: 'تأكيد الحجز لدى الخط الملاحي MSC' },
+        { from: 'booking_confirmed', to: 'in_transit', daysAgo: 15, notes: 'إبحار السفينة MSC TINA من ميناء شنغهاي' },
+        { from: 'in_transit', to: 'arrived_destination', daysAgo: 4, notes: 'رسو السفينة وتفريغ الحاوية بميناء الإسكندرية' },
+        { from: 'arrived_destination', to: 'customs_submitted', daysAgo: 3, notes: 'إيداع البيان الجمركي وبدء إجراءات التخليص' },
+      ]),
+    },
+    // 0002 — Polymer import from Rotterdam, currently sailing
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0002',
+      clientId: deltaClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: maerskLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'CIF' as const,
+      originPortId: portRotterdam?.id,
+      destinationPortId: portAlexandria?.id,
+      currentStage: 'in_transit' as const,
+      blNumber: 'MAEU9041280',
+      vesselName: 'MAERSK MC-KINNEY MOLLER',
+      voyageNumber: '2604W',
+      etd: daysAgo(5),
+      eta: daysAhead(14),
+      freeDaysAllowed: 14,
+      cargoDescription: 'Polymer Raw Granules in 20GP Bags',
+      grossWeightKg: 42000,
+      volumeCbm: 54,
+      packageCount: 1200,
+      packageType: 'BAG',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'MAEU4410921',
+            containerType: 'GP_20' as const,
+            sealNumber: 'SL-33412',
+            status: 'on_board' as const,
+            tareWeightKg: 2200,
+            cargoWeightKg: 19800,
+          },
+        ],
+      },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 9, notes: 'تأكيد الحجز لدى خط ميرسك' },
+        { from: 'booking_confirmed', to: 'cargo_received', daysAgo: 7, notes: 'استلام الحاوية بساحة ميناء روتردام' },
+        { from: 'cargo_received', to: 'in_transit', daysAgo: 5, notes: 'إبحار السفينة من ميناء روتردام' },
+      ]),
+    },
+    // 0003 — Construction materials from Ningbo to Sokhna, sailing with 2 containers
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0003',
+      clientId: ahramClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: cmaLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'CFR' as const,
+      originPortId: portNingbo?.id,
+      destinationPortId: portSokhna?.id,
+      currentStage: 'in_transit' as const,
+      blNumber: 'CMAU1122334',
+      vesselName: 'CMA CGM MARCO POLO',
+      voyageNumber: '2607W',
+      etd: daysAgo(8),
+      eta: daysAhead(12),
+      freeDaysAllowed: 14,
+      cargoDescription: 'Ceramic Tiles & Construction Materials in 2x40HQ',
+      grossWeightKg: 47800,
+      volumeCbm: 116,
+      packageCount: 1680,
+      packageType: 'CTN',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'CMAU2210441',
+            containerType: 'HQ_40' as const,
+            sealNumber: 'SL-77811',
+            status: 'on_board' as const,
+            tareWeightKg: 3820,
+            cargoWeightKg: 23900,
+          },
+          {
+            companyId: company.id,
+            containerNumber: 'CMAU2210512',
+            containerType: 'HQ_40' as const,
+            sealNumber: 'SL-77812',
+            status: 'on_board' as const,
+            tareWeightKg: 3820,
+            cargoWeightKg: 23900,
+          },
+        ],
+      },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 14, notes: 'تأكيد الحجز لدى مجموعة CMA CGM' },
+        { from: 'booking_confirmed', to: 'cargo_received', daysAgo: 10, notes: 'استلام الحاويتين بمعزل النقل بميناء نينغبو' },
+        { from: 'cargo_received', to: 'in_transit', daysAgo: 8, notes: 'إبحار السفينة من ميناء نينغبو نحو السخنة' },
+      ]),
+    },
+    // 0004 — Resins from Jebel Ali to Port Said East, discharged & under clearance
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0004',
+      clientId: deltaClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: coscoLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'FOB' as const,
+      originPortId: portJebelAli?.id,
+      destinationPortId: portSaidEast?.id,
+      currentStage: 'clearance_in_progress' as const,
+      blNumber: 'COSU6677881',
+      vesselName: 'COSCO SHIPPING UNIVERSE',
+      voyageNumber: '068W',
+      etd: daysAgo(18),
+      eta: daysAgo(2),
+      ata: daysAgo(2),
+      freeDaysAllowed: 10,
+      cargoDescription: 'Industrial Polymer Resins in 3x20GP',
+      grossWeightKg: 58200,
+      volumeCbm: 84,
+      packageCount: 2400,
+      packageType: 'BAG',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'COSU8811002',
+            containerType: 'GP_20' as const,
+            sealNumber: 'SL-61002',
+            status: 'discharged' as const,
+            dischargedAt: daysAgo(2),
+            tareWeightKg: 2200,
+            cargoWeightKg: 19400,
+          },
+          {
+            companyId: company.id,
+            containerNumber: 'COSU8811033',
+            containerType: 'GP_20' as const,
+            sealNumber: 'SL-61033',
+            status: 'discharged' as const,
+            dischargedAt: daysAgo(2),
+            tareWeightKg: 2200,
+            cargoWeightKg: 19400,
+          },
+          {
+            companyId: company.id,
+            containerNumber: 'COSU8811077',
+            containerType: 'GP_20' as const,
+            sealNumber: 'SL-61077',
+            status: 'discharged' as const,
+            dischargedAt: daysAgo(2),
+            tareWeightKg: 2200,
+            cargoWeightKg: 19400,
+          },
+        ],
+      },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 24, notes: 'تأكيد الحجز لدى كوسكو للنقل البحري' },
+        { from: 'booking_confirmed', to: 'cargo_received', daysAgo: 20, notes: 'استلام الحاويات بميناء جبل علي' },
+        { from: 'cargo_received', to: 'in_transit', daysAgo: 18, notes: 'إبحار السفينة نحو غرب بورسعيد' },
+        { from: 'in_transit', to: 'arrived_destination', daysAgo: 2, notes: 'الرسو والتفريغ بميناء شرق بورسعيد المحوري' },
+        { from: 'arrived_destination', to: 'clearance_in_progress', daysAgo: 1, notes: 'بدء الكشف والتثمين بميناء غرب بورسعيد' },
+      ]),
+    },
+    // 0005 — Solar equipment booking, awaiting vessel at origin
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0005',
+      clientId: deltaClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: hapagLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'FOB' as const,
+      originPortId: portShanghai?.id,
+      destinationPortId: portDamietta?.id,
+      currentStage: 'booking_confirmed' as const,
+      blNumber: 'HLCU3344556',
+      vesselName: 'ANTWERPEN EXPRESS',
+      voyageNumber: '2212W',
+      etd: daysAhead(9),
+      eta: daysAhead(31),
+      freeDaysAllowed: 14,
+      cargoDescription: 'Solar Panels & Inverters in 1x40HQ + 1x40GP',
+      grossWeightKg: 19800,
+      volumeCbm: 74,
+      packageCount: 520,
+      packageType: 'PLT',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'HLXU5522001',
+            containerType: 'HQ_40' as const,
+            sealNumber: 'SL-52001',
+            status: 'booked' as const,
+            tareWeightKg: 3820,
+            cargoWeightKg: 15200,
+          },
+          {
+            companyId: company.id,
+            containerNumber: 'HLXU5522002',
+            containerType: 'GP_40' as const,
+            sealNumber: 'SL-52002',
+            status: 'booked' as const,
+            tareWeightKg: 3760,
+            cargoWeightKg: 4600,
+          },
+        ],
+      },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 2, notes: 'تأكيد الحجز لدى خط هاباغ لويد' },
+      ]),
+    },
+    // 0006 — Completed dairy import: delivered & empties returned
+    {
+      companyId: company.id,
+      jobFileNumber: 'BAN-2026-0006',
+      clientId: ahramClient?.id,
+      salesRepId: adminUser?.id,
+      opsOfficerId: adminUser?.id,
+      shippingLineId: mscLine?.id,
+      shipmentType: 'fcl' as const,
+      incoterm: 'CIF' as const,
+      originPortId: portShanghai?.id,
+      destinationPortId: portAlexandria?.id,
+      currentStage: 'delivered' as const,
+      blNumber: 'MSCU9988776',
+      vesselName: 'MSC IRINA',
+      voyageNumber: '2598W',
+      etd: daysAgo(48),
+      eta: daysAgo(22),
+      ata: daysAgo(22),
+      freeDaysAllowed: 21,
+      cargoDescription: 'Dairy Powders & Food Additives in 2x40RF',
+      grossWeightKg: 44600,
+      volumeCbm: 126,
+      packageCount: 2100,
+      packageType: 'CTN',
+      containers: {
+        create: [
+          {
+            companyId: company.id,
+            containerNumber: 'MSKU9900112',
+            containerType: 'RF_40' as const,
+            sealNumber: 'SL-90112',
+            status: 'delivered' as const,
+            dischargedAt: daysAgo(22),
+            tareWeightKg: 4100,
+            cargoWeightKg: 21400,
+          },
+          {
+            companyId: company.id,
+            containerNumber: 'MSKU9900148',
+            containerType: 'RF_40' as const,
+            sealNumber: 'SL-90148',
+            status: 'returned_empty' as const,
+            dischargedAt: daysAgo(22),
+            emptyReturnedAt: daysAgo(10),
+            tareWeightKg: 4100,
+            cargoWeightKg: 23200,
+          },
+        ],
+      },
+      events: eventChain([
+        { from: null, to: 'booking_confirmed', daysAgo: 52, notes: 'تأكيد الحجز لدى الخط الملاحي MSC' },
+        { from: 'booking_confirmed', to: 'cargo_received', daysAgo: 49, notes: 'استلام الحاويتين المبرّدتين بميناء شنغهاي' },
+        { from: 'cargo_received', to: 'in_transit', daysAgo: 48, notes: 'إبحار السفينة MSC IRINA نحو الإسكندرية' },
+        { from: 'in_transit', to: 'arrived_destination', daysAgo: 22, notes: 'الرسو والتفريغ بميناء الإسكندرية' },
+        { from: 'arrived_destination', to: 'clearance_in_progress', daysAgo: 20, notes: 'الكشف والتثمين وسداد الرسوم الجمركية' },
+        { from: 'clearance_in_progress', to: 'release_issued', daysAgo: 16, notes: 'صادر الإفراج النهائي - شهادة 46' },
+        { from: 'release_issued', to: 'out_for_delivery', daysAgo: 14, notes: 'خروج الحاويات بالنقل البري إلى مصنع العميل' },
+        { from: 'out_for_delivery', to: 'delivered', daysAgo: 12, notes: 'تم التسليم بمصنع العميل وإعادة الحاويات فارغة' },
+      ]),
+    },
+  ];
+
+  let createdCount = 0;
+  let repairedCount = 0;
+  for (const sh of shipmentSpecs) {
+    if (!sh.clientId) continue; // skip if demo clients were not created
+    const existing = await prisma.shipment.findFirst({
+      where: { companyId: company.id, jobFileNumber: sh.jobFileNumber },
+      include: { containers: true },
     });
-    console.log('✅ Created demo client: Al-Ahram Food Industries');
+    if (!existing) {
+      await prisma.shipment.create({ data: sh as any });
+      createdCount++;
+      continue;
+    }
+    // Repair demo records created by test scripts (missing/incorrect ports, no containers, single sparse event)
+    const patch: any = {};
+    if (sh.originPortId) patch.originPortId = sh.originPortId;
+    if (sh.destinationPortId) patch.destinationPortId = sh.destinationPortId;
+    if (existing.containers.length === 0 && sh.containers.create.length > 0) {
+      patch.containers = { create: sh.containers.create };
+    }
+    // Restore the realistic event history (and matching stage) when only a stub event exists
+    const eventCount = await prisma.shipmentEvent.count({ where: { shipmentId: existing.id } });
+    if (eventCount <= 1 && sh.events.create.length > 1) {
+      patch.currentStage = sh.currentStage;
+      patch.events = {
+        deleteMany: {},
+        create: sh.events.create,
+      };
+    }
+    if (Object.keys(patch).length > 0) {
+      await prisma.shipment.update({ where: { id: existing.id }, data: patch });
+      repairedCount++;
+    }
+  }
+  console.log(`✅ Demo Shipment Job Files: ${createdCount} created, ${repairedCount} repaired (ports, containers & event timelines)`);
+
+  // 10. Create NAFEZA Customs Dossier with ACID (ملف نافذة — رقم القيد المسبق)
+  // Attached to BAN-2026-0001 (customs_submitted) so the tracking portal shows a real ACID.
+  const shipment0001 = await prisma.shipment.findFirst({
+    where: { companyId: company.id, jobFileNumber: 'BAN-2026-0001' },
+  });
+  const brokerUser = await prisma.user.findFirst({
+    where: { companyId: company.id, email: 'ops@banna-logistics.com' },
+  });
+
+  if (shipment0001) {
+    const existingDossier = await prisma.customsDossier.findFirst({
+      where: { shipmentId: shipment0001.id },
+    });
+    if (!existingDossier) {
+      // 19-digit ACID (standard ACI manifest pattern), issued 6 days ago → 84 days of validity left
+      const acidNumber = '2026092188441200377';
+      await prisma.customsDossier.create({
+        data: {
+          companyId: company.id,
+          shipmentId: shipment0001.id,
+          acidNumber,
+          acidIssueDate: daysAgo(6),
+          acidExpiryDate: daysAhead(84),
+          customsValueDeclared: 275000,
+          status: 'acid_issued',
+          customsBrokerId: brokerUser?.id,
+          notes: 'تم إصدار رقم القيد المسبق ACID عبر منصة نافذة — بيان شحنة وارد ACI (بيانات تجريبية)',
+        },
+      });
+      console.log(`✅ Created NAFEZA Customs Dossier for ${shipment0001.jobFileNumber} (ACID: ${acidNumber}, valid 84 days)`);
+    }
   }
 
   console.log('🎉 Enterprise Database Seeding completed successfully!');

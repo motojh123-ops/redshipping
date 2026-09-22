@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module';
+import { QueueModule } from './common/queue/queue.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 import { MastersModule } from './modules/masters/masters.module';
@@ -20,6 +21,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { MaritimeModule } from './maritime/maritime.module';
 import { DisbursementsModule } from './modules/disbursements/disbursements.module';
 import { CrmModule } from './modules/crm/crm.module';
+import { SystemModule } from './modules/system/system.module';
 
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -34,6 +36,7 @@ import { RolesGuard } from './common/guards/roles.guard';
       },
     ]),
     DatabaseModule,
+    QueueModule,
     AuthModule,
     HealthModule,
     MastersModule,
@@ -50,6 +53,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     MaritimeModule,
     DisbursementsModule,
     CrmModule,
+    SystemModule,
   ],
   providers: [
     {

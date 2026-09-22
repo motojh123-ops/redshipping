@@ -183,4 +183,8 @@ export class DispatchService {
     }
     return trip;
   }
+
+  clearTrips() {
+    this.trips = [];
+  }
 }
