@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   Receipt, DollarSign, Calendar, Building2, Hash,
   Download, Printer, Check, CreditCard, Percent,
@@ -16,46 +16,52 @@ import autoTable from 'jspdf-autotable';
 import { exportWorkbook } from '../../utils/excelExport';
 import { toast } from 'sonner';
 
-const DEMO_INVOICE = {
-  id: '1',
-  invoiceNumber: 'INV-2026-0234',
-  status: 'issued',
-  type: 'client_invoice',
-  client: { name: 'Al-Ahram Food Industries', nameAr: 'الأهرام للصناعات الغذائية', taxId: 'EG-TAX-28394721' },
-  shipment: { jobFileNumber: 'RED-2026-0001', blNumber: 'MSCU8912839' },
-  issuedAt: '2026-09-15',
-  dueDate: '2026-10-15',
-  currency: 'EGP',
-  vatRate: 14,
-  items: [
-    { id: '1', description: 'Ocean Freight — نولون بحري (2x 40HQ)', quantity: 2, unitPrice: 115200, total: 230400 },
-    { id: '2', description: 'THC Destination — مناولة ميناء الوصول', quantity: 2, unitPrice: 14880, total: 29760 },
-    { id: '3', description: 'Inland Haulage — نولون بري (الإسكندرية → 6 أكتوبر)', quantity: 2, unitPrice: 14000, total: 28000 },
-    { id: '4', description: 'Customs Clearance — أتعاب تخليص جمركي', quantity: 1, unitPrice: 4500, total: 4500 },
-    { id: '5', description: 'Insurance — تأمين بحري', quantity: 1, unitPrice: 16800, total: 16800 },
-  ],
-  companyInfo: {
-    name: 'ريد شيبينج للخدمات اللوجستية ش.م.م',
-    nameEn: 'RED SHIPPING International Logistics S.A.E',
-    taxId: 'EG-TAX-92748361',
-    address: '45 شارع النزهة، الإسكندرية، مصر',
-    phone: '+20 3 4815 9200',
-    email: 'invoicing@redshipping.com',
-  },
-  notes: 'الأسعار بالجنيه المصري — الضريبة المضافة 14% محسوبة على إجمالي الخدمات',
-};
-
 export const InvoiceDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: invoice, loading } = useApi<any>(`/invoices/${id}`);
 
-  const inv = invoice || DEMO_INVOICE;
+  if (loading) return <LoadingSpinner fullPage label="جاري تحميل الفاتورة من قاعدة البيانات..." />;
 
-  if (loading) return <LoadingSpinner fullPage label="جاري تحميل الفاتورة..." />;
+  if (!invoice) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
+        <Receipt className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">الفاتورة غير موجودة</h2>
+        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على الفاتورة المطلوبة في قاعدة البيانات الحالية.</p>
+        <Link to="/invoices" className="px-5 py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition">
+          العودة لقائمة الفواتير
+        </Link>
+      </div>
+    );
+  }
 
-  const subtotal = inv.items.reduce((sum: number, item: any) => sum + item.total, 0);
-  const vatAmount = Math.round(subtotal * (inv.vatRate / 100));
-  const grandTotal = subtotal + vatAmount;
+  const inv = {
+    ...invoice,
+    vatRate: invoice.vatRate ?? 14,
+    items: (invoice.items || []).map((item: any, i: number) => ({
+      id: item.id || String(i),
+      description: item.description,
+      quantity: Number(item.quantity || 1),
+      unitPrice: Number(item.unitPrice || 0),
+      total: Number(item.totalPrice ?? (Number(item.quantity || 1) * Number(item.unitPrice || 0))),
+    })),
+    client: invoice.client || { name: 'عميل غير محدد', nameAr: 'عميل غير محدد', taxId: '—' },
+    shipment: invoice.shipment || { jobFileNumber: '—', blNumber: '—' },
+    issuedAt: invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString('ar-EG') : '—',
+    dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('ar-EG') : '—',
+    companyInfo: {
+      name: 'بنا للخدمات اللوجستية ش.م.م',
+      nameEn: 'Banna Freight & Logistics Egypt S.A.E',
+      taxId: 'EG-TAX-92748361',
+      address: 'الإسكندرية، مصر',
+      phone: '+20 3 4815 9200',
+      email: 'invoicing@banna-logistics.com',
+    },
+  };
+
+  const subtotal = Number(invoice.subtotal ?? inv.items.reduce((sum: number, item: any) => sum + item.total, 0));
+  const vatAmount = Number(invoice.taxAmount ?? Math.round(subtotal * (inv.vatRate / 100)));
+  const grandTotal = Number(invoice.total ?? (subtotal + vatAmount));
 
   const handleDownloadPdf = () => {
     try {

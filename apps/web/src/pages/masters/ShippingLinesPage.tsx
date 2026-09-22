@@ -39,110 +39,6 @@ interface ShippingLine {
   employees: LineEmployee[];
 }
 
-const DEMO_LINES: ShippingLine[] = [
-  {
-    id: '1',
-    name: 'MSC Mediterranean Shipping Company',
-    nameAr: 'إم إس سي للملاحة البحرية',
-    code: 'MSC',
-    country: 'Switzerland',
-    contactEmail: 'egypt@msc.com',
-    website: 'https://www.msc.com',
-    phone: '+20 3 488 4000',
-    address: 'برج الشروق، شارع الشهداء، محطة الرمل، الإسكندرية',
-    isActive: true,
-    color: '#002B5C',
-    employees: [
-      { id: 'e1', name: 'كريم محمود المنشاوي', title: 'مدير المبيعات التجارية (Sales Manager)', department: 'sales', phone: '+20 100 871 2291', email: 'k.manshawy@msc.com', isPrimary: true },
-      { id: 'e2', name: 'أحمد جلال', title: 'مسؤول الحجوزات والعمليات (Booking & Ops)', department: 'operations', phone: '+20 122 341 9081', email: 'a.galal@msc.com' },
-      { id: 'e3', name: 'رانيا يسري', title: 'مسؤولة غرامات الحاويات (Demurrage Desk)', department: 'demurrage', phone: '+20 111 902 4432', email: 'r.yousry@msc.com' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Maersk Line Egypt',
-    nameAr: 'ميرسك مصر للملاحة',
-    code: 'MAERSK',
-    country: 'Denmark',
-    contactEmail: 'egypt.import@maersk.com',
-    website: 'https://www.maersk.com',
-    phone: '+20 2 2461 4000',
-    address: 'مبنى أركان، الشيخ زايد، الجيزة / فرع ميناء الإسكندرية',
-    isActive: true,
-    color: '#00243D',
-    employees: [
-      { id: 'e4', name: 'سامح نور الدين', title: 'مستشار حسابات الشركات الكبرى (Key Account Sales)', department: 'sales', phone: '+20 101 234 5678', email: 'sameh.nour@maersk.com', isPrimary: true },
-      { id: 'e5', name: 'مصطفى كمال', title: 'منسق حركة الحاويات والميناء (Container Ops)', department: 'operations', phone: '+20 106 998 1234', email: 'moustafa.kamal@maersk.com' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'COSCO Shipping Lines',
-    nameAr: 'كوسكو الصينية للملاحة',
-    code: 'COSCO',
-    country: 'China',
-    contactEmail: 'sales.eg@coscon.com',
-    website: 'https://lines.coscoshipping.com',
-    phone: '+20 3 487 9900',
-    address: 'شارع طلعت حرب، وسط البلد، الإسكندرية',
-    isActive: true,
-    color: '#006CB7',
-    employees: [
-      { id: 'e6', name: 'لي تشينغ (Leo Li)', title: 'المدير التجاري لإقليم مصر (Commercial Director)', department: 'sales', phone: '+20 120 776 5543', email: 'leo.li@cosco.com', isPrimary: true },
-      { id: 'e7', name: 'حسام البدري', title: 'مشرف بوالص الشحن (B/L Documentation Desk)', department: 'operations', phone: '+20 114 883 2190', email: 'hossam.badry@cosco.com' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Hapag-Lloyd Egypt',
-    nameAr: 'هاباج لويد الألمانية',
-    code: 'HLAG',
-    country: 'Germany',
-    contactEmail: 'alexandria@hlag.com',
-    website: 'https://www.hapag-lloyd.com',
-    phone: '+20 3 481 0500',
-    address: 'طريق الحرية، الإسكندرية',
-    isActive: true,
-    color: '#FF6B00',
-    employees: [
-      { id: 'e8', name: 'طارق الديب', title: 'مدير مبيعات خطوط الشرق الأوسط وأوروبا', department: 'sales', phone: '+20 109 432 1198', email: 'tarek.eldeeb@hlag.com', isPrimary: true },
-      { id: 'e9', name: 'نهى شكري', title: 'خدمة العملاء وأذون التسليم (Delivery Orders)', department: 'operations', phone: '+20 115 672 8831', email: 'noha.shoukry@hlag.com' },
-    ],
-  },
-  {
-    id: '5',
-    name: 'CMA CGM Egypt',
-    nameAr: 'سي إم إيه سي جي إم الفرنسية',
-    code: 'CMACGM',
-    country: 'France',
-    contactEmail: 'alex.genbox@cma-cgm.com',
-    website: 'https://www.cma-cgm.com',
-    phone: '+20 3 485 7000',
-    address: 'ميدان المنشية، مبنى الغرفة التجارية، الإسكندرية',
-    isActive: true,
-    color: '#002F6C',
-    employees: [
-      { id: 'e10', name: 'شريف فهمي', title: 'مدير تطوير أعمال الشحن البحري (Sales Rep)', department: 'sales', phone: '+20 100 554 9912', email: 's.fahmy@cma-cgm.com', isPrimary: true },
-    ],
-  },
-  {
-    id: '6',
-    name: 'ONE (Ocean Network Express)',
-    nameAr: 'أوشن نتورك إكسبريس (اليابان)',
-    code: 'ONE',
-    country: 'Japan',
-    contactEmail: 'eg.sales@one-line.com',
-    website: 'https://www.one-line.com',
-    phone: '+20 3 483 2200',
-    address: 'شارع فؤاد، الإسكندرية',
-    isActive: true,
-    color: '#F50057',
-    employees: [
-      { id: 'e11', name: 'ماجد عبد السلام', title: 'مسؤول المبيعات والحجوزات الفورية Spot Desk', department: 'sales', phone: '+20 128 334 1120', email: 'maged.salam@one-line.com', isPrimary: true },
-    ],
-  },
-];
-
 const DEPARTMENT_LABELS: Record<string, { label: string; color: string }> = {
   sales: { label: 'مبيعات (Sales)', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
   operations: { label: 'عمليات (Ops)', color: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
@@ -151,14 +47,14 @@ const DEPARTMENT_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export const ShippingLinesPage: React.FC = () => {
-  const [lines, setLines] = useState<ShippingLine[]>(DEMO_LINES);
+  const [lines, setLines] = useState<ShippingLine[]>([]);
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
   useEffect(() => {
     api.get('/masters/shipping-lines').then((res: any) => {
-      if (res && Array.isArray(res) && res.length > 0) {
+      if (res && Array.isArray(res)) {
         setLines(res.map((l: any) => ({ ...l, employees: l.employees || [], color: l.color || '#006CB7', isActive: l.isActive !== false })));
         setIsLiveConnected(true);
       }

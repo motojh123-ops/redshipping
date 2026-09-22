@@ -69,7 +69,7 @@ export const UserProfilePage: React.FC = () => {
   // Demo Activity Log
   const activities = [
     { id: '1', title: 'فتح ملف شحنة بحرية جديدة', meta: 'بوليصة رقم BL-2026-8921 • حاوية 40HC من نينغبو إلى الإسكندرية', time: 'منذ 25 دقيقة', icon: FileText, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' },
-    { id: '2', title: 'اعتماد عرض أسعار نولون بحري', meta: 'عرض رقم QT-2026-0891 • شركة الأهرام للصناعات الغذائية (4,850 USD)', time: 'منذ ساعتين', icon: Award, color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/40' },
+    { id: '2', title: 'اعتماد عرض أسعار نولون بحري', meta: 'عرض رقم QT-2026-0891 • شركة السويدي إليكتريك للتجارة والتوزيع (4,850 USD)', time: 'منذ ساعتين', icon: Award, color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/40' },
     { id: '3', title: 'تحديث بيانات شهادة الإفراج 46 الجمركية', meta: 'رقم ACID: 29481039 • تم إنهاء الكشف الظاهري وسداد الرسوم', time: 'منذ 4 ساعات', icon: Shield, color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40' },
     { id: '4', title: 'تسجيل الدخول للنظام من جهاز جديد', meta: 'Windows 11 • متصفح Google Chrome • IP: 156.204.18.91 (القاهرة)', time: 'أمس الساعة 09:15 ص', icon: Laptop, color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40' },
     { id: '5', title: 'إرسال أمر تحميل شاحنة برية (Trucking Order)', meta: 'سائق: محمد محمود البنا • رقم اللوحة: أ د ج 1829', time: 'أمس الساعة 03:40 م', icon: CheckCircle2, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' },

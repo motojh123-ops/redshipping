@@ -1,5 +1,16 @@
 import { api } from './api';
 
+/** Official Nafeza ACID inquiry page (free manual verification service) */
+export const NAFEZA_VALIDATE_URL = 'https://www.nafeza.gov.eg/ar/aci/validate';
+
+/**
+ * Deep link to the official Nafeza ACI validate page.
+ * Nafeza is a manual inquiry form (no query params), so the ACID is passed
+ * via clipboard so staff can simply paste it into the official form.
+ */
+export const buildNafezaValidateUrl = (acidNumber?: string | null): string =>
+  NAFEZA_VALIDATE_URL;
+
 export interface CustomsDossierRecord {
   id: string;
   acidNumber: string;

@@ -62,7 +62,7 @@ const SAMPLE_DOCS = [
       containerNumber: 'MSCU9021847',
       sealNumber: 'EGY-88910',
       shipper: 'Ningbo Suntech Solar Technology Co., Ltd.',
-      consignee: 'شركة الأهرام للهندسة والمقاولات والتوريدات',
+      consignee: 'شركة السويدي للكابلات والأنظمة الهندسية',
       pol: 'Ningbo Port (CNNGB) - China',
       pod: 'Alexandria Port (EGALY) - Egypt',
       vesselVoyage: 'MSC TINA / 2603W',

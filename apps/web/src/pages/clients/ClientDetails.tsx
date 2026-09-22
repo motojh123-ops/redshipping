@@ -13,79 +13,27 @@ import { Modal } from '../../components/ui/Modal';
 import { useApi } from '../../hooks/useApi';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 
-// Rich Demo Client
-const DEMO_CLIENT = {
-  id: '1',
-  name: 'Al-Ahram Food Industries',
-  nameAr: 'الأهرام للصناعات الغذائية ش.م.م',
-  type: 'manufacturer',
-  clientCategory: 'actual', // 'actual' or 'lead'
-  status: 'active',
-  salesPerson: 'عمر السيد',
-  taxCardNumber: 'EG-TAX-28394721',
-  commercialRegister: 'CR-2021-8372',
-  email: 'procurement@alahram-foods.com',
-  phone: '+20 2 3456 7890',
-  address: 'المنطقة الصناعية، مدينة 6 أكتوبر، القطعة 44',
-  city: 'القاهرة والجيزة',
-  country: 'مصر',
-  website: 'www.alahram-foods.com',
-  creditLimit: 500000,
-  currency: 'EGP',
-  paymentTerms: 'Net 30',
-  createdAt: '2024-03-15',
-  totalShipments: 23,
-  totalRevenue: 1245000,
-  activeQuotations: 3,
-  contacts: [
-    { id: 'c1', name: 'أحمد محمد الشريف', title: 'مدير المشتريات واللوجستيات', phone: '+20 100 123 4567', email: 'ahmed@alahram-foods.com', isDecisionMaker: true, isPrimary: true },
-    { id: 'c2', name: 'سارة حسين', title: 'مسؤولة الشحن والمتابعة', phone: '+20 111 234 5678', email: 'sara@alahram-foods.com', isDecisionMaker: false, isPrimary: false },
-    { id: 'c3', name: 'محمود فتحي', title: 'المدير المالي التنفيذي', phone: '+20 122 345 6789', email: 'mahmoud@alahram-foods.com', isDecisionMaker: true, isPrimary: false },
-  ],
-  calls: [
-    { id: 'cl1', date: '2026-09-17 11:30', contact: 'أحمد محمد الشريف', duration: '14 دقيقة', user: 'عمر السيد', summary: 'مكالمة تفاوض حول تخفيض نولون 5 حاويات من شنغهاي للإسكندرية، تم الاتفاق على إرسال عرض معدل خلال ساعتين.' },
-    { id: 'cl2', date: '2026-09-10 14:00', contact: 'سارة حسين', duration: '6 دقائق', user: 'عمر السيد', summary: 'تأكيد وصول مستندات الشحنة الأصلية وفحص نموذج 46 الجمركي.' },
-    { id: 'cl3', date: '2026-08-28 10:15', contact: 'أحمد محمد الشريف', duration: '20 دقيقة', user: 'عمر السيد', summary: 'استطلاع احتياجات الربع الأخير Q4 ومراجعة خطوط الإنتاج الجديدة.' },
-  ],
-  meetings: [
-    { id: 'm1', date: '2026-09-14', location: 'مقر مصنع الأهرام بـ 6 أكتوبر', attendees: 'أحمد الشريف + محمود فتحي', user: 'عمر السيد', notes: 'زيارة ميدانية للمصنع والاطلاع على وتيرة الشحن الأسبوعي. العميل يطلب فتح تسهيل ائتماني Net 45 بدلاً من Net 30 في حال تجاوز الحجم 10 حاويات شهرياً.' },
-    { id: 'm2', date: '2026-07-20', location: 'مقر بنا للخدمات اللوجستية', attendees: 'أحمد الشريف', user: 'عمر السيد + سامي كمال', notes: 'جلسة عمل تمهيدية لتوقيع عقد خدمات الشحن والتخليص الجمركي السنوي.' },
-  ],
-  reminders: [
-    { id: 'r1', dueDate: '2026-09-20', title: 'متابعة موافقة مجلس الإدارة على عرض أسعار Q4', priority: 'high', completed: false, assignedTo: 'عمر السيد' },
-    { id: 'r2', dueDate: '2026-09-25', title: 'تجديد شهادة السجل التجاري قبل نهاية الشهر', priority: 'medium', completed: false, assignedTo: 'سارة حسين' },
-    { id: 'r3', dueDate: '2026-09-15', title: 'إرسال كشف حساب مديونية شهر أغسطس', priority: 'low', completed: true, assignedTo: 'المحاسبة' },
-  ],
-  offers: [
-    { id: 'q1', quoteNumber: 'QT-2026-0891', date: '2026-09-16', origin: 'شنغهاي — CNSHA', destination: 'الإسكندرية — EGALY', service: 'بحري FCL 40HC', totalAmount: 4850, currency: 'USD', status: 'sent', validUntil: '2026-09-30' },
-    { id: 'q2', quoteNumber: 'QT-2026-0820', date: '2026-09-02', origin: 'جبل علي — AEJEA', destination: 'السخنة — EGSOK', service: 'بحري FCL 20ft', totalAmount: 2200, currency: 'USD', status: 'accepted', validUntil: '2026-09-15' },
-    { id: 'q3', quoteNumber: 'QT-2026-0740', date: '2026-08-11', origin: 'هامبورغ — DEHAM', destination: 'دمياط — EGDAM', service: 'بحري LCL', totalAmount: 1650, currency: 'EUR', status: 'expired', validUntil: '2026-08-25' },
-  ],
-  attachments: [
-    { id: 'at1', name: 'البطاقة الضريبية المميكنة.pdf', type: 'tax_card', expiresAt: '2027-06-30', size: '2.4 MB' },
-    { id: 'at2', name: 'مستخرج حديث للسجل التجاري.pdf', type: 'commercial_register', expiresAt: '2026-10-15', size: '1.8 MB' },
-    { id: 'at3', name: 'رخصة الاستيراد وبطاقة المتعاملين الجمركيين.pdf', type: 'customs_card', expiresAt: '2026-11-01', size: '3.1 MB' },
-    { id: 'at4', name: 'عقد اتفاقية مستوى الخدمة SLA 2026.pdf', type: 'contract', expiresAt: '2026-12-31', size: '4.5 MB' },
-  ],
-  usedCredit: 280000,
-  outstandingBalance: 165000,
-  shipments: [
-    { id: 'shp-1', jobNo: 'JOB-2026-003', blNumber: 'MSCU1948201', pol: 'نينغبو (Ningbo)', pod: 'الإسكندرية (Alexandria)', type: 'بحري FCL 40HC', containerNo: 'MSCU-9021841', status: 'in_transit', eta: '2026-09-24', line: 'MSC Mediterranean' },
-    { id: 'shp-2', jobNo: 'JOB-2026-007', blNumber: 'COSU8920194', pol: 'شنغهاي (Shanghai)', pod: 'الدخيلة (El-Dekheila)', type: 'بحري FCL 20ft', containerNo: 'COSU-3829104', status: 'customs_clearance', eta: '2026-09-18', line: 'COSCO Shipping' },
-    { id: 'shp-3', jobNo: 'JOB-2026-012', blNumber: 'HLCU3920182', pol: 'هامبورغ (Hamburg)', pod: 'دمياط (Damietta)', type: 'بحري LCL', containerNo: 'HLCU-1829031', status: 'delivered', eta: '2026-08-30', line: 'Hapag-Lloyd' },
-  ],
-  invoices: [
-    { id: 'inv-1', invoiceNumber: 'INV-2026-042', date: '2026-09-10', amount: 185000, paid: 100000, remaining: 85000, status: 'partially_paid', dueDate: '2026-10-10' },
-    { id: 'inv-2', invoiceNumber: 'INV-2026-039', date: '2026-08-25', amount: 80000, paid: 0, remaining: 80000, status: 'unpaid', dueDate: '2026-09-25' },
-    { id: 'inv-3', invoiceNumber: 'INV-2026-018', date: '2026-08-01', amount: 240000, paid: 240000, remaining: 0, status: 'paid', dueDate: '2026-08-31' },
-  ],
-};
-
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: client, loading } = useApi<any>(`/clients/${id}`);
-  const [c, setC] = useState<any>(DEMO_CLIENT);
+  const [c, setC] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
+
+  React.useEffect(() => {
+    if (client) {
+      setC({
+        ...client,
+        contacts: client.contacts || [],
+        shipments: client.shipments || [],
+        invoices: client.invoices || [],
+        offers: client.quotations || client.offers || [],
+        calls: client.calls || [],
+        meetings: client.meetings || [],
+        reminders: client.reminders || [],
+        attachments: client.attachments || [],
+      });
+    }
+  }, [client]);
 
   // Modal states
   const [showLogModal, setShowLogModal] = useState(false);
@@ -93,7 +41,20 @@ export const ClientDetails: React.FC = () => {
   const [logForm, setLogForm] = useState({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
   const [convertedToast, setConvertedToast] = useState(false);
 
-  if (loading) return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل..." />;
+  if (loading) return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل من قاعدة البيانات..." />;
+
+  if (!c) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
+        <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">العميل غير موجود</h2>
+        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على سجل العميل في قاعدة البيانات الحالية.</p>
+        <Link to="/clients" className="px-5 py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition">
+          العودة لقائمة العملاء
+        </Link>
+      </div>
+    );
+  }
 
   const tabs = [
     { key: 'shipments', label: `الشحنات (${c.shipments?.length || 0})`, icon: Ship },

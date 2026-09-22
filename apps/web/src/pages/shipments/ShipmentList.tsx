@@ -224,7 +224,7 @@ export const ShipmentList: React.FC = () => {
                         )}
                       </td>
                       <td className="py-4 px-4 font-medium text-slate-900 dark:text-white">
-                        {s.client?.name || 'Al-Ahram Food Industries'}
+                        {s.client?.name || 'عميل غير محدد'}
                       </td>
                       <td className="py-4 px-4 text-slate-600 dark:text-slate-300">
                         <div className="flex items-center gap-1.5 text-xs">
@@ -238,7 +238,7 @@ export const ShipmentList: React.FC = () => {
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
                           <Container className="w-4 h-4 text-[#FF5E1E]" />
-                          <span>{s.containers?.length ? `${s.containers.length}x الحاويات` : '2x 40HQ'}</span>
+                          <span>{s.containers?.length ? `${s.containers.length}x الحاويات` : '—'}</span>
                         </div>
                       </td>
                       <td className="py-4 px-4">
@@ -268,52 +268,11 @@ export const ShipmentList: React.FC = () => {
                   );
                 })
               ) : (
-                <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="py-4 px-4 font-bold text-brand-600">
-                    <div>RED-2026-0001</div>
-                    <div className="text-[11px] font-normal text-slate-400">B/L: MSCU8912839</div>
-                    <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
-                      <FileBadge className="w-3 h-3" />
-                      <span>D/O: DO-MAE-2026-0891</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 font-medium text-slate-900 dark:text-white">
-                    Al-Ahram Food Industries
-                  </td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Shanghai (CNSHA)</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 ps-5">
-                      إلى: Alexandria Port (EGALY)
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                      <Container className="w-4 h-4 text-brand-500" />
-                      <span>2x 40HQ Reefer</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
-                      in_transit
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="space-y-0.5">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
-                        🟢 متبقي 10 أيام سماح
-                      </span>
-                      <span className="block text-[10px] text-slate-400">
-                        فترة سماح سارية وآمنة
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 text-end">
-                    <button className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                      <ChevronRight className="w-5 h-5 rtl:rotate-180" />
-                    </button>
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <Ship className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">لا توجد شحنات مسجلة</p>
+                    <p className="text-xs text-slate-400 mt-1">لم يتم العثور على أي شحنات مطابقة في قاعدة البيانات.</p>
                   </td>
                 </tr>
               )}

@@ -161,61 +161,17 @@ export const ShipmentDetails: React.FC = () => {
     toast.success('تم اعتماد وتوثيق توقيع إذن التسليم (POD) بنجاح');
   };
 
-const DEMO_SHIPMENT = {
-  id: '1',
-  jobFileNumber: 'RED-2026-0001',
-  blNumber: 'MSCU8812903',
-  currentStage: 'in_transit',
-  shipmentType: 'fcl',
-  incoterm: 'CIF',
-  commodityDescription: 'مواد غذائية معلبة (Canned Tuna & Tomato Paste)',
-  etd: '2026-09-02',
-  eta: '2026-09-22',
-  vesselName: 'MSC LORETTO',
-  voyageNumber: '2408W',
-  client: { id: '1', name: 'Al-Ahram Food Industries', nameAr: 'الأهرام للصناعات الغذائية', taxNumber: 'EG-TAX-28394721' },
-  shippingLine: { id: '1', name: 'MSC (Mediterranean Shipping Company)', scac: 'MSCU' },
-  polPort: { nameEn: 'Shanghai Port', nameAr: 'ميناء شنغهاي', code: 'CNSHA' },
-  podPort: { nameEn: 'Alexandria Port', nameAr: 'ميناء الإسكندرية', code: 'EGALY' },
-  containers: [
-    { id: 'c1', containerNumber: 'MSCU7821902', containerType: '40HQ', sealNumber: 'EG-44012', status: 'on_vessel', tareWeight: 3820, maxPayload: 26400, freeDays: 14 },
-    { id: 'c2', containerNumber: 'MSCU8902144', containerType: '40HQ', sealNumber: 'EG-44013', status: 'on_vessel', tareWeight: 3840, maxPayload: 25900, freeDays: 14 },
-  ],
-  costs: [
-    { id: 'cs1', description: 'نولون بحري دولي (Ocean Freight MSC)', estimatedCost: 4400, actualCost: 4400, currency: 'USD', isReconciled: true, vendor: { name: 'MSC Mediterranean' } },
-    { id: 'cs2', description: 'مصاريف تفريغ ميناء الإسكندرية (THC Dest)', estimatedCost: 560, actualCost: 560, currency: 'USD', isReconciled: true, vendor: { name: 'محطة الدخيلة' } },
-    { id: 'cs3', description: 'نولون نقل بري شاحنتين إلى 6 أكتوبر', estimatedCost: 28000, actualCost: 28000, currency: 'EGP', isReconciled: true, vendor: { name: 'شركة النيل للنقل' } },
-    { id: 'cs4', description: 'أتعاب تخليص جمركي ومصروفات كشف', estimatedCost: 9000, actualCost: 9000, currency: 'EGP', isReconciled: true, vendor: { name: 'الفرسان للتخليص' } },
-  ],
-  customsDossier: {
-    id: 'cd1',
-    acidNumber: '2026-9281-0049-881',
-    acidIssueDate: '2026-08-15',
-    acidExpiryDate: '2026-11-13',
-    customsCertificateNumber: '46/2026/8912',
-    dutiesPaid: 145200,
-    vatPaid: 82400,
-    status: 'inspected',
-    daysLeft: 42,
-  },
-  events: [
-    { id: 'e1', fromStage: null, toStage: 'booking_confirmed', changedBy: { name: 'Ahmed Mostafa' }, notes: 'تم تأكيد الحجز مع خط MSC', location: 'Shanghai', eventAt: '2026-08-20T10:00:00Z' },
-    { id: 'e2', fromStage: 'booking_confirmed', toStage: 'cargo_received', changedBy: { name: 'Wang Lei' }, notes: 'استلام الحاويات في ساحة ميناء شنغهاي', location: 'Shanghai Terminal', eventAt: '2026-08-25T14:30:00Z' },
-    { id: 'e3', fromStage: 'cargo_received', toStage: 'acid_issued', changedBy: { name: 'Sara Hussein' }, notes: 'تم استخراج رقم القيد الجمركي المسبق ACID بنجاح', location: 'Alexandria', eventAt: '2026-08-28T09:15:00Z' },
-    { id: 'e4', fromStage: 'acid_issued', toStage: 'in_transit', changedBy: { name: 'Operations Team' }, notes: 'شحن الحاويات على متن السفينة MSC LORETTO والإبحار', location: 'East China Sea', eventAt: '2026-09-02T18:00:00Z' },
-  ],
-};
-
   const fetchShipment = async () => {
     try {
+      setLoading(true);
       const data: any = await api.get(`/shipments/${id}`);
-      setShipment(data || DEMO_SHIPMENT);
+      setShipment(data || null);
       if (data?.currentStage) {
         setNextStage(getNextStageDefault(data.currentStage));
       }
     } catch (err) {
-      console.error('Failed to load shipment details, using demo data', err);
-      setShipment(DEMO_SHIPMENT);
+      console.error('Failed to load shipment details from database', err);
+      setShipment(null);
     } finally {
       setLoading(false);
     }

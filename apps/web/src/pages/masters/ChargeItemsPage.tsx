@@ -39,137 +39,6 @@ export interface ChargeItemRecord {
   isActive: boolean;
 }
 
-const INITIAL_CHARGE_ITEMS: ChargeItemRecord[] = [
-  {
-    id: 'ci-1',
-    code: 'OFR-FCL',
-    nameAr: 'نولون شحن بحري حاويات (FCL)',
-    nameEn: 'Ocean Freight (FCL Container)',
-    category: 'freight',
-    defaultCurrency: 'USD',
-    defaultPrice: 2200,
-    unit: 'container',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: true,
-    isActive: true,
-  },
-  {
-    id: 'ci-2',
-    code: 'THC-DEST',
-    nameAr: 'مصاريف تفريغ ومناولة الميناء (THC الوصول)',
-    nameEn: 'Destination Terminal Handling Charges (THC)',
-    category: 'terminal_thc',
-    defaultCurrency: 'USD',
-    defaultPrice: 280,
-    unit: 'container',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: false,
-    isActive: true,
-  },
-  {
-    id: 'ci-3',
-    code: 'THC-ORIG',
-    nameAr: 'مصاريف تحميل ومناولة ميناء الشحن (THC المنشأ)',
-    nameEn: 'Origin Terminal Handling Charges (THC)',
-    category: 'terminal_thc',
-    defaultCurrency: 'USD',
-    defaultPrice: 180,
-    unit: 'container',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: false,
-    isActive: true,
-  },
-  {
-    id: 'ci-4',
-    code: 'INL-TRK',
-    nameAr: 'نولون نقل بري (الميناء إلى المصنع / المخزن)',
-    nameEn: 'Inland Haulage & Container Trucking',
-    category: 'inland_trucking',
-    defaultCurrency: 'EGP',
-    defaultPrice: 14000,
-    unit: 'container',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: true,
-    isActive: true,
-  },
-  {
-    id: 'ci-5',
-    code: 'CUS-CLR',
-    nameAr: 'أتعاب التخليص الجمركي وإصدار نموذج 46',
-    nameEn: 'Customs Clearance Brokerage Fee',
-    category: 'customs_clearance',
-    defaultCurrency: 'EGP',
-    defaultPrice: 4500,
-    unit: 'shipment',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: true,
-    isActive: true,
-  },
-  {
-    id: 'ci-6',
-    code: 'ACID-REG',
-    nameAr: 'رسوم تسجيل شحنة القيد المسبق نافذة (ACID)',
-    nameEn: 'NAFEZA ACID Filing & Verification Fee',
-    category: 'customs_clearance',
-    defaultCurrency: 'EGP',
-    defaultPrice: 1500,
-    unit: 'shipment',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: false,
-    isActive: true,
-  },
-  {
-    id: 'ci-7',
-    code: 'BL-ISS',
-    nameAr: 'مصاريف إصدار وإذن تسليم البوليصة (B/L Fee)',
-    nameEn: 'Bill of Lading & Delivery Order Fee',
-    category: 'port_dues',
-    defaultCurrency: 'USD',
-    defaultPrice: 85,
-    unit: 'shipment',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: false,
-    isActive: true,
-  },
-  {
-    id: 'ci-8',
-    code: 'CARGO-INS',
-    nameAr: 'تأمين بحري ضد مخاطر النقل (Marine Insurance)',
-    nameEn: 'Marine Cargo Transit Insurance',
-    category: 'insurance',
-    defaultCurrency: 'USD',
-    defaultPrice: 350,
-    unit: 'shipment',
-    showInPricing: true,
-    showInQuotation: true,
-    showInInvoice: true,
-    showInDisbursement: true,
-    showInCommission: true,
-    isActive: true,
-  },
-];
-
 const CATEGORY_LABELS: Record<string, string> = {
   freight: 'نولون شحن',
   terminal_thc: 'مناولة موانئ (THC)',
@@ -187,7 +56,7 @@ const UNIT_LABELS: Record<string, string> = {
 };
 
 export const ChargeItemsPage: React.FC = () => {
-  const [items, setItems] = useState<ChargeItemRecord[]>(INITIAL_CHARGE_ITEMS);
+  const [items, setItems] = useState<ChargeItemRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -209,10 +78,9 @@ export const ChargeItemsPage: React.FC = () => {
   const fetchItems = async () => {
     try {
       const data: any = await api.get('/masters/charge-items');
-      if (Array.isArray(data) && data.length > 0) {
-        const existingCodes = new Set(data.map((d: any) => d.code));
-        const merged = [
-          ...data.map((d: any) => ({
+      if (Array.isArray(data)) {
+        setItems(
+          data.map((d: any) => ({
             id: d.id,
             code: d.code,
             nameAr: d.nameAr,
@@ -227,10 +95,8 @@ export const ChargeItemsPage: React.FC = () => {
             showInDisbursement: d.showInDisbursement ?? true,
             showInCommission: d.showInCommission ?? false,
             isActive: d.isActive ?? true,
-          })),
-          ...INITIAL_CHARGE_ITEMS.filter((i) => !existingCodes.has(i.code)),
-        ];
-        setItems(merged);
+          }))
+        );
       }
     } catch {
       // Fallback state

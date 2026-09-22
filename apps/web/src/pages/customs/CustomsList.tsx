@@ -23,7 +23,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportUtils';
-import { customsService, CustomsDossierRecord } from '../../services/customsService';
+import { customsService, buildNafezaValidateUrl, CustomsDossierRecord } from '../../services/customsService';
 
 export interface CustomsDossierItem {
   id: string;
@@ -40,71 +40,12 @@ export interface CustomsDossierItem {
   port: string;
 }
 
-const SAMPLE_DOSSIERS: CustomsDossierItem[] = [
-  {
-    id: '1',
-    acidNumber: '2026-9281-0049-881',
-    daysLeft: 42,
-    certNumber: '46/2026/8912',
-    shipmentFile: 'RED-2026-0001',
-    blNumber: 'MSCU8912839',
-    client: 'شركة الأهرام للصناعات الغذائية',
-    status: 'inspected',
-    duties: '145,200 ج.م',
-    vat: '82,400 ج.م',
-    inspectionDate: '2026-09-22',
-    port: 'ميناء الإسكندرية (EGALY)',
-  },
-  {
-    id: '2',
-    acidNumber: '2026-8812-4401-209',
-    daysLeft: 14,
-    certNumber: 'قيد الإصدار',
-    shipmentFile: 'RED-2026-0002',
-    blNumber: 'MAEU9041280',
-    client: 'مجموعة القاهرة للكيماويات والبوليمر',
-    status: 'acid_issued',
-    duties: 'قيد التقدير',
-    vat: 'قيد التقدير',
-    inspectionDate: '—',
-    port: 'ميناء الدخيلة (EGDXH)',
-  },
-  {
-    id: '3',
-    acidNumber: '2026-7734-1102-554',
-    daysLeft: 71,
-    certNumber: '46/2026/9021',
-    shipmentFile: 'RED-2026-0003',
-    blNumber: 'CMDU5581920',
-    client: 'العالمية للاستيراد والتصدير',
-    status: 'release_issued',
-    duties: '92,000 ج.م',
-    vat: '51,500 ج.م',
-    inspectionDate: '2026-09-14',
-    port: 'ميناء السخنة (EGSOK)',
-  },
-  {
-    id: '4',
-    acidNumber: '2026-4401-9921-105',
-    daysLeft: 8,
-    certNumber: 'قيد المراجعة',
-    shipmentFile: 'RED-2026-0004',
-    blNumber: 'ONEY3382910',
-    client: 'النيل للأجهزة المنزلية والكهربائية',
-    status: 'acid_issued',
-    duties: '210,000 ج.م',
-    vat: '115,000 ج.م',
-    inspectionDate: '2026-09-21',
-    port: 'ميناء دمياط (EGDAM)',
-  },
-];
-
 export const CustomsList: React.FC = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const isRTL = i18n.dir() === 'rtl';
 
-  const [dossiers, setDossiers] = useState<CustomsDossierItem[]>(SAMPLE_DOSSIERS);
+  const [dossiers, setDossiers] = useState<CustomsDossierItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,7 +56,7 @@ export const CustomsList: React.FC = () => {
     setLoading(true);
     try {
       const data = await customsService.fetchCustoms();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setDossiers(data as any);
         setIsLiveConnected(true);
       }
@@ -337,7 +278,7 @@ export const CustomsList: React.FC = () => {
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            جميع الملفات ({SAMPLE_DOSSIERS.length})
+            جميع الملفات ({dossiers.length})
           </button>
           <button
             onClick={() => setStatusFilter('acid_issued')}
@@ -414,7 +355,14 @@ export const CustomsList: React.FC = () => {
       {/* ── 4. Content Area: Grid View or Table View ── */}
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-7">
-          {filteredDossiers.map((d) => {
+          {filteredDossiers.length === 0 ? (
+            <div className="col-span-full py-16 text-center text-slate-400 bg-white dark:bg-[#121620] rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-8">
+              <FileCheck2 className="w-12 h-12 mx-auto mb-3 opacity-40 text-emerald-500" />
+              <p className="font-bold text-slate-800 dark:text-slate-200 text-base">لا توجد ملفات تخليص جمركي مسجلة</p>
+              <p className="text-xs text-slate-400 mt-1">يتم ربط ملفات التخليص الجمركي تلقائياً بالشحنات المسجلة وأرقام القيد المسبق ACID</p>
+            </div>
+          ) : (
+            filteredDossiers.map((d) => {
             const isCertNumeric = d.certNumber.includes('/') || !isNaN(Number(d.certNumber));
             const isCritical = d.daysLeft <= 20;
 
@@ -465,8 +413,26 @@ export const CustomsList: React.FC = () => {
                       <span className="font-mono text-slate-500 dark:text-slate-400">NAFEZA</span>
                     </div>
 
-                    <div className="text-lg sm:text-xl font-black font-mono tracking-tight text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                      {d.acidNumber}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg sm:text-xl font-black font-mono tracking-tight text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                        {d.acidNumber}
+                      </span>
+                      {d.acidNumber && (
+                        <a
+                          href={buildNafezaValidateUrl(d.acidNumber)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard?.writeText(d.acidNumber).catch(() => {});
+                          }}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold transition"
+                          title={`الاستعلام والتحقق من صلاحية رقم ACID على منصة نافذة الرسمية (تم نسخ الرقم للحفظ)`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>تحقق على نافذة</span>
+                        </a>
+                      )}
                     </div>
 
                     {/* 90-Day Validity Countdown Bar */}
@@ -628,7 +594,8 @@ export const CustomsList: React.FC = () => {
                 </div>
               </div>
             );
-          })}
+          })
+          )}
         </div>
       ) : (
         /* Table View */
@@ -649,14 +616,39 @@ export const CustomsList: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {filteredDossiers.map((d) => (
+                {filteredDossiers.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                      <FileCheck2 className="w-8 h-8 mx-auto mb-2 opacity-40 text-emerald-500" />
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد ملفات جمركية مطابقة</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDossiers.map((d) => (
                   <tr
                     key={d.id}
                     onClick={() => navigate(`/customs/${d.id}`)}
                     className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer"
                   >
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
-                      {d.acidNumber}
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">{d.acidNumber}</span>
+                        {d.acidNumber && (
+                          <a
+                            href={buildNafezaValidateUrl(d.acidNumber)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard?.writeText(d.acidNumber).catch(() => {});
+                            }}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
+                            title={`الاستعلام والتحقق من صلاحية رقم ACID على منصة نافذة الرسمية (تم نسخ الرقم للحفظ)`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4">
                       <span
@@ -695,7 +687,8 @@ export const CustomsList: React.FC = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
               </tbody>
             </table>
           </div>

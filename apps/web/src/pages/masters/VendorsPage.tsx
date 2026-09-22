@@ -35,94 +35,8 @@ interface Vendor {
   contacts: VendorContact[];
 }
 
-const DEMO_VENDORS: Vendor[] = [
-  {
-    id: '1',
-    name: 'شركة النيل للنقل الثقيل واللوجستيات',
-    isTrucking: true,
-    isClearance: false,
-    phone: '+20 100 234 5678',
-    email: 'ops@nile-haulage.com',
-    city: 'العاشر من رمضان',
-    address: 'المنطقة الصناعية B3، طريق الإسماعيلية',
-    taxId: 'EG-TAX-234-567',
-    commercialRegister: 'CR-10492',
-    isActive: true,
-    contacts: [
-      { id: 'c1', name: 'محمد سعيد البنا', title: 'مدير حركة الأسطول والنقل', phone: '+20 100 234 5678', email: 'm.saeed@nile-haulage.com' },
-      { id: 'c2', name: 'عبد الرحمن فارس', title: 'مشرف تشغيل السائقين والتريلات', phone: '+20 114 990 1234', email: 'a.fares@nile-haulage.com' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'مكتب الرضوان للتخليص والخدمات الجمركية',
-    isTrucking: false,
-    isClearance: true,
-    phone: '+20 3 481 9920',
-    email: 'info@elradwan-customs.com',
-    city: 'الإسكندرية',
-    address: 'شارع النصر، أمام باب 10 ميناء الإسكندرية',
-    taxId: 'EG-TAX-345-678',
-    commercialRegister: 'CR-29401',
-    isActive: true,
-    contacts: [
-      { id: 'c3', name: 'الحاج رضوان الشرقاوي', title: 'مستخلص جمركي معتمد فئة أ', phone: '+20 122 345 6789', email: 'radwan@elradwan.com' },
-      { id: 'c4', name: 'طارق رضوان', title: 'مسؤول متابعة شهادات 46 ونافذة', phone: '+20 106 882 1190', email: 'tarek@elradwan.com' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'المتحدة للخدمات اللوجستية المتكاملة (Red Fox Logistics)',
-    isTrucking: true,
-    isClearance: true, // BOTH TRUCKING & CLEARANCE (Voice note scenario!)
-    phone: '+20 2 3833 4400',
-    email: 'support@redfox-logistics.eg',
-    city: '6 أكتوبر والجيزة',
-    address: 'المنطقة الصناعية الثانية، 6 أكتوبر',
-    taxId: 'EG-TAX-902-114',
-    commercialRegister: 'CR-88219',
-    isActive: true,
-    contacts: [
-      { id: 'c5', name: 'عمرو عبد الرحمن', title: 'مدير عمليات النقل البري والتخليص المشترك', phone: '+20 101 445 6789', email: 'amr@redfox.eg' },
-      { id: 'c6', name: 'فارس عبد الله', title: 'منسق ساحات الكشف وتعتيق الحاويات', phone: '+20 112 554 9912', email: 'fares@redfox.eg' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'الأهرام للمقاولات والنقل والتفريغ',
-    isTrucking: true,
-    isClearance: false,
-    phone: '+20 115 567 8901',
-    email: 'operations@ahram-transport.com',
-    city: 'السخنة والسويس',
-    address: 'المنطقة اللوجستية لميناء السخنة',
-    taxId: 'EG-TAX-567-890',
-    commercialRegister: 'CR-44120',
-    isActive: true,
-    contacts: [
-      { id: 'c7', name: 'كريم عبد الله', title: 'مسؤول سيارات النقل والتريلات الثقيلة', phone: '+20 115 567 8901', email: 'karim@ahram-transport.com' },
-    ],
-  },
-  {
-    id: '5',
-    name: 'شركة الصفا للتخليص والنقل المبرد',
-    isTrucking: true,
-    isClearance: true, // BOTH TRUCKING & CLEARANCE
-    phone: '+20 57 234 8810',
-    email: 'info@alsafa-reefer.com',
-    city: 'دمياط',
-    address: 'مجمع التخليص الجمركي، ميناء دمياط',
-    taxId: 'EG-TAX-678-901',
-    commercialRegister: 'CR-33918',
-    isActive: true,
-    contacts: [
-      { id: 'c8', name: 'محمود الصفا', title: 'مدير فرع دمياط للشحن المبرد', phone: '+20 109 881 2234', email: 'm.safa@alsafa.com' },
-    ],
-  },
-];
-
 export const VendorsPage: React.FC = () => {
-  const [vendors, setVendors] = useState<Vendor[]>(DEMO_VENDORS);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'trucking' | 'clearance' | 'both'>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -133,7 +47,7 @@ export const VendorsPage: React.FC = () => {
 
   useEffect(() => {
     api.get('/masters/vendors').then((res: any) => {
-      if (res && Array.isArray(res) && res.length > 0) {
+      if (res && Array.isArray(res)) {
         setVendors(res.map((v: any) => ({ ...v, contacts: v.contacts || [], isActive: v.isActive !== false })));
         setIsLiveConnected(true);
       }

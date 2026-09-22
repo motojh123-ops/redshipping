@@ -4,7 +4,7 @@ import {
   Building2, Users, Globe, Shield, Bell, Palette, Save,
   Moon, Sun, Plus, Edit3, Trash2, Key, Mail, Zap, CheckCircle2,
   RefreshCw, Smartphone, ShieldCheck, ExternalLink, Cpu, Database,
-  Lock, Check, X, Eye, EyeOff, CreditCard
+  Lock, Check, X, Eye, EyeOff, CreditCard, AlertTriangle
 } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Modal } from '../../components/ui/Modal';
@@ -30,22 +30,17 @@ const DEFAULT_PERMISSIONS = {
   masters: { view: true, create: false, edit: false, delete: false, scope: 'all' as const },
 };
 
-const DEMO_USERS: UserItem[] = [
-  { id: '1', name: 'عمر السيد', email: 'omar@redshipping.com', role: 'super_admin', isActive: true, department: 'الإدارة العليا' },
-  { id: '2', name: 'سامي كمال', email: 'sami@redshipping.com', role: 'admin', isActive: true, department: 'الإدارة المالية' },
-  { id: '3', name: 'أحمد الأمين', email: 'ahmed@redshipping.com', role: 'operations', isActive: true, department: 'العمليات والتشغيل' },
-  { id: '4', name: 'محمد فتحي', email: 'mfathy@redshipping.com', role: 'sales', isActive: true, department: 'المبيعات وتطوير الأعمال' },
-  { id: '5', name: 'نورا حسن', email: 'noura@redshipping.com', role: 'accountant', isActive: true, department: 'الحسابات والضرائب' },
-  { id: '6', name: 'محمود طارق', email: 'mtarek@redshipping.com', role: 'customs', isActive: true, department: 'التخليص الجمركي' },
-];
-
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   super_admin: { label: 'مدير النظام (Super Admin)', color: 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300' },
+  company_admin: { label: 'مدير الشركة (Company Admin)', color: 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300' },
   admin: { label: 'مدير تنفيذي (Admin)', color: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300' },
   operations: { label: 'مسؤول عمليات (Operations)', color: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
+  ops_officer: { label: 'مسؤول عمليات (Operations)', color: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
   sales: { label: 'مسؤول مبيعات (Sales Rep)', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
+  sales_rep: { label: 'مسؤول مبيعات (Sales Rep)', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
   accountant: { label: 'محاسب مالي (Accountant)', color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' },
   customs: { label: 'مخلص جمركي (Customs Broker)', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' },
+  customs_broker: { label: 'مخلص جمركي (Customs Broker)', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' },
 };
 
 const MODULE_DEFINITIONS = [
@@ -61,19 +56,77 @@ const MODULE_DEFINITIONS = [
 export const SettingsPage: React.FC = () => {
   const currentUser = useAuthStore((state) => state.user);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<'company' | 'users' | 'preferences' | 'integrations'>('company');
-  const [users, setUsers] = useState<UserItem[]>(DEMO_USERS);
+  const [activeTab, setActiveTab] = useState<'company' | 'users' | 'preferences' | 'integrations' | 'database'>('company');
+  const [users, setUsers] = useState<UserItem[]>([]);
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
 
+  // Database & Data Reset State
+  const [dataStats, setDataStats] = useState<any>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetScope, setResetScope] = useState<'operational' | 'all'>('operational');
+  const [confirmInput, setConfirmInput] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  const fetchStats = () => {
+    setIsLoadingStats(true);
+    api.get('/system/data-stats')
+      .then((res: any) => setDataStats(res?.data || res))
+      .catch((err) => console.error(err))
+      .finally(() => setIsLoadingStats(false));
+  };
+
   useEffect(() => {
-    api.get('/auth/me')
+    if (activeTab === 'database') {
+      fetchStats();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    api.get('/users')
       .then((res: any) => {
-        if (res) {
+        const list = Array.isArray(res) ? res : res?.data && Array.isArray(res.data) ? res.data : [];
+        if (list.length > 0) {
+          setUsers(list.map((u: any) => ({
+            id: u.id || String(Math.random()),
+            name: u.name,
+            email: u.email,
+            role: u.role || 'operations',
+            isActive: u.isActive ?? true,
+            department: u.department || 'العمليات والتشغيل',
+            permissions: u.permissions || DEFAULT_PERMISSIONS,
+          })));
           setIsLiveConnected(true);
+        } else if (currentUser) {
+          setUsers([{
+            id: currentUser.id || '1',
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role || 'company_admin',
+            isActive: true,
+            department: 'الإدارة العامة',
+            permissions: DEFAULT_PERMISSIONS,
+          }]);
+          setIsLiveConnected(true);
+        } else {
+          setUsers([]);
         }
       })
       .catch(() => {
-        setIsLiveConnected(Boolean(currentUser));
+        if (currentUser) {
+          setUsers([{
+            id: currentUser.id || '1',
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role || 'company_admin',
+            isActive: true,
+            department: 'الإدارة العامة',
+            permissions: DEFAULT_PERMISSIONS,
+          }]);
+          setIsLiveConnected(true);
+        } else {
+          setUsers([]);
+        }
       });
   }, [currentUser]);
 
@@ -100,6 +153,7 @@ export const SettingsPage: React.FC = () => {
     { key: 'users', label: 'إدارة المستخدمين والصلاحيات', icon: Users },
     { key: 'preferences', label: 'التفضيلات', icon: Palette },
     { key: 'integrations', label: 'الربط والتكاملات والضرائب', icon: Zap },
+    { key: 'database', label: 'إدارة وتصفير البيانات', icon: Database },
   ];
 
   const handleOpenPermsModal = (user: UserItem) => {
@@ -112,6 +166,29 @@ export const SettingsPage: React.FC = () => {
     setUsers(users.map((u) => u.id === selectedUserForPerms.id ? { ...u, permissions: userPerms } : u));
     setSelectedUserForPerms(null);
     showToast(`تم تحديث صلاحيات المستخدم "${selectedUserForPerms.name}" بنجاح!`);
+  };
+
+  const handleResetData = async () => {
+    const text = confirmInput.trim().toUpperCase();
+    if (text !== 'RESET' && confirmInput.trim() !== 'مسح') {
+      showToast('يرجى كتابة كلمة "مسح" أو "RESET" لتأكيد الحذف');
+      return;
+    }
+    try {
+      setIsResetting(true);
+      const res: any = await api.post('/system/reset-data', { scope: resetScope });
+      showToast(res?.message || 'تم مسح وتصفير البيانات بنجاح!');
+      setShowResetModal(false);
+      setConfirmInput('');
+      fetchStats();
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err: any) {
+      showToast(err?.message || 'فشل في مسح البيانات');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   const handleAddUser = (e: React.FormEvent) => {
@@ -327,7 +404,14 @@ export const SettingsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {users.map((user) => {
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
+                      لا يوجد مستخدمون مسجلون حالياً
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((user) => {
                   const roleConfig = ROLE_LABELS[user.role] || { label: user.role, color: 'bg-slate-100 text-slate-600' };
                   return (
                     <tr key={user.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
@@ -367,7 +451,8 @@ export const SettingsPage: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })}
+                })
+              )}
               </tbody>
             </table>
           </div>
@@ -784,6 +869,231 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Database & Data Reset Tab */}
+      {activeTab === 'database' && (
+        <div className="bg-white dark:bg-slate-900 rounded-b-2xl border border-t-0 border-slate-200/80 dark:border-slate-800 shadow-sm p-6 space-y-6">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Database className="w-5 h-5 text-red-500" />
+                إدارة قاعدة البيانات وتصفير السجلات
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                مسح وتصفير البيانات التشغيلية (شحنات، عروض أسعار، فواتير، جمارك، تخزين مؤقت) من النظام. هذه العملية لا يمكن التراجع عنها.
+              </p>
+            </div>
+            <button
+              onClick={fetchStats}
+              disabled={isLoadingStats}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />
+              تحديث الإحصاءات
+            </button>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[
+              { label: 'الشحنات', value: dataStats?.shipments, icon: '🚢', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' },
+              { label: 'عروض الأسعار', value: dataStats?.quotations, icon: '📄', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/40' },
+              { label: 'الفواتير', value: dataStats?.invoices, icon: '🧾', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' },
+              { label: 'ملفات الجمارك', value: dataStats?.customs, icon: '🏛️', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/40' },
+              { label: 'العملاء', value: dataStats?.clients, icon: '👥', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
+              { label: 'رحلات التوزيع', value: dataStats?.dispatches, icon: '🚚', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/40' },
+              { label: 'أذون الصرف', value: dataStats?.disbursements, icon: '💸', color: 'text-pink-600 dark:text-pink-400', bg: 'bg-pink-50 dark:bg-pink-950/40' },
+              { label: 'إجمالي السجلات', value: dataStats?.totalAll, icon: '📊', color: 'text-slate-700 dark:text-slate-200', bg: 'bg-slate-100 dark:bg-slate-800' },
+            ].map((stat) => (
+              <div key={stat.label} className={`p-4 rounded-2xl border border-transparent ${stat.bg} flex items-center gap-3`}>
+                <span className="text-2xl">{stat.icon}</span>
+                <div>
+                  <span className={`text-xl font-extrabold ${stat.color} block leading-none`}>
+                    {isLoadingStats ? '…' : (stat.value ?? '—')}
+                  </span>
+                  <span className="text-[11px] text-slate-500 mt-0.5 block">{stat.label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-slate-200 dark:border-slate-800" />
+
+          {/* Reset Zone */}
+          <div className="p-5 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/40 dark:bg-red-950/20 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-900/50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h4 className="font-bold text-red-700 dark:text-red-400 text-sm">منطقة الخطر — تصفير البيانات</h4>
+                <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-0.5">
+                  اختر نطاق المسح ثم اضغط على زر التصفير. ستُطلب منك كلمة تأكيد قبل تنفيذ العملية.
+                </p>
+              </div>
+            </div>
+
+            {/* Scope Selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setResetScope('operational')}
+                className={`p-4 rounded-xl border-2 text-start transition-all ${
+                  resetScope === 'operational'
+                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 hover:border-orange-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${resetScope === 'operational' ? 'border-orange-500' : 'border-slate-400'}`}>
+                    {resetScope === 'operational' && <div className="w-2 h-2 rounded-full bg-orange-500" />}
+                  </div>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">مسح العمليات التشغيلية فقط</span>
+                </div>
+                <p className="text-[11px] text-slate-500 pr-6">يمسح الشحنات، عروض الأسعار، الفواتير، الجمارك، التوزيع، وأذون الصرف — مع الإبقاء على قائمة العملاء</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setResetScope('all')}
+                className={`p-4 rounded-xl border-2 text-start transition-all ${
+                  resetScope === 'all'
+                    ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 hover:border-red-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${resetScope === 'all' ? 'border-red-500' : 'border-slate-400'}`}>
+                    {resetScope === 'all' && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                  </div>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">مسح كل البيانات (شامل العملاء)</span>
+                </div>
+                <p className="text-[11px] text-slate-500 pr-6">يمسح كل شيء بما في ذلك قاعدة العملاء وجهات الاتصال — تصفير كامل للنظام</p>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <div className="text-xs text-slate-500">
+                النطاق المحدد: <span className="font-bold text-slate-800 dark:text-slate-200">{resetScope === 'all' ? 'تصفير كامل شامل العملاء' : 'العمليات التشغيلية فقط'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowResetModal(true); setConfirmInput(''); }}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition cursor-pointer ${
+                  resetScope === 'all'
+                    ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-600/30 hover:brightness-110'
+                    : 'bg-gradient-to-r from-orange-500 to-orange-600 shadow-orange-500/30 hover:brightness-110'
+                }`}
+              >
+                <Trash2 className="w-4 h-4" />
+                بدء عملية التصفير…
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setShowResetModal(false); }}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md border border-red-200 dark:border-red-900/60 overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-red-600 to-red-700 p-5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-white text-sm">تأكيد عملية تصفير البيانات</h3>
+                <p className="text-red-200 text-[11px] mt-0.5">هذه العملية لا يمكن التراجع عنها نهائياً</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="mr-auto text-white/70 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              {/* What will be deleted */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2 text-xs">
+                <p className="font-bold text-slate-700 dark:text-slate-200">سيتم مسح البيانات التالية:</p>
+                <ul className="space-y-1 text-slate-600 dark:text-slate-400">
+                  <li className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />جميع الشحنات والحاويات والتكاليف والأحداث</li>
+                  <li className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />عروض الأسعار وبنودها</li>
+                  <li className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />الفواتير وبنودها</li>
+                  <li className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />ملفات التخليص الجمركي (Customs Dossiers)</li>
+                  <li className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />رحلات التوزيع وأذون الصرف</li>
+                  {resetScope === 'all' && (
+                    <li className="flex items-center gap-1.5 font-bold text-red-600 dark:text-red-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />قاعدة العملاء وجهات الاتصال (تصفير كامل)
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Scope badge */}
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                resetScope === 'all'
+                  ? 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-400'
+                  : 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400'
+              }`}>
+                <AlertTriangle className="w-3.5 h-3.5" />
+                النطاق: {resetScope === 'all' ? 'تصفير كامل شامل العملاء' : 'العمليات التشغيلية فقط'}
+              </div>
+
+              {/* Confirmation Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  اكتب كلمة <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-red-600 dark:text-red-400">مسح</span> أو <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-red-600 dark:text-red-400">RESET</span> للتأكيد:
+                </label>
+                <input
+                  type="text"
+                  value={confirmInput}
+                  onChange={(e) => setConfirmInput(e.target.value)}
+                  placeholder="اكتب مسح أو RESET هنا…"
+                  className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:border-red-400 transition"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleResetData(); }}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                >
+                  إلغاء — العودة بأمان
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetData}
+                  disabled={isResetting || (confirmInput.trim().toUpperCase() !== 'RESET' && confirmInput.trim() !== 'مسح')}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 text-white text-xs font-bold shadow-md shadow-red-600/30 transition disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 flex items-center justify-center gap-2"
+                >
+                  {isResetting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      جاري التصفير…
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      تأكيد وتنفيذ المسح
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add User Modal */}

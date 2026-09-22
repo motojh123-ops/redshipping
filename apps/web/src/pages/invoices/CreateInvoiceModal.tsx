@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Calculator, Receipt, ShieldCheck } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
+import { api } from '../../services/api';
 
 interface CreateInvoiceModalProps {
   isOpen: boolean;
@@ -24,14 +25,26 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [clientId, setClientId] = useState('1');
-  const [shipmentId, setShipmentId] = useState('RED-2026-0001');
+  const [clients, setClients] = useState<{ id: string; name: string; taxId?: string }[]>([]);
+  const [clientId, setClientId] = useState('');
+  const [shipmentId, setShipmentId] = useState('');
   const [invoiceType, setInvoiceType] = useState('client_freight');
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState(
     new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
   );
   const [etaSubmission, setEtaSubmission] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      api.get('/clients').then((res: any) => {
+        if (Array.isArray(res) && res.length > 0) {
+          setClients(res);
+          if (!clientId) setClientId(res[0].id);
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen]);
 
   const [items, setItems] = useState<InvoiceLineItem[]>([
     {
@@ -111,12 +124,13 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedClient = clients.find((c) => c.id === clientId);
     const newInvoice = {
       id: String(Date.now()),
       invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
       clientId,
-      clientName: clientId === '1' ? 'شركة الأهرام للصناعات الغذائية' : 'مجموعة القاهرة للكيماويات',
-      shipmentFile: shipmentId,
+      clientName: selectedClient?.name || 'عميل نقدي / جهة خارجية',
+      shipmentFile: shipmentId || 'SHP-GENERAL',
       invoiceType,
       subtotal: subtotalEGP,
       taxAmount: vatAmountEGP,
@@ -145,9 +159,15 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
               onChange={(e) => setClientId(e.target.value)}
               className="w-full border border-slate-200 dark:border-slate-700 rounded-xl py-2 px-3 text-sm bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
             >
-              <option value="1">شركة الأهرام للصناعات الغذائية (EG-TAX-28394721)</option>
-              <option value="2">مجموعة القاهرة للكيماويات (EG-TAX-98214301)</option>
-              <option value="3">العالمية للاستيراد والتصدير (EG-TAX-44321908)</option>
+              {clients.length === 0 ? (
+                <option value="">لا يوجد عملاء مسجلين</option>
+              ) : (
+                clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.taxId ? `(${c.taxId})` : ''}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

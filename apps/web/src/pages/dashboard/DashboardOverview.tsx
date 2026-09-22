@@ -681,62 +681,8 @@ const AdditionalItemsCard: React.FC = () => {
 const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
   const [filter, setFilter] = useState<'all' | 'in_transit' | 'customs'>('all');
 
-  // Fallback demo shipments if DB is empty
-  const defaultShipments = [
-    {
-      id: 'shp-001',
-      jobFileNumber: 'RED-2026-001',
-      client: { name: 'المصرية لتجارة الأجهزة والآلات الكبرى' },
-      shippingLine: { name: 'MSC Mediterranean Shipping' },
-      pol: 'Ningbo (CNNGB)',
-      pod: 'Alexandria (EGALY)',
-      currentStage: 'in_transit',
-      containersCount: 4,
-    },
-    {
-      id: 'shp-002',
-      jobFileNumber: 'RED-2026-002',
-      client: { name: 'السويدي للصناعات الهندسية والتطوير' },
-      shippingLine: { name: 'Maersk Line Egypt' },
-      pol: 'Shanghai (CNSHA)',
-      pod: 'Sokhna (EGSOK)',
-      currentStage: 'clearance_in_progress',
-      containersCount: 6,
-    },
-    {
-      id: 'shp-003',
-      jobFileNumber: 'RED-2026-003',
-      client: { name: 'الأهرام للاستيراد والتصدير الدولي' },
-      shippingLine: { name: 'COSCO Shipping Lines' },
-      pol: 'Qingdao (CNQDG)',
-      pod: 'Damietta (EGDAM)',
-      currentStage: 'arrived_destination',
-      containersCount: 2,
-    },
-    {
-      id: 'shp-004',
-      jobFileNumber: 'RED-2026-004',
-      client: { name: 'رويال للصناعات الغذائية والتجميد' },
-      shippingLine: { name: 'Hapag-Lloyd Egypt' },
-      pol: 'Valencia (ESVLC)',
-      pod: 'Alexandria (EGALY)',
-      currentStage: 'delivered',
-      containersCount: 3,
-    },
-    {
-      id: 'shp-005',
-      jobFileNumber: 'RED-2026-005',
-      client: { name: 'مصر للكيماويات والبلاستيك' },
-      shippingLine: { name: 'CMA CGM Egypt' },
-      pol: 'Jebel Ali (AEJEA)',
-      pod: '6th of October Dry Port',
-      currentStage: 'booking_confirmed',
-      containersCount: 5,
-    },
-  ];
-
-  // Filter against the API's ShipmentStage enum values (lowercase, per Prisma schema)
-  const displayList = (shipments && shipments.length > 0 ? shipments : defaultShipments).filter((s) => {
+  // Filter live shipments against the API's ShipmentStage enum values
+  const displayList = (shipments || []).filter((s) => {
     if (filter === 'in_transit') return s.currentStage === 'in_transit';
     if (filter === 'customs') return s.currentStage === 'customs_submitted' || s.currentStage === 'clearance_in_progress' || s.currentStage === 'arrived_destination';
     return true;
@@ -801,7 +747,14 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-[#262E40]/60">
-            {displayList.map((s) => {
+            {displayList.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-slate-400">
+                  لا توجد شحنات تطابق التصفية الحالية
+                </td>
+              </tr>
+            ) : (
+              displayList.map((s) => {
               const clientName = s.client?.name || s.clientName || 'عميل محلي';
               const lineName = s.shippingLine?.name || s.carrier || 'MSC';
               const route = `${s.polPort?.nameEn || s.pol || 'CNSHA'} ← ${s.podPort?.nameEn || s.pod || 'EGALY'}`;
@@ -839,7 +792,8 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
                   </td>
                 </tr>
               );
-            })}
+            })
+          )}
           </tbody>
         </table>
       </div>
@@ -851,40 +805,23 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
    Real Compliance & Demurrage Alerts (D&D Engine)
    ============================================================ */
 const RealComplianceCard: React.FC = () => {
-  const alerts = [
-    {
-      title: 'تحذير أرضيات وغرامات حاويات (D&D Risk)',
-      sub: 'شحنة MSC (MSCU892104) • متبقي يومان على فترة السماح (14 يوم)',
-      time: 'متبقي 48 ساعة',
-      alert: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
-      icon: AlertTriangle,
-      link: '/customs',
-    },
-    {
-      title: 'إصدار إذن التسليم الملاحي (Delivery Order)',
-      sub: 'توكيل ميرسك مصر • تم سداد النولون ومصروفات التفريغ THC',
-      time: 'مكتمل اليوم',
-      alert: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-      icon: ShieldCheck,
-      link: '/shipments',
-    },
-    {
-      title: 'إشعار ربط الفاتورة الضريبية ETA (نافذة / مصلحة الضرائب)',
-      sub: 'فاتورة مبيعات INV-2026-042 • تم إرسال الـ UUID',
-      time: 'معتمد',
-      alert: 'text-sky-500 bg-sky-500/10 border-sky-500/20',
-      icon: Receipt,
-      link: '/invoices',
-    },
-    {
-      title: 'تجديد عروض أسعار النولون البحري (Ocean Freight)',
-      sub: 'خط كوسكو COSCO • خط الشرق الأقصى إلى السخنة ودمياط',
-      time: 'خلال 4 أيام',
-      alert: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-      icon: TrendingUp,
-      link: '/pricing',
-    },
-  ];
+  const [alerts, setAlerts] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get('/notifications').then((res: any) => {
+      const items = Array.isArray(res) ? res : (res?.data && Array.isArray(res.data) ? res.data : []);
+      setAlerts(items.slice(0, 4).map((n: any) => ({
+        title: n.title || n.message || 'تنبيه',
+        sub: n.body || n.description || '',
+        time: n.createdAt ? new Date(n.createdAt).toLocaleDateString('ar-EG') : '',
+        alert: n.type === 'warning' ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' :
+               n.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' :
+               'text-sky-500 bg-sky-500/10 border-sky-500/20',
+        icon: AlertTriangle,
+        link: '/notifications',
+      })));
+    }).catch(() => {});
+  }, []);
 
   return (
     <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm space-y-3">
@@ -1201,14 +1138,14 @@ export const DashboardOverview: React.FC = () => {
                 </div>
                 <div className="max-w-[170px] truncate">
                   <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
-                    {activeShipment?.client?.name || 'المصرية لتجارة الأجهزة والآلات'}
+                    {activeShipment?.client?.name || '—'}
                   </span>
                   <span className="text-[10px] text-slate-400">+20 100 123 4567</span>
                 </div>
               </div>
 
               <Link
-                to={`/shipments/${activeShipment?.id || 'shp-001'}`}
+                to={`/shipments/${activeShipment?.id || ''}`}
                 className="w-8 h-8 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 flex items-center justify-center hover:scale-105 transition shadow-sm"
                 title="فتح ملف الشحنة"
               >

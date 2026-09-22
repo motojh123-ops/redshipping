@@ -37,70 +37,9 @@ interface InvoiceItem {
   dueDate: string;
 }
 
-const INITIAL_INVOICES: InvoiceItem[] = [
-  {
-    id: '1',
-    invoiceNumber: 'INV-2026-0001',
-    clientName: 'شركة الأهرام للصناعات الغذائية',
-    shipmentFile: 'RED-2026-0001',
-    invoiceType: 'client_freight',
-    subtotal: 162700,
-    taxAmount: 2730,
-    total: 165430,
-    currency: 'EGP',
-    status: 'submitted_eta',
-    etaUuid: 'ETA-49B2-991A',
-    issueDate: '2026-09-15',
-    dueDate: '2026-10-15',
-  },
-  {
-    id: '2',
-    invoiceNumber: 'INV-2026-0002',
-    clientName: 'مجموعة القاهرة للكيماويات',
-    shipmentFile: 'RED-2026-0002',
-    invoiceType: 'reimbursement',
-    subtotal: 45000,
-    taxAmount: 0,
-    total: 45000,
-    currency: 'EGP',
-    status: 'pending',
-    issueDate: '2026-09-17',
-    dueDate: '2026-09-24',
-  },
-  {
-    id: '3',
-    invoiceNumber: 'INV-2026-0003',
-    clientName: 'العالمية للاستيراد والتصدير',
-    shipmentFile: 'RED-2026-0003',
-    invoiceType: 'client_freight',
-    subtotal: 310000,
-    taxAmount: 5180,
-    total: 315180,
-    currency: 'EGP',
-    status: 'paid',
-    etaUuid: 'ETA-8812-33DF',
-    issueDate: '2026-09-10',
-    dueDate: '2026-10-10',
-  },
-  {
-    id: '4',
-    invoiceNumber: 'INV-2026-0004',
-    clientName: 'الدلتا للأسمدة والكيماويات',
-    shipmentFile: 'RED-2026-0004',
-    invoiceType: 'demurrage',
-    subtotal: 18500,
-    taxAmount: 2590,
-    total: 21090,
-    currency: 'EGP',
-    status: 'overdue',
-    issueDate: '2026-08-20',
-    dueDate: '2026-09-05',
-  },
-];
-
 export const InvoiceList: React.FC = () => {
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState<InvoiceItem[]>(INITIAL_INVOICES);
+  const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -111,7 +50,7 @@ export const InvoiceList: React.FC = () => {
     setIsRefreshing(true);
     try {
       const res: any = await api.get('/invoices');
-      if (res && Array.isArray(res) && res.length > 0) {
+      if (res && Array.isArray(res)) {
         setInvoices(res.map((inv: any) => ({
           id: inv.id,
           invoiceNumber: inv.invoiceNumber || '',
@@ -393,46 +332,56 @@ export const InvoiceList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredInvoices.map((inv) => (
-                <tr
-                  key={inv.id}
-                  onClick={() => navigate(`/invoices/${inv.id}`)}
-                  className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer transition"
-                >
-                  <td className="py-4 px-4 font-bold text-brand-600 dark:text-brand-400 font-mono">
-                    {inv.invoiceNumber}
-                    {inv.etaUuid && (
-                      <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                        {inv.etaUuid}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-4 px-4 font-semibold text-slate-900 dark:text-white">
-                    {inv.clientName}
-                  </td>
-                  <td className="py-4 px-4 font-mono text-xs text-slate-500">
-                    {inv.shipmentFile}
-                  </td>
-                  <td className="py-4 px-4 text-xs text-slate-600 dark:text-slate-300">
-                    {getInvoiceTypeLabel(inv.invoiceType)}
-                  </td>
-                  <td className="py-4 px-4 font-mono text-slate-600 dark:text-slate-300">
-                    {inv.subtotal.toLocaleString()} {inv.currency}
-                  </td>
-                  <td className="py-4 px-4 font-mono text-emerald-600 dark:text-emerald-400">
-                    +{inv.taxAmount.toLocaleString()} {inv.currency}
-                  </td>
-                  <td className="py-4 px-4 font-bold font-mono text-slate-900 dark:text-white">
-                    {inv.total.toLocaleString()} {inv.currency}
-                  </td>
-                  <td className="py-4 px-4 text-xs text-slate-500">
-                    {inv.dueDate}
-                  </td>
-                  <td className="py-4 px-4">
-                    {getStatusBadge(inv.status)}
+              {filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-semibold text-slate-600 dark:text-slate-300">لا توجد فواتير مسجلة</p>
+                    <p className="text-xs mt-1 text-slate-400">اضغط على زر "إصدار فاتورة جديدة" لإنشاء فاتورة مرتبطة بملف شحنة</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredInvoices.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    onClick={() => navigate(`/invoices/${inv.id}`)}
+                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer transition"
+                  >
+                    <td className="py-4 px-4 font-bold text-brand-600 dark:text-brand-400 font-mono">
+                      {inv.invoiceNumber}
+                      {inv.etaUuid && (
+                        <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+                          {inv.etaUuid}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-4 px-4 font-semibold text-slate-900 dark:text-white">
+                      {inv.clientName}
+                    </td>
+                    <td className="py-4 px-4 font-mono text-xs text-slate-500">
+                      {inv.shipmentFile}
+                    </td>
+                    <td className="py-4 px-4 text-xs text-slate-600 dark:text-slate-300">
+                      {getInvoiceTypeLabel(inv.invoiceType)}
+                    </td>
+                    <td className="py-4 px-4 font-mono text-slate-600 dark:text-slate-300">
+                      {inv.subtotal.toLocaleString()} {inv.currency}
+                    </td>
+                    <td className="py-4 px-4 font-mono text-emerald-600 dark:text-emerald-400">
+                      +{inv.taxAmount.toLocaleString()} {inv.currency}
+                    </td>
+                    <td className="py-4 px-4 font-bold font-mono text-slate-900 dark:text-white">
+                      {inv.total.toLocaleString()} {inv.currency}
+                    </td>
+                    <td className="py-4 px-4 text-xs text-slate-500">
+                      {inv.dueDate}
+                    </td>
+                    <td className="py-4 px-4">
+                      {getStatusBadge(inv.status)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

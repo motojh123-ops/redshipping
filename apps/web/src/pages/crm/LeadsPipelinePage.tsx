@@ -76,79 +76,6 @@ interface Activity {
   user: string;
 }
 
-const DEMO_LEADS: Lead[] = [
-  {
-    id: 'LD-2026-001', title: 'شحن 3 حاويات 40HC مواد بناء', client: 'المصرية للإنشاءات', clientType: 'manufacturer',
-    serviceType: 'sea_fcl', origin: 'شنغهاي — CNSHA', destination: 'الإسكندرية — EGALY', estimatedValue: 45000, currency: 'USD',
-    salesPerson: 'أحمد سليم', stage: 'new', expectedCloseDate: '2026-10-15', createdAt: '2026-09-15', priority: 'high',
-    notes: 'العميل يحتاج عرض سعر عاجل — مقارنة MSC / Maersk',
-    activities: [
-      { id: 'a1', type: 'call', description: 'مكالمة أولية — العميل مهتم بشحن مواد بناء من الصين', date: '2026-09-15', user: 'أحمد سليم' },
-    ],
-  },
-  {
-    id: 'LD-2026-002', title: 'تخليص جمركي — معدات صناعية', client: 'النيل للصناعات الثقيلة', clientType: 'manufacturer',
-    serviceType: 'clearance', origin: 'هامبورج — DEHAM', destination: 'السخنة — EGSOK', estimatedValue: 12000, currency: 'USD',
-    salesPerson: 'سارة أحمد', stage: 'contacted', expectedCloseDate: '2026-10-05', createdAt: '2026-09-12', priority: 'medium',
-    notes: 'يحتاج تخليص سريع خلال 5 أيام — معفي من ضريبة المبيعات بموجب شهادة إعفاء',
-    activities: [
-      { id: 'a2', type: 'email', description: 'إرسال عرض مبدئي مع تفاصيل الرسوم الجمركية', date: '2026-09-13', user: 'سارة أحمد' },
-      { id: 'a3', type: 'whatsapp', description: 'متابعة واتساب — العميل يراجع العرض مع الإدارة المالية', date: '2026-09-14', user: 'سارة أحمد' },
-    ],
-  },
-  {
-    id: 'LD-2026-003', title: 'شحن جوي — قطع غيار إلكترونية', client: 'تك سوليوشنز', clientType: 'trader',
-    serviceType: 'air', origin: 'شنزن — CNSZX', destination: 'القاهرة — EGCAI', estimatedValue: 8500, currency: 'USD',
-    salesPerson: 'أحمد سليم', stage: 'quoted', expectedCloseDate: '2026-09-25', createdAt: '2026-09-10', priority: 'high',
-    notes: 'شحنة عاجلة — يرغب في الشحن خلال أسبوع',
-    activities: [
-      { id: 'a4', type: 'call', description: 'مكالمة — تأكيد الكميات والأوزان', date: '2026-09-10', user: 'أحمد سليم' },
-      { id: 'a5', type: 'email', description: 'إرسال عرض سعر رسمي — شامل النقل الداخلي والتخليص', date: '2026-09-11', user: 'أحمد سليم' },
-      { id: 'a6', type: 'meeting', description: 'اجتماع في مقر العميل — مناقشة تفاصيل الشحن', date: '2026-09-12', user: 'أحمد سليم' },
-    ],
-  },
-  {
-    id: 'LD-2026-004', title: 'عقد سنوي — شحن أقمشة', client: 'الدلتا للنسيج والأقمشة', clientType: 'distributor',
-    serviceType: 'sea_lcl', origin: 'مومباي — INBOM', destination: 'دمياط — EGDAM', estimatedValue: 120000, currency: 'USD',
-    salesPerson: 'سارة أحمد', stage: 'negotiation', expectedCloseDate: '2026-10-30', createdAt: '2026-09-05', priority: 'high',
-    notes: 'عقد سنوي — 10 شحنات LCL شهرياً — يحتاج أسعار تنافسية',
-    activities: [
-      { id: 'a7', type: 'meeting', description: 'اجتماع أول مع مدير المشتريات', date: '2026-09-06', user: 'سارة أحمد' },
-      { id: 'a8', type: 'email', description: 'إرسال عرض سعر العقد السنوي', date: '2026-09-08', user: 'سارة أحمد' },
-      { id: 'a9', type: 'call', description: 'مفاوضات — العميل يطلب خصم 8%', date: '2026-09-12', user: 'سارة أحمد' },
-      { id: 'a10', type: 'whatsapp', description: 'تأكيد خصم 5% مع ضمان أولوية الحجز', date: '2026-09-15', user: 'سارة أحمد' },
-    ],
-  },
-  {
-    id: 'LD-2026-005', title: 'تصدير — حاصلات زراعية', client: 'وادي النيل للتصدير', clientType: 'trader',
-    serviceType: 'sea_fcl', origin: 'الإسكندرية — EGALY', destination: 'روتردام — NLRTM', estimatedValue: 32000, currency: 'EUR',
-    salesPerson: 'أحمد سليم', stage: 'won', expectedCloseDate: '2026-09-20', createdAt: '2026-09-01', priority: 'medium',
-    notes: 'تم التحويل لملف شحنة — رقم الشحنة SHP-2026-010',
-    activities: [
-      { id: 'a11', type: 'call', description: 'مكالمة بيع ناجحة', date: '2026-09-01', user: 'أحمد سليم' },
-      { id: 'a12', type: 'email', description: 'عرض سعر مُرسل', date: '2026-09-02', user: 'أحمد سليم' },
-      { id: 'a13', type: 'meeting', description: 'توقيع العقد', date: '2026-09-10', user: 'أحمد سليم' },
-    ],
-  },
-  {
-    id: 'LD-2026-006', title: 'شحن كيماويات خطرة DG', client: 'بتروكيم العربية', clientType: 'manufacturer',
-    serviceType: 'sea_fcl', origin: 'الجبيل — SAJUB', destination: 'العقبة — JOAQJ', estimatedValue: 65000, currency: 'USD',
-    salesPerson: 'سارة أحمد', stage: 'lost', expectedCloseDate: '2026-09-10', createdAt: '2026-08-25', priority: 'low',
-    notes: 'العميل اختار منافس — سعر أرخص 15%',
-    activities: [
-      { id: 'a14', type: 'call', description: 'مكالمة استكشافية', date: '2026-08-25', user: 'سارة أحمد' },
-      { id: 'a15', type: 'email', description: 'إرسال عرض — لم يُقبل', date: '2026-08-30', user: 'سارة أحمد' },
-    ],
-  },
-  {
-    id: 'LD-2026-007', title: 'نقل بري — حاويات من السخنة', client: 'المصرية للإنشاءات', clientType: 'manufacturer',
-    serviceType: 'land', origin: 'السخنة — EGSOK', destination: 'العاشر من رمضان', estimatedValue: 5500, currency: 'EGP',
-    salesPerson: 'أحمد سليم', stage: 'new', expectedCloseDate: '2026-09-22', createdAt: '2026-09-17', priority: 'medium',
-    notes: 'نقل 2 حاوية 40HC — مطلوب تريلا محطة واحدة',
-    activities: [],
-  },
-];
-
 const activityIcon = (type: string) => {
   switch (type) {
     case 'call': return <Phone className="w-3.5 h-3.5" />;
@@ -182,7 +109,7 @@ const priorityBadge = (p: string) => {
 
 export const LeadsPipelinePage: React.FC = () => {
   const { t } = useTranslation();
-  const [leads, setLeads] = useState<Lead[]>(DEMO_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -216,7 +143,9 @@ export const LeadsPipelinePage: React.FC = () => {
                 activities: [],
               };
             });
-            setLeads([...mappedLeads, ...DEMO_LEADS]);
+            setLeads(mappedLeads);
+          } else {
+            setLeads([]);
           }
         }
       })
@@ -388,7 +317,14 @@ export const LeadsPipelinePage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredLeads.map((lead) => {
+                {filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400">
+                      لا توجد فرص بيعية مسجلة حالياً
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeads.map((lead) => {
                   const stageConfig = LEAD_STAGES.find((s) => s.key === lead.stage);
                   const svcType = SERVICE_TYPES.find((s) => s.key === lead.serviceType);
                   return (
@@ -410,7 +346,8 @@ export const LeadsPipelinePage: React.FC = () => {
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{lead.expectedCloseDate}</td>
                     </tr>
                   );
-                })}
+                })
+              )}
               </tbody>
             </table>
           </div>

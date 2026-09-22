@@ -56,130 +56,13 @@ export interface ClientItem {
   createdAt: string;
 }
 
-const INITIAL_DEMO_CLIENTS: ClientItem[] = [
-  {
-    id: 'client-1',
-    name: 'الأهرام للصناعات الغذائية',
-    tradeName: 'Al-Ahram Food Industries',
-    type: 'actual',
-    category: 'مصنع ومستورد مواد غذائية',
-    status: 'active',
-    commercialReg: 'CR-2021-8372',
-    taxNumber: '102-993-882',
-    city: 'مدينة 6 أكتوبر / الجيزة',
-    country: 'Egypt',
-    phone: '+20 2 3833 0000',
-    email: 'procurement@alahram-foods.com',
-    contactName: 'أحمد محمد الشريف',
-    contactTitle: 'مدير المشتريات وسلاسل الإمداد',
-    totalShipments: 28,
-    totalRevenue: 1850000,
-    salesRep: 'عمر السيد',
-    createdAt: '2025-11-10',
-  },
-  {
-    id: 'client-2',
-    name: 'دلتا للكيماويات والبوليمرات',
-    tradeName: 'Delta Chemicals & Polymers',
-    type: 'actual',
-    category: 'استيراد وتوزيع خامات صناعية',
-    status: 'active',
-    commercialReg: 'CR-2019-4412',
-    taxNumber: '998-811-224',
-    city: 'المنطقة الحرة بالعامرية، الإسكندرية',
-    country: 'Egypt',
-    phone: '+20 3 4488 123',
-    email: 'ehab@deltachem-eg.com',
-    contactName: 'م. إيهاب سلامة',
-    contactTitle: 'مدير الاستيراد والتخليص',
-    totalShipments: 19,
-    totalRevenue: 1320000,
-    salesRep: 'أحمد الشريف',
-    createdAt: '2025-12-05',
-  },
-  {
-    id: 'client-3',
-    name: 'النيل للأجهزة الكهربائية والتوزيع',
-    tradeName: 'Nile Electronics & Appliances',
-    type: 'actual',
-    category: 'استيراد وتجارة أجهزة كهربائية',
-    status: 'active',
-    commercialReg: 'CR-2022-9011',
-    taxNumber: '554-433-221',
-    city: 'التجمع الخامس، القاهرة الجديدة',
-    country: 'Egypt',
-    phone: '+20 2 2811 5566',
-    email: 'sameh@nile-electronics.eg',
-    contactName: 'سامح نصار',
-    contactTitle: 'رئيس قسم اللوجستيات',
-    totalShipments: 14,
-    totalRevenue: 980000,
-    salesRep: 'سارة حسني',
-    createdAt: '2026-01-18',
-  },
-  {
-    id: 'client-4',
-    name: 'العربية لسباكة المعادن والصلب',
-    tradeName: 'Arab Metal Works',
-    type: 'actual',
-    category: 'مصنع معادن وحديد صلب',
-    status: 'active',
-    commercialReg: 'CR-2020-5521',
-    taxNumber: '772-109-334',
-    city: 'مدينة السادات، المنوفية',
-    country: 'Egypt',
-    phone: '+20 48 260 9900',
-    email: 'logistics@arabmetal.com',
-    contactName: 'م. طارق عبد العزيز',
-    contactTitle: 'مدير المصنع واللوجستيات',
-    totalShipments: 22,
-    totalRevenue: 1640000,
-    salesRep: 'عمر السيد',
-    createdAt: '2026-02-01',
-  },
-  {
-    id: 'lead-1',
-    name: 'مجموعة الفيروز للسيراميك والأدوات الصحية',
-    tradeName: 'Al-Fairouz Ceramic Group',
-    type: 'lead',
-    category: 'استيراد سيراميك وبورسلين',
-    status: 'qualified',
-    city: 'العاشر من رمضان، الشرقية',
-    country: 'Egypt',
-    phone: '+20 15 360 889',
-    email: 'import@alfairouz-ceramics.com',
-    contactName: 'عماد صبري',
-    contactTitle: 'مدير المشتريات الخارجية',
-    commodityInterest: 'حاويات 40HC بلاط وسيراميك وارد إيطاليا وإسبانيا',
-    salesRep: 'سارة حسني',
-    createdAt: '2026-03-01',
-  },
-  {
-    id: 'lead-2',
-    name: 'الشرق الأوسط لتعبئة الحاصلات الزراعية',
-    tradeName: 'Middle East Agri-Export',
-    type: 'lead',
-    category: 'تصدير حاصلات زراعية وخضراوات مجمدة',
-    status: 'prospect',
-    city: 'طريق مصر الإسكندرية الصحراوي',
-    country: 'Egypt',
-    phone: '+20 10 9922 1100',
-    email: 'export@me-agri.com',
-    contactName: 'د. خالد رضوان',
-    contactTitle: 'المدير التنفيذي',
-    commodityInterest: 'حاويات مبردة (Reefer 40RH) تصدير برتقال وبصل لروسيا وهولندا',
-    salesRep: 'أحمد الشريف',
-    createdAt: '2026-03-10',
-  },
-];
-
 export const ClientList: React.FC = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const isRTL = i18n.dir() === 'rtl';
 
-  const [clients, setClients] = useState<ClientItem[]>(INITIAL_DEMO_CLIENTS);
-  const [loading, setLoading] = useState(false);
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'actual' | 'lead'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -198,11 +81,14 @@ export const ClientList: React.FC = () => {
     setLoading(true);
     try {
       const res: any = await api.get('/clients');
-      if (res && Array.isArray(res) && res.length > 0) {
+      if (res && Array.isArray(res)) {
         setClients(res);
         setIsLiveConnected(true);
+      } else {
+        setClients([]);
       }
     } catch {
+      setClients([]);
       setIsLiveConnected(false);
     } finally {
       setLoading(false);
@@ -530,7 +416,27 @@ export const ClientList: React.FC = () => {
       </div>
 
       {/* ── 4. Content Display ── */}
-      {viewMode === 'grid' ? (
+      {loading ? (
+        <div className="py-16 text-center text-slate-400">
+          <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+          <p className="text-sm font-medium">جاري تحميل بيانات العملاء الحقيقية من قاعدة البيانات...</p>
+        </div>
+      ) : filteredClients.length === 0 ? (
+        <div className="py-16 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 p-8">
+          <Users className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-lg mb-1">لا يوجد عملاء مسجلين</h3>
+          <p className="text-sm text-slate-400 max-w-sm mx-auto mb-4">
+            لم يتم العثور على عملاء مطابقين. يمكنك إضافة عميل جديد الآن لحفظه في قاعدة بيانات PostgreSQL مباشرة.
+          </p>
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm shadow-md transition"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة عميل جديد</span>
+          </button>
+        </div>
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
           {filteredClients.map((client) => {
             const isActual = client.type === 'actual';

@@ -54,84 +54,8 @@ interface DispatchOrder {
   notes?: string;
 }
 
-const INITIAL_DISPATCH_ORDERS: DispatchOrder[] = [
-  {
-    id: 'dsp-1',
-    orderNumber: 'TRK-2026-0041',
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MSCU8812903',
-    containerNumber: 'MEDU1029384',
-    containerType: '40HQ',
-    sealNumber: 'SL-88412',
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    factoryDestination: 'المنطقة الصناعية الثالثة، مدينة 6 أكتوبر، الجيزة',
-    departurePort: 'Alexandria Port (ميناء الإسكندرية)',
-    truckingVendor: 'شركة الإسكندرية لخدمات النقل البري والتريلات',
-    driverName: 'رمضان عبد العال السيد',
-    driverPhone: '+20 100 882 1199',
-    driverNationalId: '28409121800192',
-    truckHeadPlate: 'س ق ج ٨٩١٢',
-    trailerPlate: 'م ق ر ٤٤١٩',
-    dispatchDate: '2026-09-18 07:00',
-    deliveryDate: '2026-09-18 13:30',
-    emptyReturnYard: 'المستودع المصري لتخزين الحاويات - العامرية',
-    status: 'DELIVERED_TO_FACTORY',
-    notes: 'تم فحص الرصاص الجمركي وسلامة الحاوية قبل الخروج من باب 27',
-  },
-  {
-    id: 'dsp-2',
-    orderNumber: 'TRK-2026-0042',
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MSCU8812903',
-    containerNumber: 'MEDU1029385',
-    containerType: '40HQ',
-    sealNumber: 'SL-88413',
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    factoryDestination: 'المنطقة الصناعية الثالثة، مدينة 6 أكتوبر، الجيزة',
-    departurePort: 'Alexandria Port (ميناء الإسكندرية)',
-    truckingVendor: 'شركة الإسكندرية لخدمات النقل البري والتريلات',
-    driverName: 'عصام محمد فتح الله',
-    driverPhone: '+20 111 445 6677',
-    driverNationalId: '29008151203341',
-    truckHeadPlate: 'ط د ر ٣١٩٠',
-    trailerPlate: 'س ف ج ٧٧١١',
-    dispatchDate: '2026-09-18 08:30',
-    emptyReturnYard: 'المستودع المصري لتخزين الحاويات - العامرية',
-    status: 'GATE_OUT',
-    notes: 'خرجت من بوابة الميناء متجهة إلى طريق الإسكندرية الصحراوي',
-  },
-  {
-    id: 'dsp-3',
-    orderNumber: 'TRK-2026-0043',
-    jobFileNumber: 'RED-2026-0002',
-    blNumber: 'MAEU982183910',
-    containerNumber: 'MSKU8849120',
-    containerType: '40HQ',
-    sealNumber: 'SL-99120',
-    clientName: 'Delta Chemicals & Polymers (دلتا للكيماويات)',
-    factoryDestination: 'المنطقة الحرة العامة بالعامرية، الإسكندرية',
-    departurePort: 'Alexandria Port (ميناء الإسكندرية)',
-    truckingVendor: 'شركة الإسكندرية لخدمات النقل البري والتريلات',
-    driverName: 'محمود الصاوي',
-    driverPhone: '+20 122 998 8776',
-    driverNationalId: '28105041900281',
-    truckHeadPlate: 'ي ب د ٥٥١٢',
-    trailerPlate: 'ق س م ١٢٠٩',
-    dispatchDate: '2026-09-16 10:00',
-    deliveryDate: '2026-09-16 14:00',
-    emptyReturnDate: '2026-09-17 11:00',
-    emptyReturnYard: 'ساحة ميرسك اللوجستية (Maersk Yard Dekheila)',
-    status: 'EMPTY_RETURNED',
-    eirNumber: 'EIR-MAE-2026-0819',
-    eirStatus: 'CLEAN',
-    eirSurveyorName: 'ك. حسام الديب (معاين الساحة المعتمد)',
-    eirNotes: 'فحص الحاوية سليم 100%، خالية من الصدمات والروائح، أرضية خشبية سليمة (Clean & Sound).',
-    notes: 'تم إرجاع الفارغ بنجاح والحصول على إيصال استلام الساحة EIR Clean',
-  },
-];
-
 export const DispatchBoardPage: React.FC = () => {
-  const [orders, setOrders] = useState<DispatchOrder[]>(INITIAL_DISPATCH_ORDERS);
+  const [orders, setOrders] = useState<DispatchOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -171,9 +95,9 @@ export const DispatchBoardPage: React.FC = () => {
                   notes: 'أمر نقل مرتبط بشحنة حية من الباك اند المركزي',
                 }))
               );
-            if (mappedOrders.length > 0) {
-              setOrders([...mappedOrders, ...INITIAL_DISPATCH_ORDERS]);
-            }
+            setOrders(mappedOrders);
+          } else {
+            setOrders([]);
           }
         }
       })
@@ -195,21 +119,21 @@ export const DispatchBoardPage: React.FC = () => {
 
   // New Dispatch Form State
   const [newOrder, setNewOrder] = useState({
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MSCU8812903',
-    containerNumber: 'MEDU9921041',
+    jobFileNumber: '',
+    blNumber: '',
+    containerNumber: '',
     containerType: '40HQ',
-    sealNumber: 'SL-55102',
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    factoryDestination: 'المنطقة الصناعية الثالثة، مدينة 6 أكتوبر',
-    departurePort: 'Alexandria Port (ميناء الإسكندرية)',
-    truckingVendor: 'شركة الإسكندرية لخدمات النقل البري والتريلات',
-    driverName: 'حسن الجوهري',
-    driverPhone: '+20 101 223 3445',
-    driverNationalId: '28607141800293',
-    truckHeadPlate: 'س ف ج ٩٩١٢',
-    trailerPlate: 'م ن ط ٣٣٢١',
-    emptyReturnYard: 'المستودع المصري لتخزين الحاويات - العامرية',
+    sealNumber: '',
+    clientName: '',
+    factoryDestination: '',
+    departurePort: '',
+    truckingVendor: '',
+    driverName: '',
+    driverPhone: '',
+    driverNationalId: '',
+    truckHeadPlate: '',
+    trailerPlate: '',
+    emptyReturnYard: '',
     notes: '',
   });
 
@@ -527,12 +451,21 @@ export const DispatchBoardPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredOrders.map((o) => (
-                <tr key={o.id} className="hover:bg-slate-50/70 dark:hover:bg-[#181D2A] transition">
-                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                    <span>{o.orderNumber}</span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-normal">{o.dispatchDate}</span>
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <Truck className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
+                    <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد أوامر نقل وتعتيق مسجلة</p>
+                    <p className="text-xs text-slate-400 mt-1">يتم إنشاء أوامر النقل تلقائياً لحاويات الشحنات الجاهزة للنقل والتسليم</p>
                   </td>
+                </tr>
+              ) : (
+                filteredOrders.map((o) => (
+                  <tr key={o.id} className="hover:bg-slate-50/70 dark:hover:bg-[#181D2A] transition">
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                      <span>{o.orderNumber}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-normal">{o.dispatchDate}</span>
+                    </td>
 
                   <td className="py-3 px-4">
                     <span className="font-mono font-bold text-[#FF5E1E] block">{o.containerNumber}</span>
@@ -648,8 +581,9 @@ export const DispatchBoardPage: React.FC = () => {
                       </button>
                     </div>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

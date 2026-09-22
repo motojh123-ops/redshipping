@@ -103,7 +103,7 @@ export const Navbar: React.FC = () => {
           className="relative p-2 rounded-full border border-slate-200 dark:border-[#262E40] bg-slate-50 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:border-[#FF5E1E]/40 transition-all duration-200 shadow-sm"
         >
           {isDark ? (
-            <Sun className="w-4 h-4 text-amber-400 animate-spin-slow" />
+            <Sun className="w-4 h-4 text-amber-400 animate-[spin_8s_linear_infinite]" />
           ) : (
             <Moon className="w-4 h-4 text-slate-700" />
           )}

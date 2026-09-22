@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   Printer,
+  Receipt,
   FileSpreadsheet,
   Plus,
   CreditCard,
@@ -34,108 +35,55 @@ interface InvoiceLedgerEntry {
   status: 'PAID' | 'PARTIAL' | 'OVERDUE' | 'UNPAID';
 }
 
-const INITIAL_ENTRIES: InvoiceLedgerEntry[] = [
-  {
-    id: 'inv-1',
-    invoiceNumber: 'INV-2026-0001',
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MAEU982183910',
-    clientId: 'client-1',
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    invoiceType: 'نولون شحن بحري دولي (Ocean Freight)',
-    issueDate: '2026-08-15',
-    dueDate: '2026-09-14',
-    amount: 3249,
-    paidAmount: 2000,
-    currency: 'USD',
-    status: 'PARTIAL',
-  },
-  {
-    id: 'inv-2',
-    invoiceNumber: 'INV-2026-0002',
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MAEU982183910',
-    clientId: 'client-1',
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    invoiceType: 'أتعاب تخليص جمركي ومصاريف الميناء',
-    issueDate: '2026-08-20',
-    dueDate: '2026-09-04',
-    amount: 9800,
-    paidAmount: 0,
-    currency: 'EGP',
-    status: 'OVERDUE',
-  },
-  {
-    id: 'inv-3',
-    invoiceNumber: 'INV-2026-0003',
-    jobFileNumber: 'RED-2026-0002',
-    blNumber: 'MSCU771928340',
-    clientId: 'client-2',
-    clientName: 'Delta Chemicals & Polymers (دلتا للكيماويات والبوليمرات)',
-    invoiceType: 'نولون شحن بحري حاوية 20GP',
-    issueDate: '2026-09-01',
-    dueDate: '2026-10-01',
-    amount: 2109,
-    paidAmount: 2109,
-    currency: 'USD',
-    status: 'PAID',
-  },
-  {
-    id: 'inv-4',
-    invoiceNumber: 'INV-2026-0004',
-    jobFileNumber: 'RED-2026-0003',
-    blNumber: 'CMDU558192011',
-    clientId: 'client-3',
-    clientName: 'Nile Electronics & Appliances (النيل للأجهزة الكهربائية)',
-    invoiceType: 'نولون وتخليص ونقل بري',
-    issueDate: '2026-07-10',
-    dueDate: '2026-08-10',
-    amount: 4500,
-    paidAmount: 1000,
-    currency: 'USD',
-    status: 'OVERDUE',
-  },
-];
-
 export const StatementOfAccountPage: React.FC = () => {
-  const [entries, setEntries] = useState<InvoiceLedgerEntry[]>(INITIAL_ENTRIES);
+  const [entries, setEntries] = useState<InvoiceLedgerEntry[]>([]);
+  const [liveClients, setLiveClients] = useState<any[]>([]);
   const [selectedClient, setSelectedClient] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
   useEffect(() => {
-    api.get('/invoices')
-      .then((res: any) => {
-        if (res) {
-          const list = Array.isArray(res) ? res : (Array.isArray(res.items) ? res.items : []);
-          setIsLiveConnected(true);
-          if (list.length > 0) {
-            const mappedEntries: InvoiceLedgerEntry[] = list.map((inv: any, idx: number) => {
-              const total = inv.totalAmount || inv.amount || 3500;
-              const paid = inv.status === 'paid' ? total : (inv.status === 'partial' ? Math.round(total * 0.6) : 0);
-              const stat = inv.status === 'paid' ? 'PAID' : (inv.status === 'partial' ? 'PARTIAL' : (inv.status === 'overdue' ? 'OVERDUE' : 'UNPAID'));
-              return {
-                id: `inv-live-${inv.id || idx}`,
-                invoiceNumber: inv.invoiceNumber || `INV-2026-${String(idx + 10).padStart(4, '0')}`,
-                jobFileNumber: inv.shipment?.jobFileNumber || inv.jobFileNumber || `RED-2026-${String(idx + 1).padStart(4, '0')}`,
-                blNumber: inv.shipment?.blNumber || inv.blNumber || 'MAEU-LIVE',
-                clientId: inv.client?.id || inv.clientId || `client-${idx + 1}`,
-                clientName: inv.client?.nameAr || inv.client?.name || inv.clientName || 'عميل معتمد',
-                invoiceType: inv.type === 'client_invoice' ? 'فاتورة خدمات لوجستية وتخليص' : 'نولون شحن بحري دولي',
-                issueDate: inv.issuedAt ? String(inv.issuedAt).slice(0, 10) : '2026-09-01',
-                dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '2026-10-01',
-                amount: total,
-                paidAmount: paid,
-                currency: inv.currency || 'USD',
-                status: stat as InvoiceLedgerEntry['status'],
-              };
-            });
-            setEntries([...mappedEntries, ...INITIAL_ENTRIES]);
-          }
+    Promise.allSettled([
+      api.get('/invoices'),
+      api.get('/clients'),
+    ]).then(([invRes, clRes]) => {
+      if (clRes.status === 'fulfilled') {
+        const cVal: any = clRes.value;
+        const cList = Array.isArray(cVal) ? cVal : (Array.isArray(cVal?.data) ? cVal.data : []);
+        setLiveClients(cList);
+      }
+      if (invRes.status === 'fulfilled') {
+        const res: any = invRes.value;
+        const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : (Array.isArray(res?.items) ? res.items : []));
+        setIsLiveConnected(true);
+        if (list.length > 0) {
+          const mappedEntries: InvoiceLedgerEntry[] = list.map((inv: any, idx: number) => {
+            const total = inv.totalAmount || inv.total || inv.amount || 3500;
+            const paid = inv.status === 'paid' ? total : (inv.status === 'partial' ? Math.round(total * 0.6) : 0);
+            const stat = inv.status === 'paid' ? 'PAID' : (inv.status === 'partial' ? 'PARTIAL' : (inv.status === 'overdue' ? 'OVERDUE' : 'UNPAID'));
+            return {
+              id: `inv-live-${inv.id || idx}`,
+              invoiceNumber: inv.invoiceNumber || `INV-2026-${String(idx + 10).padStart(4, '0')}`,
+              jobFileNumber: inv.shipment?.jobFileNumber || inv.jobFileNumber || `RED-2026-${String(idx + 1).padStart(4, '0')}`,
+              blNumber: inv.shipment?.blNumber || inv.blNumber || 'MAEU-LIVE',
+              clientId: inv.client?.id || inv.clientId || `client-${idx + 1}`,
+              clientName: inv.client?.nameAr || inv.client?.name || inv.clientName || 'عميل معتمد',
+              invoiceType: inv.type === 'client_invoice' ? 'فاتورة خدمات لوجستية وتخليص' : 'نولون شحن بحري دولي',
+              issueDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : (inv.issuedAt ? String(inv.issuedAt).slice(0, 10) : '2026-09-01'),
+              dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '2026-10-01',
+              amount: total,
+              paidAmount: paid,
+              currency: inv.currency || 'USD',
+              status: stat as InvoiceLedgerEntry['status'],
+            };
+          });
+          setEntries(mappedEntries);
+        } else {
+          setEntries([]);
         }
-      })
-      .catch(() => setIsLiveConnected(false));
+      }
+    }).catch(() => setIsLiveConnected(false));
   }, []);
 
   // Payment Recording Modal State
@@ -448,9 +396,11 @@ export const StatementOfAccountPage: React.FC = () => {
               className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#FF5E1E]"
             >
               <option value="ALL">جميع العملاء (All Clients)</option>
-              <option value="client-1">Al-Ahram Food Industries (الأهرام للصناعات الغذائية)</option>
-              <option value="client-2">Delta Chemicals & Polymers (دلتا للكيماويات)</option>
-              <option value="client-3">Nile Electronics (النيل للأجهزة الكهربائية)</option>
+              {liveClients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nameAr || c.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -501,7 +451,15 @@ export const StatementOfAccountPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredEntries.map((inv) => {
+              {filteredEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
+                    <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد حركات أو فواتير مسجلة في كشف الحساب</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredEntries.map((inv) => {
                 const remaining = inv.amount - inv.paidAmount;
 
                 return (
@@ -569,7 +527,8 @@ export const StatementOfAccountPage: React.FC = () => {
                     </td>
                   </tr>
                 );
-              })}
+              })
+            )}
             </tbody>
           </table>
         </div>

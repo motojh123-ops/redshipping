@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../services/api';
+import { buildNafezaValidateUrl } from '../../services/customsService';
 import {
   Search,
   Ship,
@@ -7,7 +8,6 @@ import {
   Calendar,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   FileText,
   Download,
   Share2,
@@ -24,7 +24,7 @@ import {
   Satellite,
   Globe,
   Compass,
-  Sparkles,
+  User,
 } from 'lucide-react';
 
 export const getCarrierTrackingUrl = (carrier: string, trackingNumber: string): string => {
@@ -54,10 +54,64 @@ export const getCarrierTrackingUrl = (carrier: string, trackingNumber: string): 
   return `https://www.track-trace.com/container`;
 };
 
+// ── Shipment stage metadata (matches @banna/shared-types ShipmentStage) ──────
+const STAGE_META: { stage: string; label: string; progress: number }[] = [
+  { stage: 'booking_confirmed', label: 'تأكيد الحجز', progress: 8 },
+  { stage: 'cargo_received', label: 'استلام البضاعة', progress: 18 },
+  { stage: 'customs_submitted', label: 'إيداع المستندات جمركياً', progress: 26 },
+  { stage: 'acid_issued', label: 'صدور نافذة (ACID)', progress: 34 },
+  { stage: 'in_transit', label: 'في البحر (In Transit)', progress: 55 },
+  { stage: 'arrived_destination', label: 'وصول الميناء', progress: 70 },
+  { stage: 'clearance_in_progress', label: 'قيد التخليص الجمركي', progress: 82 },
+  { stage: 'release_issued', label: 'إفراج جمركي صادر', progress: 90 },
+  { stage: 'out_for_delivery', label: 'خارج للتسليم', progress: 96 },
+  { stage: 'delivered', label: 'تم التسليم', progress: 100 },
+  { stage: 'closed', label: 'مغلق ومسوى', progress: 100 },
+];
+
+const stageIndex = (stage?: string) =>
+  STAGE_META.findIndex((s) => s.stage === (stage || '').toLowerCase());
+
+const stageLabel = (stage?: string) => {
+  const i = stageIndex(stage);
+  return i >= 0 ? STAGE_META[i].label : (stage || '—');
+};
+
+const stageProgress = (stage?: string) => {
+  const i = stageIndex(stage);
+  return i >= 0 ? STAGE_META[i].progress : 10;
+};
+
+const CONTAINER_STATUS_LABEL: Record<string, string> = {
+  booked: 'محجوزة',
+  loaded: 'محمّلة',
+  on_board: 'على متن السفينة',
+  discharged: 'تم التفريغ بالميناء',
+  gated_out: 'خرجت من الميناء',
+  delivered: 'تم تسليمها',
+  returned_empty: 'أعيدت فارغة',
+};
+
+const fmtDate = (d?: string | null) => {
+  if (!d) return '—';
+  const date = new Date(d);
+  return isNaN(date.getTime()) ? '—' : date.toISOString().slice(0, 10);
+};
+
+const fmtDaysRemaining = (eta?: string | null, freeDays?: number | null) => {
+  if (!eta || !freeDays) return null;
+  const etaDate = new Date(eta);
+  if (isNaN(etaDate.getTime())) return null;
+  const deadline = new Date(etaDate.getTime() + freeDays * 86400000);
+  return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+};
+
 interface TrackingData {
+  id: string;
   jobFileNumber: string;
   blNumber: string;
   acidNumber: string;
+  acidExpiryDate: string | null;
   carrier: string;
   vesselName: string;
   vesselImo?: string;
@@ -71,17 +125,22 @@ interface TrackingData {
   progressPercent: number;
   etd: string;
   eta: string;
+  ata: string | null;
   freeDays: number;
-  daysRemainingFreeTime: number;
+  daysRemainingFreeTime: number | null;
   clientName: string;
   commodity: string;
+  grossWeightKg: number | null;
+  volumeCbm: number | null;
+  packageCount: number | null;
   containers: {
+    id: string;
     number: string;
     type: string;
     seal: string;
     status: string;
     statusLabel: string;
-    dischargedAt?: string;
+    dischargedAt?: string | null;
   }[];
   milestones: {
     id: string;
@@ -92,206 +151,14 @@ interface TrackingData {
     isCompleted: boolean;
     isCurrent: boolean;
   }[];
-  documents: {
-    name: string;
-    type: string;
-    size: string;
-  }[];
 }
 
-const SAMPLE_TRACKING_DATA: Record<string, TrackingData> = {
-  MSCU8812903: {
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MSCU8812903',
-    acidNumber: '4829104829',
-    carrier: 'MSC (Mediterranean Shipping Company)',
-    vesselName: 'MSC LORETTO',
-    vesselImo: '9231494',
-    voyageNumber: '2408W',
-    originPort: 'Shanghai Port (شنغهاي - الصين)',
-    originPortCode: 'CNSHA',
-    destinationPort: 'Alexandria Port (الإسكندرية - مصر)',
-    destinationPortCode: 'EGALY',
-    currentStage: 'in_transit',
-    currentStageLabel: 'في عرض البحر (In Transit)',
-    progressPercent: 55,
-    etd: '2026-09-02',
-    eta: '2026-09-22',
-    freeDays: 21,
-    daysRemainingFreeTime: 21,
-    clientName: 'Al-Ahram Food Industries (الأهرام للصناعات الغذائية)',
-    commodity: 'مواد غذائية معلبة (Canned Tuna & Tomato Paste)',
-    containers: [
-      {
-        number: 'MEDU1029384',
-        type: '40HQ',
-        seal: 'SL-88412',
-        status: 'on_vessel',
-        statusLabel: 'مشحونة على ظهر السفينة',
-      },
-      {
-        number: 'MEDU1029385',
-        type: '40HQ',
-        seal: 'SL-88413',
-        status: 'on_vessel',
-        statusLabel: 'مشحونة على ظهر السفينة',
-      },
-    ],
-    milestones: [
-      {
-        id: 'm1',
-        title: 'تأكيد الحجز الملاحي (Booking Confirmed)',
-        description: 'تم حجز المساحة على الخط الملاحي بنجاح',
-        location: 'Shanghai, China',
-        date: '2026-08-20 10:00',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm2',
-        title: 'استلام الحاويات في ساحة الميناء (Gate-In)',
-        description: 'دخول الحاويات ساحة التصدير بميناء شنغهاي',
-        location: 'Shanghai Port Terminal',
-        date: '2026-08-25 14:30',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm3',
-        title: 'صدور رقم القيد الجمركي المسبق (ACID NAFEZA)',
-        description: 'تسجيل الشحنة على منظومة نافذة برقم 4829104829',
-        location: 'Cairo / Alexandria, Egypt',
-        date: '2026-08-28 09:15',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm4',
-        title: 'إبحار السفينة ومغادرة ميناء المنشأ (Vessel Departed)',
-        description: 'مغادرة السفينة MSC LORETTO متجهة إلى ميناء الإسكندرية',
-        location: 'East China Sea',
-        date: '2026-09-02 18:00',
-        isCompleted: true,
-        isCurrent: true,
-      },
-      {
-        id: 'm5',
-        title: 'الوصول المتوقع لميناء الإسكندرية (ETA Destination)',
-        description: 'تراكي السفينة وتفريغ الحاويات بساحة المستودعات',
-        location: 'Alexandria Port, Egypt',
-        date: '2026-09-22 08:00 (متوقع)',
-        isCompleted: false,
-        isCurrent: false,
-      },
-      {
-        id: 'm6',
-        title: 'الكشف والمعاينة وصدور استمارة 46 (Form 46 Release)',
-        description: 'استكمال إجراءات التثمين وسداد الرسوم الجمركية',
-        location: 'مركز الخدمات اللوجستية بميناء الإسكندرية',
-        date: 'قيد الانتظار',
-        isCompleted: false,
-        isCurrent: false,
-      },
-      {
-        id: 'm7',
-        title: 'النقل البري والتسليم لمخزن العميل (Final Delivery)',
-        description: 'نقل الحاويات بواسطة أسطول شاحنات RED SHIPPING حتى المصنع بمدينة 6 أكتوبر',
-        location: '6th of October City, Giza',
-        date: 'قيد الانتظار',
-        isCompleted: false,
-        isCurrent: false,
-      },
-    ],
-    documents: [
-      { name: 'بوليصة الشحن البحري Draft B/L.pdf', type: 'PDF', size: '1.4 MB' },
-      { name: 'الفاتورة التجارية Commercial Invoice.pdf', type: 'PDF', size: '840 KB' },
-      { name: 'بيان العبوة ومحتويات الحاوية Packing List.xlsx', type: 'Excel', size: '512 KB' },
-      { name: 'إشعار تسجيل نافذة ACID Certificate.pdf', type: 'PDF', size: '620 KB' },
-    ],
-  },
-  MAEU982183910: {
-    jobFileNumber: 'RED-2026-0002',
-    blNumber: 'MAEU982183910',
-    acidNumber: '3910294811',
-    carrier: 'Maersk Line',
-    vesselName: 'MAERSK MC-KINNEY MOLLER',
-    vesselImo: '9619907',
-    voyageNumber: '2604W',
-    originPort: 'Shanghai Port (شنغهاي - الصين)',
-    originPortCode: 'CNSHA',
-    destinationPort: 'Alexandria Port (الإسكندرية - مصر)',
-    destinationPortCode: 'EGALY',
-    currentStage: 'clearance_in_progress',
-    currentStageLabel: 'قيد التخليص الجمركي بميناء الإسكندرية',
-    progressPercent: 78,
-    etd: '2026-08-25',
-    eta: '2026-09-14',
-    freeDays: 14,
-    daysRemainingFreeTime: 9,
-    clientName: 'Delta Chemicals & Polymers (دلتا للكيماويات)',
-    commodity: 'حبيبات وبوليمرات صناعية في أكياس باليتات',
-    containers: [
-      {
-        number: 'MSKU8849120',
-        type: '40HQ',
-        seal: 'SL-99120',
-        status: 'discharged',
-        statusLabel: 'تم التفريغ بساحة الميناء',
-        dischargedAt: '2026-09-15 06:30',
-      },
-    ],
-    milestones: [
-      {
-        id: 'm1',
-        title: 'تأكيد الحجز الملاحي',
-        description: 'تأكيد الحجز لدى خط ميرسك',
-        location: 'Shanghai, China',
-        date: '2026-08-15',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm2',
-        title: 'استلام الحاويات والإبحار',
-        description: 'إبحار السفينة من ميناء شنغهاي',
-        location: 'Shanghai Port',
-        date: '2026-08-25',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm3',
-        title: 'وصول وتفريغ الحاويات بميناء الإسكندرية',
-        description: 'تفريغ الحاويات في ساحة محطة الحاويات',
-        location: 'Alexandria Terminal',
-        date: '2026-09-15',
-        isCompleted: true,
-        isCurrent: false,
-      },
-      {
-        id: 'm4',
-        title: 'المعاينة والفحص الفني (Customs Inspection)',
-        description: 'إجراءات الفحص بالأشعة والمعاينة الجمركية واستخراج استمارة 46',
-        location: 'جمرك الإسكندرية',
-        date: '2026-09-18 (جاري الآن)',
-        isCompleted: false,
-        isCurrent: true,
-      },
-    ],
-    documents: [
-      { name: 'بوليصة الشحن المعيارية Sea Waybill.pdf', type: 'PDF', size: '1.2 MB' },
-      { name: 'استمارة 46 إفراج تحت الفحص Form 46.pdf', type: 'PDF', size: '920 KB' },
-    ],
-  },
-};
-
 export const TrackingPortalPage: React.FC = () => {
-  const [query, setQuery] = useState('MSCU8812903');
-  const [activeTracking, setActiveTracking] = useState<TrackingData | null>(
-    SAMPLE_TRACKING_DATA['MSCU8812903'],
-  );
+  const [query, setQuery] = useState('');
+  const [activeTracking, setActiveTracking] = useState<TrackingData | null>(null);
   const [copied, setCopied] = useState(false);
-  const [searched, setSearched] = useState(true);
+  const [searched, setSearched] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [radarMode, setRadarMode] = useState<'corridor' | 'satellite'>('corridor');
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
@@ -305,141 +172,100 @@ export const TrackingPortalPage: React.FC = () => {
       .catch(() => setIsLiveConnected(false));
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanQuery = query.trim().toUpperCase();
-    const result =
-      SAMPLE_TRACKING_DATA[cleanQuery] ||
-      Object.values(SAMPLE_TRACKING_DATA).find(
-        (t) =>
-          t.blNumber.toUpperCase() === cleanQuery ||
-          t.acidNumber === cleanQuery ||
-          t.jobFileNumber.toUpperCase() === cleanQuery ||
-          t.containers.some((c) => c.number.toUpperCase() === cleanQuery),
+    if (!cleanQuery) return;
+
+    setIsSearching(true);
+    try {
+      // Fetch tenant shipments + customs dossiers (for real ACID numbers) in parallel
+      const shipmentsPromise: Promise<any> = api.get('/shipments');
+      const dossiersPromise: Promise<any> = api.get('/customs').catch(() => []);
+      const [shipmentsRes, dossiersRes] = await Promise.all([shipmentsPromise, dossiersPromise]);
+      const list: any[] = Array.isArray(shipmentsRes) ? shipmentsRes : (Array.isArray(shipmentsRes?.items) ? shipmentsRes.items : []);
+      const dossiers: any[] = Array.isArray(dossiersRes) ? dossiersRes : [];
+
+      const found = list.find((s: any) =>
+        (s.blNumber && s.blNumber.toUpperCase().includes(cleanQuery)) ||
+        (s.jobFileNumber && s.jobFileNumber.toUpperCase().includes(cleanQuery)) ||
+        (s.containers && s.containers.some((c: any) => c.containerNumber && c.containerNumber.toUpperCase().includes(cleanQuery)))
       );
 
-    if (result) {
-      setActiveTracking(result);
-      setSearched(true);
-    } else {
-      // Create fallback tracking result
-      const fallback: TrackingData = {
-        jobFileNumber: `RED-2026-${cleanQuery.slice(-4)}`,
-        blNumber: cleanQuery,
-        acidNumber: '4920194812',
-        carrier: 'Maersk Line / MSC',
-        vesselName: 'GLOBAL VOYAGER',
-        vesselImo: '9795610',
-        voyageNumber: '2609E',
-        originPort: 'Shanghai Port (شنغهاي)',
-        originPortCode: 'CNSHA',
-        destinationPort: 'Alexandria Port (الإسكندرية)',
-        destinationPortCode: 'EGALY',
-        currentStage: 'in_transit',
-        currentStageLabel: 'في عرض البحر (In Transit)',
-        progressPercent: 60,
-        etd: '2026-09-05',
-        eta: '2026-09-25',
-        freeDays: 14,
-        daysRemainingFreeTime: 14,
-        clientName: 'شركة النقل الدولي والتوكيلات',
-        commodity: 'بضائع عامة مشحونة بحراً',
-        containers: [
-          {
-            number: cleanQuery.startsWith('MEDU') || cleanQuery.startsWith('MSKU') ? cleanQuery : 'MSKU9918231',
-            type: '40HQ',
-            seal: 'SL-77123',
-            status: 'on_vessel',
-            statusLabel: 'مشحونة على متن السفينة',
-          },
-        ],
-        milestones: [
-          {
-            id: 'm1',
-            title: 'تأكيد الحجز الملاحي',
-            description: 'تم إصدار الحجز',
-            location: 'POL Terminal',
-            date: '2026-09-01',
-            isCompleted: true,
-            isCurrent: false,
-          },
-          {
-            id: 'm2',
-            title: 'إبحار السفينة في اتجاه مصر',
-            description: 'السفينة في المسار الملاحي المباشر',
-            location: 'International Waters',
-            date: '2026-09-05',
-            isCompleted: true,
-            isCurrent: true,
-          },
-          {
-            id: 'm3',
-            title: 'الوصول المتوقع لميناء المقصد',
-            description: 'التفريغ وبدء التخليص الجمركي',
-            location: 'EGALY Alexandria',
-            date: '2026-09-25 (متوقع)',
-            isCompleted: false,
-            isCurrent: false,
-          },
-        ],
-        documents: [
-          { name: 'Draft Bill of Lading.pdf', type: 'PDF', size: '1.2 MB' },
-        ],
-      };
+      if (found) {
+        // Match the customs dossier via shipmentId (dossiers include a nested shipment)
+        const dossier = dossiers.find((d: any) => d.shipmentId === found.id || d.shipment?.id === found.id);
+        const acidNumber = dossier?.acidNumber || null;
 
-      // Try fetching live shipment from backend
-      api.get('/shipments')
-        .then((res: any) => {
-          const list = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
-          const found = list.find((s: any) =>
-            (s.blNumber && s.blNumber.toUpperCase() === cleanQuery) ||
-            (s.jobFileNumber && s.jobFileNumber.toUpperCase() === cleanQuery) ||
-            (s.acidNumber && s.acidNumber === cleanQuery) ||
-            (s.containers && s.containers.some((c: any) => c.containerNumber && c.containerNumber.toUpperCase() === cleanQuery))
-          );
-          if (found) {
-            const liveData: TrackingData = {
-              jobFileNumber: found.jobFileNumber || 'RED-2026-LIVE',
-              blNumber: found.blNumber || cleanQuery,
-              acidNumber: found.acidNumber || '4920194812',
-              carrier: found.shippingLine?.name || found.carrier || 'MSC Mediterranean Shipping',
-              vesselName: found.vesselName || 'GLOBAL VOYAGER',
-              voyageNumber: found.voyageNumber || '2604W',
-              originPort: found.pol || found.loadingPort || 'Shanghai Port (شنغهاي)',
-              originPortCode: found.polCode || 'CNSHA',
-              destinationPort: found.pod || found.dischargePort || 'Alexandria Port (الإسكندرية)',
-              destinationPortCode: found.podCode || 'EGALY',
-              currentStage: found.status === 'DELIVERED' ? 'delivered' : 'in_transit',
-              currentStageLabel: found.status === 'DELIVERED' ? 'تم التسليم بالكامل' : 'في طريق الإبحار',
-              progressPercent: found.status === 'DELIVERED' ? 100 : 75,
-              etd: found.etd ? String(found.etd).slice(0, 10) : '2026-09-01',
-              eta: found.eta ? String(found.eta).slice(0, 10) : '2026-09-22',
-              freeDays: 14,
-              daysRemainingFreeTime: 10,
-              clientName: typeof found.client === 'object' ? (found.client?.nameAr || found.client?.name || 'عميل معتمد') : 'عميل معتمد',
-              commodity: found.cargoDescription || 'بضائع عامة مشحونة بحراً',
-              containers: (found.containers || []).map((c: any) => ({
-                number: c.containerNumber || 'MSCU-LIVE',
-                type: c.type || '40HQ',
-                seal: c.sealNumber || 'SL-88129',
-                status: 'on_vessel',
-                statusLabel: 'على متن السفينة',
-              })),
-              milestones: [
-                { id: 'm1', title: 'تأكيد الحجز وتصدير الإذن', description: 'تأكيد الحجز الملاحي', location: 'Origin Port', date: '2026-09-01', isCompleted: true, isCurrent: false },
-                { id: 'm2', title: 'إبحار السفينة', description: 'مغادرة ميناء الشحن', location: 'En Route', date: '2026-09-05', isCompleted: true, isCurrent: true },
-              ],
-              documents: [
-                { name: 'Draft Bill of Lading.pdf', type: 'PDF', size: '1.2 MB' },
-              ],
+        const originPort = found.originPort as { code?: string; nameEn?: string; nameAr?: string } | null | undefined;
+        const destinationPort = found.destinationPort as { code?: string; nameEn?: string; nameAr?: string } | null | undefined;
+        const stage = (found.currentStage || '').toLowerCase();
+        const freeDays = Number(found.freeDaysAllowed) || 14;
+        const delivered = stage === 'delivered' || stage === 'closed';
+
+        // Real event timeline (newest first from API) → chronological milestones
+        const events: any[] = Array.isArray(found.events) ? [...found.events] : [];
+        events.sort((a, b) => new Date(a.eventAt).getTime() - new Date(b.eventAt).getTime());
+
+        const milestones = events.map((ev, idx) => ({
+          id: ev.id,
+          title: stageLabel(ev.toStage),
+          description: ev.notes || '',
+          location: ev.location || '',
+          date: fmtDate(ev.eventAt),
+          isCompleted: true,
+          isCurrent: idx === events.length - 1 && !delivered,
+        }));
+
+        const liveData: TrackingData = {
+          id: found.id,
+          jobFileNumber: found.jobFileNumber || '—',
+          blNumber: found.blNumber || cleanQuery,
+          acidNumber: acidNumber || '—',
+          acidExpiryDate: dossier?.acidExpiryDate ? String(dossier.acidExpiryDate) : null,
+          carrier: found.shippingLine?.name || 'الخط الملاحي',
+          vesselName: found.vesselName || '—',
+          vesselImo: found.vesselImo || undefined,
+          voyageNumber: found.voyageNumber || '—',
+          originPort: originPort?.nameAr || originPort?.nameEn || 'غير محدد',
+          originPortCode: originPort?.code || 'POL',
+          destinationPort: destinationPort?.nameAr || destinationPort?.nameEn || 'غير محدد',
+          destinationPortCode: destinationPort?.code || 'POD',
+          currentStage: stage,
+          currentStageLabel: stageLabel(stage),
+          progressPercent: stageProgress(stage),
+          etd: fmtDate(found.etd),
+          eta: fmtDate(found.eta),
+          ata: found.ata ? String(found.ata) : null,
+          freeDays,
+          daysRemainingFreeTime: fmtDaysRemaining(found.eta, freeDays),
+          clientName: found.client?.name || 'عميل معتمد',
+          commodity: found.cargoDescription || 'بضائع مشحونة',
+          grossWeightKg: found.grossWeightKg != null ? Number(found.grossWeightKg) : null,
+          volumeCbm: found.volumeCbm != null ? Number(found.volumeCbm) : null,
+          packageCount: found.packageCount != null ? Number(found.packageCount) : null,
+          containers: (found.containers || []).map((c: any) => {
+            const statusKey = (c.status || 'booked').toLowerCase();
+            return {
+              id: c.id,
+              number: c.containerNumber || '—',
+              type: c.containerType || '—',
+              seal: c.sealNumber || '—',
+              status: statusKey,
+              statusLabel: CONTAINER_STATUS_LABEL[statusKey] || statusKey,
+              dischargedAt: c.dischargedAt ? fmtDate(c.dischargedAt) : null,
             };
-            setActiveTracking(liveData);
-            setSearched(true);
-          }
-        })
-        .catch(() => {});
-
-      setActiveTracking(fallback);
+          }),
+          milestones,
+        };
+        setActiveTracking(liveData);
+      } else {
+        setActiveTracking(null);
+      }
+    } catch {
+      setActiveTracking(null);
+    } finally {
+      setIsSearching(false);
       setSearched(true);
     }
   };
@@ -455,6 +281,18 @@ export const TrackingPortalPage: React.FC = () => {
     const text = `تتبع شحنة RED SHIPPING للخدمات اللوجستية:\nرقم البوليصة: ${activeTracking.blNumber}\nرقم نافذة ACID: ${activeTracking.acidNumber}\nالحالة: ${activeTracking.currentStageLabel}\nالسفينة: ${activeTracking.vesselName} (${activeTracking.voyageNumber})\nالوصول المتوقع: ${activeTracking.eta}\nرابط التتبع: ${window.location.href}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
+
+  const telemetry = useMemo(() => {
+    if (!activeTracking) return null;
+    return [
+      { label: 'الباخرة:', value: activeTracking.vesselName, mono: false, bold: true },
+      { label: 'رقم IMO:', value: activeTracking.vesselImo || '—', mono: true, bold: true },
+      { label: 'رقم الرحلة:', value: activeTracking.voyageNumber, mono: true, bold: false },
+      { label: 'الوزن القائم:', value: activeTracking.grossWeightKg != null ? `${activeTracking.grossWeightKg.toLocaleString()} كجم` : '—', mono: true, bold: true },
+      { label: 'الحجم:', value: activeTracking.volumeCbm != null ? `${activeTracking.volumeCbm.toLocaleString()} م³` : '—', mono: true, bold: false },
+      { label: 'عدد الطرود:', value: activeTracking.packageCount != null ? String(activeTracking.packageCount) : '—', mono: true, bold: false },
+    ];
+  }, [activeTracking]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
@@ -499,43 +337,19 @@ export const TrackingPortalPage: React.FC = () => {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="أدخل رقم بوليصة الشحن (B/L)، رقم الحاوية، أو رقم ACID..."
+                placeholder="أدخل رقم بوليصة الشحن (B/L)، رقم ملف الشحنة، أو رقم الحاوية..."
                 className="w-full bg-black/40 border border-slate-600 rounded-2xl py-3 ps-11 pe-4 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#FF5E1E] focus:border-transparent transition"
               />
             </div>
             <button
               type="submit"
-              className="px-6 py-3 rounded-2xl bg-[#FF5E1E] hover:bg-[#FF7034] text-white text-sm font-bold shadow-lg shadow-orange-500/30 transition flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isSearching}
+              className="px-6 py-3 rounded-2xl bg-[#FF5E1E] hover:bg-[#FF7034] text-white text-sm font-bold shadow-lg shadow-orange-500/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
             >
-              <span>تتبع الآن</span>
+              <span>{isSearching ? 'جاري البحث...' : 'تتبع الآن'}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />
             </button>
           </form>
-
-          {/* Quick Search Tags */}
-          <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
-            <span>شحنات تجريبية سريعة:</span>
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('MSCU8812903');
-                setActiveTracking(SAMPLE_TRACKING_DATA['MSCU8812903']);
-              }}
-              className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-orange-300 font-mono transition"
-            >
-              MSCU8812903
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('MAEU982183910');
-                setActiveTracking(SAMPLE_TRACKING_DATA['MAEU982183910']);
-              }}
-              className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-orange-300 font-mono transition"
-            >
-              MAEU982183910
-            </button>
-          </div>
         </div>
       </div>
 
@@ -603,7 +417,7 @@ export const TrackingPortalPage: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block">ميناء الشحن والمنشأ (POL)</span>
                   <span className="text-sm font-bold text-slate-900 dark:text-white block">{activeTracking.originPort}</span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">تاريخ الإبحار: {activeTracking.etd}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">{activeTracking.originPortCode} • تاريخ الإبحار: {activeTracking.etd}</span>
                 </div>
               </div>
 
@@ -629,7 +443,11 @@ export const TrackingPortalPage: React.FC = () => {
                 <div className="order-2 md:order-1">
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block">ميناء الوصول والمقصد (POD)</span>
                   <span className="text-sm font-bold text-slate-900 dark:text-white block">{activeTracking.destinationPort}</span>
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold font-mono">الوصول المتوقع (ETA): {activeTracking.eta}</span>
+                  {activeTracking.ata ? (
+                    <span className="text-xs text-sky-600 dark:text-sky-400 font-semibold font-mono">تم الوصول فعلياً: {activeTracking.ata}</span>
+                  ) : (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold font-mono">الوصول المتوقع (ETA): {activeTracking.eta}</span>
+                  )}
                 </div>
                 <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 order-1 md:order-2">
                   <Anchor className="w-5 h-5" />
@@ -646,15 +464,18 @@ export const TrackingPortalPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-900 dark:text-white font-mono">{activeTracking.acidNumber}</span>
-                  <a
-                    href="https://www.nafeza.gov.eg/ar/tracking"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1 text-sky-600 dark:text-sky-400 hover:text-sky-700"
-                    title="التحقق من منصة نافذة الرسمية"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  {activeTracking.acidNumber !== '—' && (
+                    <a
+                      href={buildNafezaValidateUrl(activeTracking.acidNumber)}
+                      onClick={() => navigator.clipboard?.writeText(activeTracking.acidNumber).catch(() => {})}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 text-sky-600 dark:text-sky-400 hover:text-sky-700"
+                      title={`التحقق من صلاحية رقم ACID ${activeTracking.acidNumber} على منصة نافذة الرسمية (تم نسخ الرقم للحفظ)`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -671,14 +492,26 @@ export const TrackingPortalPage: React.FC = () => {
                   <Clock className="w-4 h-4 text-emerald-500" />
                   <span className="text-slate-500 dark:text-slate-400">الأيام المتبقية قبل الغرامة:</span>
                 </div>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                  {activeTracking.daysRemainingFreeTime} يوم أمان
+                <span className={`font-bold font-mono ${
+                  activeTracking.daysRemainingFreeTime == null
+                    ? 'text-slate-400'
+                    : activeTracking.daysRemainingFreeTime <= 3
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : activeTracking.daysRemainingFreeTime <= 7
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {activeTracking.daysRemainingFreeTime == null
+                    ? 'بعد تحديد موعد الوصول'
+                    : activeTracking.daysRemainingFreeTime <= 0
+                    ? 'انتهت الفترة — غرامات مستحقة'
+                    : `${activeTracking.daysRemainingFreeTime} يوم`}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* ── Live AIS Vessel Radar & Sea Corridor Section (100% Free / Zero API Cost) ── */}
+          {/* ── Live AIS Vessel Radar & Sea Corridor Section ── */}
           <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 shadow-2xl text-white">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
               <div>
@@ -728,34 +561,27 @@ export const TrackingPortalPage: React.FC = () => {
             {/* Active Radar Display */}
             <div className="pt-4">
               {radarMode === 'satellite' ? (
-                <div className="space-y-3">
+                activeTracking.vesselImo ? (
                   <div className="relative w-full h-[380px] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-inner">
                     <iframe
                       title={`Live AIS Radar - ${activeTracking.vesselName}`}
                       className="w-full h-full border-0"
-                      src={`https://www.vesselfinder.com/aismap?zoom=5&track=true&fleet=false&fleet_name=false&fleet_timespan=2&fleet_hide_old_positions=false&clicktoact=false&store_pos=true&imo=${activeTracking.vesselImo || '9231494'}`}
+                      src={`https://www.vesselfinder.com/aismap?zoom=5&track=true&fleet=false&fleet_name=false&fleet_timespan=2&fleet_hide_old_positions=false&clicktoact=false&store_pos=true&imo=${activeTracking.vesselImo}`}
                     />
                     <div className="absolute top-3 end-3 px-3 py-1.5 rounded-xl bg-black/85 backdrop-blur-md border border-white/20 text-[11px] font-mono text-emerald-400 flex items-center gap-2 shadow-lg">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      <span>SATELLITE AIS LIVE • IMO: {activeTracking.vesselImo || '9231494'}</span>
+                      <span>SATELLITE AIS LIVE • IMO: {activeTracking.vesselImo}</span>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 px-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      بيانات رادار AIS الحية مجانية ومفتوحة بدون الحاجة لاشتراكات أو مفاتيح API مدفوعة.
-                    </span>
-                    <a
-                      href={`https://www.vesselfinder.com/vessels/details/${activeTracking.vesselImo || '9231494'}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#FF5E1E] hover:underline flex items-center gap-1 font-semibold"
-                    >
-                      <span>عرض السجل الملاحي الكامل على VesselFinder</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                ) : (
+                  <div className="w-full h-[380px] rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 flex flex-col items-center justify-center text-center p-8">
+                    <Satellite className="w-10 h-10 text-slate-600 mb-3" />
+                    <p className="text-sm font-bold text-slate-300">رقم IMO غير مسجل لهذه السفينة</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      أضف رقم IMO للسفينة في ملف الشحنة لتفعيل رادار AIS الحي عبر VesselFinder
+                    </p>
                   </div>
-                </div>
+                )
               ) : (
                 <div className="relative rounded-2xl overflow-hidden bg-[#070B14] border border-slate-800 p-6">
                   {/* Visual Sea Corridor & Ports */}
@@ -763,7 +589,11 @@ export const TrackingPortalPage: React.FC = () => {
                     <div className="lg:col-span-3">
                       <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
                         <span className="font-semibold text-white">خط سير الرحلة البحري (Transit Route)</span>
-                        <span className="font-mono text-emerald-400 font-bold">السرعة التقديرية: 19.2 عقدة (Knots)</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {activeTracking.progressPercent >= 100
+                            ? 'اكتملت الرحلة ✓'
+                            : 'قيد الإبحار'}
+                        </span>
                       </div>
                       {/* SVG Corridor */}
                       <svg viewBox="0 0 700 120" className="w-full h-auto drop-shadow-lg">
@@ -776,7 +606,7 @@ export const TrackingPortalPage: React.FC = () => {
                         </defs>
                         <path d="M 50,60 Q 200,20 350,60 T 650,60" fill="none" stroke="#1E293B" strokeWidth="6" strokeLinecap="round" />
                         <path d="M 50,60 Q 200,20 350,60 T 650,60" fill="none" stroke="url(#trackGrad)" strokeWidth="4" strokeLinecap="round" strokeDasharray="6 6" />
-                        
+
                         {/* Waypoints */}
                         <circle cx="50" cy="60" r="8" fill="#3B82F6" />
                         <circle cx="50" cy="60" r="14" fill="#3B82F6" fillOpacity="0.25" />
@@ -801,22 +631,14 @@ export const TrackingPortalPage: React.FC = () => {
 
                     {/* Quick Marine Telemetry Specs */}
                     <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800 space-y-2.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">الباخرة:</span>
-                        <span className="font-bold text-white truncate">{activeTracking.vesselName}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">رقم IMO:</span>
-                        <span className="font-mono font-bold text-orange-400">{activeTracking.vesselImo || '9231494'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">رقم الرحلة:</span>
-                        <span className="font-mono text-white">{activeTracking.voyageNumber}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">المسافة المتبقية:</span>
-                        <span className="font-mono font-bold text-emerald-400">~ 2,410 ميل بحري</span>
-                      </div>
+                      {telemetry?.map((t) => (
+                        <div key={t.label} className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400 shrink-0">{t.label}</span>
+                          <span className={`${t.mono ? 'font-mono' : ''} ${t.bold ? 'font-bold' : ''} text-white truncate`} title={t.value}>
+                            {t.value}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -838,15 +660,19 @@ export const TrackingPortalPage: React.FC = () => {
                   <Globe className="w-3.5 h-3.5 text-[#FF5E1E]" />
                   <span>بوابة تتبع {activeTracking.carrier} الرسمية ↗</span>
                 </a>
-                <a
-                  href="https://www.nafeza.gov.eg/ar/tracking"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/25 font-semibold transition"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>استعلام ACID نافذة المصرية ↗</span>
-                </a>
+                {activeTracking.acidNumber !== '—' && (
+                  <a
+                    href={buildNafezaValidateUrl(activeTracking.acidNumber)}
+                    onClick={() => navigator.clipboard?.writeText(activeTracking.acidNumber).catch(() => {})}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/25 font-semibold transition"
+                    title={`الاستعلام عن صلاحية ACID ${activeTracking.acidNumber} على منصة نافذة الرسمية (تم نسخ الرقم للحفظ)`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>استعلام ACID نافذة المصرية ↗</span>
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -858,126 +684,158 @@ export const TrackingPortalPage: React.FC = () => {
               الحاويات المشمولة بالشحنة ({activeTracking.containers.length})
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {activeTracking.containers.map((c) => (
-                <div
-                  key={c.number}
-                  className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-[#181D2A] flex items-center justify-center text-slate-900 dark:text-white font-mono font-bold text-sm">
-                      {c.type}
+            {activeTracking.containers.length === 0 ? (
+              <p className="text-xs text-slate-400">لم يتم تسجيل حاويات على ملف الشحنة بعد</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeTracking.containers.map((c) => (
+                  <div
+                    key={c.id}
+                    className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-[#181D2A] flex items-center justify-center text-slate-900 dark:text-white font-mono font-bold text-[10px] px-1">
+                        {c.type}
+                      </div>
+                      <div>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white text-sm block">{c.number}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">رقم الرصاص الجمركي (Seal): {c.seal}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white text-sm block">{c.number}</span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">رقم الرصاص الجمركي (Seal): {c.seal}</span>
-                    </div>
-                  </div>
 
-                  <div className="flex flex-col sm:items-end gap-1">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-orange-500/10 text-[#FF5E1E] border border-orange-500/20 self-start sm:self-auto">
-                      <CheckCircle2 className="w-3 h-3" />
-                      {c.statusLabel}
-                    </span>
-                    {c.dischargedAt && (
-                      <span className="text-[10px] text-slate-400 block">تفريغ: {c.dischargedAt}</span>
-                    )}
-                    {/* Direct Carrier Trace Link for Container */}
-                    <a
-                      href={getCarrierTrackingUrl(activeTracking.carrier, c.number)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5E1E] hover:underline mt-0.5"
-                      title={`استعلام حي عن الحاوية ${c.number} على موقع ${activeTracking.carrier}`}
-                    >
-                      <span>تتبع الحاوية على موقع الخط الرسمي</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                    <div className="flex flex-col sm:items-end gap-1">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold self-start sm:self-auto border ${
+                        c.status === 'returned_empty' || c.status === 'delivered'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                          : c.status === 'discharged' || c.status === 'gated_out'
+                          ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
+                          : c.status === 'on_board'
+                          ? 'bg-orange-500/10 text-[#FF5E1E] border-orange-500/20'
+                          : 'bg-slate-200/60 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                      }`}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        {c.statusLabel}
+                      </span>
+                      {c.dischargedAt && (
+                        <span className="text-[10px] text-slate-400 block">تفريغ: {c.dischargedAt}</span>
+                      )}
+                      {/* Direct Carrier Trace Link for Container */}
+                      <a
+                        href={getCarrierTrackingUrl(activeTracking.carrier, c.number)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5E1E] hover:underline mt-0.5"
+                        title={`استعلام حي عن الحاوية ${c.number} على موقع ${activeTracking.carrier}`}
+                      >
+                        <span>تتبع الحاوية على موقع الخط الرسمي</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Milestones Timeline */}
+          {/* Milestones Timeline — real ShipmentEvent history */}
           <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] rounded-3xl p-6 shadow-sm">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#FF5E1E]" />
               الخط الزمني ومحطات التشغيل (Shipment Milestones)
             </h3>
 
-            <div className="relative ps-6 space-y-6 before:absolute before:top-3 before:bottom-3 before:start-2.5 before:w-0.5 before:bg-slate-200 dark:before:bg-[#1E2638]">
-              {activeTracking.milestones.map((m) => (
-                <div key={m.id} className="relative flex items-start gap-4">
-                  {/* Indicator Dot */}
-                  <div
-                    className={`absolute -start-6 top-1 w-5 h-5 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#121620] ${
-                      m.isCompleted
-                        ? 'bg-emerald-500 text-white'
-                        : m.isCurrent
-                        ? 'bg-[#FF5E1E] text-white animate-pulse'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {m.isCompleted ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <div className="w-2 h-2 rounded-full bg-current"></div>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                      <h4
-                        className={`text-sm font-bold ${
-                          m.isCurrent ? 'text-[#FF5E1E]' : m.isCompleted ? 'text-slate-900 dark:text-white' : 'text-slate-400'
-                        }`}
-                      >
-                        {m.title}
-                      </h4>
-                      <span className="text-xs font-mono text-slate-400">{m.date}</span>
+            {activeTracking.milestones.length === 0 ? (
+              <div className="text-center py-8">
+                <User className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  لم تُسجل محطات تشغيل بعد — يظهر الخط الزمني تلقائياً عند تحديث مراحل الشحنة من فريق العمليات
+                </p>
+              </div>
+            ) : (
+              <div className="relative ps-6 space-y-6 before:absolute before:top-3 before:bottom-3 before:start-2.5 before:w-0.5 before:bg-slate-200 dark:before:bg-[#1E2638]">
+                {activeTracking.milestones.map((m) => (
+                  <div key={m.id} className="relative flex items-start gap-4">
+                    {/* Indicator Dot */}
+                    <div
+                      className={`absolute -start-6 top-1 w-5 h-5 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#121620] ${
+                        m.isCurrent
+                          ? 'bg-[#FF5E1E] text-white animate-pulse'
+                          : 'bg-emerald-500 text-white'
+                      }`}
+                    >
+                      {m.isCurrent ? (
+                        <div className="w-2 h-2 rounded-full bg-current"></div>
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{m.description}</p>
-                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mt-2">
-                      <MapPin className="w-3 h-3" />
-                      {m.location}
-                    </span>
+
+                    {/* Content */}
+                    <div className="flex-1 bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                          {m.title}
+                        </h4>
+                        <span className="text-xs font-mono text-slate-400">{m.date}</span>
+                      </div>
+                      {m.description && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{m.description}</p>
+                      )}
+                      {m.location && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mt-2">
+                          <MapPin className="w-3 h-3" />
+                          {m.location}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Documents Download Center */}
+          {/* Cargo & Documents Summary */}
           <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] rounded-3xl p-6 shadow-sm">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#FF5E1E]" />
-              مستندات الشحنة المتاحة للتحميل ({activeTracking.documents.length})
+              تفاصيل البضاعة
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {activeTracking.documents.map((doc) => (
-                <div
-                  key={doc.name}
-                  className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-3.5 flex items-center justify-between hover:border-orange-500/40 transition"
-                >
-                  <div className="min-w-0 flex-1 me-2">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate" title={doc.name}>
-                      {doc.name}
-                    </p>
-                    <span className="text-[10px] text-slate-400">{doc.size}</span>
-                  </div>
-                  <button
-                    onClick={() => alert(`جاري تحميل ملف ${doc.name}`)}
-                    className="p-2 rounded-xl bg-slate-200 dark:bg-[#181D2A] hover:bg-[#FF5E1E] hover:text-white text-slate-700 dark:text-slate-300 transition cursor-pointer"
-                    title="تحميل"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-3.5">
+                <Truck className="w-4 h-4 text-[#FF5E1E] mb-2" />
+                <p className="text-slate-500 dark:text-slate-400">نوع الشحنة</p>
+                <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  {activeTracking.milestones.length > 0 || activeTracking.containers.length > 0 ? 'شحنة بحرية' : '—'}
+                </p>
+              </div>
+              <div className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-3.5">
+                <Box className="w-4 h-4 text-[#FF5E1E] mb-2" />
+                <p className="text-slate-500 dark:text-slate-400">الوزن القائم الإجمالي</p>
+                <p className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
+                  {activeTracking.grossWeightKg != null ? `${activeTracking.grossWeightKg.toLocaleString()} كجم` : '—'}
+                </p>
+              </div>
+              <div className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-3.5">
+                <Ship className="w-4 h-4 text-[#FF5E1E] mb-2" />
+                <p className="text-slate-500 dark:text-slate-400">حجم البضاعة</p>
+                <p className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
+                  {activeTracking.volumeCbm != null ? `${activeTracking.volumeCbm.toLocaleString()} م³` : '—'}
+                </p>
+              </div>
+              <div className="bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-2xl p-3.5">
+                <Calendar className="w-4 h-4 text-[#FF5E1E] mb-2" />
+                <p className="text-slate-500 dark:text-slate-400">عدد الطرود</p>
+                <p className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
+                  {activeTracking.packageCount != null ? activeTracking.packageCount : '—'}
+                </p>
+              </div>
             </div>
+
+            <p className="text-[11px] text-slate-400 mt-4 flex items-center gap-1.5">
+              <Download className="w-3 h-3" />
+              مستندات الشحنة (بوليصة الشحن، القيد المسبق، شهادة الإفراج 46) متاحة للتحميل من صفحة تفاصيل الشحنة بعد اكتمال التسجيل
+            </p>
           </div>
 
           {/* Need Help Footer Banner */}
@@ -993,6 +851,14 @@ export const TrackingPortalPage: React.FC = () => {
               <span>اتصل بغرفة العمليات: +20 2 2794 8800</span>
             </a>
           </div>
+        </div>
+      )}
+
+      {searched && !activeTracking && (
+        <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] rounded-3xl p-12 text-center shadow-sm">
+          <Search className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لم يتم العثور على شحنة مطابقة</h3>
+          <p className="text-xs text-slate-400">تأكد من إدخال رقم ملف الشحنة (مثال: BAN-2026-0001) أو رقم بوليصة الشحن B/L أو رقم الحاوية بشكل صحيح</p>
         </div>
       )}
     </div>

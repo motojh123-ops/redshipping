@@ -1,58 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   ShieldCheck, Clock, FileText, AlertTriangle, Check,
   ArrowRight, Calendar, Hash, Building2, Package, Truck,
-  Upload, FolderArchive, Printer, Download, FileCheck2, Sparkles
+  Upload, FolderArchive, Printer, Download, FileCheck2, Sparkles, ExternalLink
 } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useApi } from '../../hooks/useApi';
+import { buildNafezaValidateUrl } from '../../services/customsService';
 import { useDropzone } from 'react-dropzone';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import printJS from 'print-js';
 import { toast } from 'sonner';
-
-const DEMO_DOSSIER = {
-  id: '1',
-  dossierNumber: 'CUS-2026-0047',
-  acidNumber: 'ACID-8834721093',
-  acidIssuedAt: '2026-08-15',
-  acidExpiresAt: '2026-11-13', // 90 days from issue
-  currentStage: 'inspection',
-  shipment: {
-    jobFileNumber: 'RED-2026-0001',
-    blNumber: 'MSCU8912839',
-    client: 'Al-Ahram Food Industries',
-  },
-  commodity: 'مواد غذائية معلبة — HS Code: 2005.99',
-  hsCode: '2005.99',
-  destinationPort: 'Alexandria Port (EGALY)',
-  customsOffice: 'جمرك الإسكندرية — الدخيلة',
-  broker: 'الأمين للتخليص الجمركي',
-  estimatedDuty: 45000,
-  currency: 'EGP',
-  cert46Number: '',
-  inspectionDate: '2026-09-20',
-  inspectionLocation: 'ساحة الكشف — الدخيلة',
-  stages: [
-    { key: 'document_review', label: 'مراجعة المستندات', completedAt: '2026-08-18', completedBy: 'أحمد الأمين' },
-    { key: 'inspection', label: 'الكشف والتثمين والتحريز', completedAt: null, completedBy: null },
-    { key: 'assessment', label: 'التقييم وحساب الرسوم', completedAt: null, completedBy: null },
-    { key: 'duty_payment', label: 'سداد الرسوم الجمركية', completedAt: null, completedBy: null },
-    { key: 'released_cert46', label: 'الإفراج — شهادة 46', completedAt: null, completedBy: null },
-  ],
-  documents: [
-    { name: 'الفاتورة التجارية (Commercial Invoice)', uploaded: true },
-    { name: 'بيان التعبئة (Packing List)', uploaded: true },
-    { name: 'شهادة المنشأ (Certificate of Origin)', uploaded: true },
-    { name: 'بوليصة الشحن (Bill of Lading)', uploaded: true },
-    { name: 'شهادة صحية (Health Certificate)', uploaded: false },
-    { name: 'إذن الإفراج (Release Order)', uploaded: false },
-  ],
-};
 
 const STAGE_ORDER = ['document_review', 'inspection', 'assessment', 'duty_payment', 'released_cert46'];
 
@@ -60,9 +22,22 @@ export const CustomsDossierDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: dossier, loading } = useApi<any>(`/customs/${id}`);
 
-  const d = dossier || DEMO_DOSSIER;
+  const d = dossier;
 
   if (loading) return <LoadingSpinner fullPage label="جاري تحميل ملف التخليص..." />;
+
+  if (!d) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
+        <ShieldCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">ملف التخليص الجمركي غير موجود</h2>
+        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على سجل التخليص الجمركي المطلوب في قاعدة البيانات.</p>
+        <Link to="/customs" className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition inline-block">
+          العودة لقائمة التخليص الجمركي
+        </Link>
+      </div>
+    );
+  }
 
   const currentStageIndex = STAGE_ORDER.indexOf(d.currentStage);
 
@@ -290,7 +265,28 @@ Generated via RED SHIPPING ERP Enterprise Platform
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">بيانات الملف</h3>
             <div className="space-y-3 text-xs">
-              <SideRow icon={Hash} label="رقم ACID" value={d.acidNumber} mono />
+              <div className="flex items-start gap-3 py-1.5">
+                <Hash className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <span className="text-slate-400 block text-[10px]">رقم ACID</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-slate-700 dark:text-slate-200">{d.acidNumber}</span>
+                    {d.acidNumber && (
+                      <a
+                        href={buildNafezaValidateUrl(d.acidNumber)}
+                        onClick={() => navigator.clipboard?.writeText(d.acidNumber).catch(() => {})}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/40 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 text-[10px] font-bold transition"
+                        title={`الاستعلام والتحقق من صلاحية رقم ACID على منصة نافذة الرسمية (تم نسخ الرقم للحفظ)`}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>تحقق رسمياً على نافذة</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
               <SideRow icon={Calendar} label="تاريخ إصدار ACID" value={d.acidIssuedAt} />
               <SideRow icon={Calendar} label="تاريخ انتهاء ACID" value={d.acidExpiresAt} />
               <SideRow icon={Package} label="السلعة" value={d.commodity} />

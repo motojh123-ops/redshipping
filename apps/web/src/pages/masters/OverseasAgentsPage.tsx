@@ -7,21 +7,12 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Modal } from '../../components/ui/Modal';
 import { useApi } from '../../hooks/useApi';
 
-const DEMO_AGENTS = [
-  { id: '1', companyName: 'Ningbo Pacific Logistics', contactPerson: 'Wang Lei', email: 'wang@nbpacific.com', phone: '+86 574 8723 5401', country: 'China', city: 'Ningbo', servicesOffered: ['Pre-carriage', 'Origin handling', 'Export customs'], isActive: true },
-  { id: '2', companyName: 'Shanghai Dragon Freight', contactPerson: 'Li Ming', email: 'liming@dragonfreight.cn', phone: '+86 21 5832 7890', country: 'China', city: 'Shanghai', servicesOffered: ['Origin consolidation', 'Container loading', 'Documentation'], isActive: true },
-  { id: '3', companyName: 'Istanbul Bosphorus Shipping', contactPerson: 'Mehmet Kaya', email: 'mk@bosphorusship.com.tr', phone: '+90 212 455 2300', country: 'Turkey', city: 'Istanbul', servicesOffered: ['Transshipment handling', 'Origin customs', 'Inland delivery'], isActive: true },
-  { id: '4', companyName: 'Dubai Maritime Services', contactPerson: 'Ahmed Al-Rashid', email: 'ahmed@dms-uae.com', phone: '+971 4 345 6789', country: 'UAE', city: 'Dubai', servicesOffered: ['Free zone operations', 'Re-export', 'Warehousing'], isActive: true },
-  { id: '5', companyName: 'Hamburg Global Forwarding', contactPerson: 'Klaus Schmidt', email: 'k.schmidt@hgf.de', phone: '+49 40 3001 4500', country: 'Germany', city: 'Hamburg', servicesOffered: ['European distribution', 'Origin handling', 'Container packing'], isActive: true },
-  { id: '6', companyName: 'Mumbai Trade Links', contactPerson: 'Rajesh Patel', email: 'rajesh@tradelinks.in', phone: '+91 22 2634 5678', country: 'India', city: 'Mumbai', servicesOffered: ['Origin customs', 'Factory loading', 'Documentation'], isActive: false },
-];
-
 export const OverseasAgentsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const { data: agents, loading, refetch } = useApi<any[]>('/masters/overseas-agents', { search });
 
-  const displayAgents = agents && agents.length > 0 ? agents : DEMO_AGENTS;
+  const displayAgents = agents || [];
   const filtered = displayAgents.filter(
     (a) => !search || a.companyName.toLowerCase().includes(search.toLowerCase()) || a.country.toLowerCase().includes(search.toLowerCase()) || a.city.toLowerCase().includes(search.toLowerCase()),
   );

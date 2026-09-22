@@ -38,7 +38,7 @@ export const QuotationList: React.FC = () => {
     exportToCsv('banna_quotations_report', quotations, [
       { header: 'رقم عرض السعر', accessor: (q) => q.quotationNumber },
       { header: 'الإصدار', accessor: (q) => `v${q.versionNumber || 1}` },
-      { header: 'العميل', accessor: (q) => q.client?.name || 'Al-Ahram Food Industries' },
+      { header: 'العميل', accessor: (q) => q.client?.name || 'عميل غير محدد' },
       { header: 'نوع الشحن', accessor: (q) => q.shipmentType?.toUpperCase() },
       { header: 'شرط الشحن (Incoterm)', accessor: (q) => q.incoterm },
       { header: 'التكلفة الإجمالية USD', accessor: (q) => q.totalCost },
@@ -107,7 +107,7 @@ export const QuotationList: React.FC = () => {
                       <div className="text-[11px] font-normal text-slate-400">الإصدار: v{q.versionNumber || 1}</div>
                     </td>
                     <td className="py-4 px-4 font-medium text-slate-900 dark:text-white">
-                      {q.client?.name || 'Al-Ahram Food Industries'}
+                      {q.client?.name || 'عميل غير محدد'}
                     </td>
                     <td className="py-4 px-4 text-slate-600 dark:text-slate-300">
                       <span className="font-semibold">{q.shipmentType?.toUpperCase()}</span>
@@ -141,40 +141,11 @@ export const QuotationList: React.FC = () => {
                   </tr>
                 ))
               ) : (
-                <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="py-4 px-4 font-bold text-brand-600">
-                    <div>Q-2026-0001</div>
-                    <div className="text-[11px] font-normal text-slate-400">الإصدار: v1</div>
-                  </td>
-                  <td className="py-4 px-4 font-medium text-slate-900 dark:text-white">
-                    Al-Ahram Food Industries
-                  </td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-300">
-                    <span className="font-semibold">FCL</span>
-                    <span className="text-slate-400 text-xs ms-1.5 font-mono">(FOB)</span>
-                  </td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-300 font-mono">
-                    $5,360
-                  </td>
-                  <td className="py-4 px-4 font-bold text-slate-900 dark:text-white font-mono">
-                    $6,200
-                  </td>
-                  <td className="py-4 px-4 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                    +$840 (13.5%)
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-                      sent
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <button
-                      onClick={() => alert('تم قبول عرض السعر وتحويله لملف شحنة')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>تحويل لشحنة</span>
-                    </button>
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <FileSpreadsheet className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">لا توجد عروض أسعار مسجلة</p>
+                    <p className="text-xs text-slate-400 mt-1">لم يتم إنشاء أي عروض أسعار حتى الآن في قاعدة البيانات.</p>
                   </td>
                 </tr>
               )}

@@ -53,111 +53,6 @@ interface DisbursementVoucher {
   notes?: string;
 }
 
-const DEMO_VOUCHERS: DisbursementVoucher[] = [
-  {
-    id: '1',
-    voucherNumber: 'PV-2026-0104',
-    shipmentId: '1',
-    shipmentNumber: 'SHP-2026-001',
-    vendorName: 'ميرسك مصر المحدودة (Maersk Egypt)',
-    vendorCategory: 'shipping_line',
-    chargeItem: 'نولون بحري وارد (Ocean Freight Import)',
-    amount: 3200,
-    currency: 'USD',
-    exchangeRate: 48.75,
-    amountEgp: 156000,
-    paymentMethod: 'bank_transfer',
-    treasury: 'البنك التجاري الدولي (CIB - USD)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'paid',
-    requestDate: '2026-09-14',
-    paymentDate: '2026-09-16',
-    receiptNumber: 'SWIFT-9284710',
-    notes: 'سداد نولون الحاويات 2x40HC بوليصة MSK9823471',
-  },
-  {
-    id: '2',
-    voucherNumber: 'PV-2026-0105',
-    shipmentId: '1',
-    shipmentNumber: 'SHP-2026-001',
-    vendorName: 'الشركة المصرية الدولية للنقل السريع',
-    vendorCategory: 'trucking',
-    chargeItem: 'نقل بري داخلي (Inland Trucking)',
-    amount: 18500,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 18500,
-    paymentMethod: 'cheque',
-    treasury: 'بنك مصر (حساب الشركات)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'approved',
-    requestDate: '2026-09-16',
-    notes: 'نقل من ميناء الإسكندرية إلى مصنع العميل بالعاشر من رمضان - 2 تريلا',
-  },
-  {
-    id: '3',
-    voucherNumber: 'PV-2026-0106',
-    shipmentId: '2',
-    shipmentNumber: 'SHP-2026-002',
-    vendorName: 'مكتب الرضوان للتخليص والخدمات الجمركية',
-    vendorCategory: 'clearance',
-    chargeItem: 'أتعاب تخليص ومصاريف كشف جمركي (Customs Brokerage)',
-    amount: 7200,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 7200,
-    paymentMethod: 'petty_cash',
-    treasury: 'عهدة فرع الإسكندرية',
-    requestedBy: 'محمود طارق (التخليص)',
-    status: 'pending_approval',
-    requestDate: '2026-09-17',
-    notes: 'رسوم كشف وموازين واستخراج إذن تسليم جمركي شحنة كيماويات',
-  },
-  {
-    id: '4',
-    voucherNumber: 'PV-2026-0107',
-    shipmentId: '3',
-    shipmentNumber: 'SHP-2026-003',
-    vendorName: 'هيئة ميناء دمياط (DPA)',
-    vendorCategory: 'port_authority',
-    chargeItem: 'رسوم تفريغ ورصيف وموازين (THC / Port Dues)',
-    amount: 12400,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 12400,
-    paymentMethod: 'custody',
-    treasury: 'عهدة دمياط المستديمة',
-    requestedBy: 'محمود طارق (التخليص)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'paid',
-    requestDate: '2026-09-15',
-    paymentDate: '2026-09-15',
-    receiptNumber: 'DPA-E-99120',
-    notes: 'سداد إلكتروني عبر منظومة الدفع الموحد لميناء دمياط',
-  },
-  {
-    id: '5',
-    voucherNumber: 'PV-2026-0108',
-    shipmentId: '4',
-    shipmentNumber: 'SHP-2026-004',
-    vendorName: 'Apex Global Logistics Ningbo',
-    vendorCategory: 'overseas_agent',
-    chargeItem: 'أتعاب وكيل الخارج ومصاريف أصل (Origin Handling Charges)',
-    amount: 1150,
-    currency: 'USD',
-    exchangeRate: 48.75,
-    amountEgp: 56062.5,
-    paymentMethod: 'bank_transfer',
-    treasury: 'البنك التجاري الدولي (CIB - USD)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    status: 'draft',
-    requestDate: '2026-09-18',
-    notes: 'مطالبة وكيل نينغبو لإصدار بوالص الشحن BL الأصلية',
-  },
-];
-
 const VENDOR_CATEGORY_CONFIG = {
   shipping_line: { label: 'خط ملاحي', icon: Ship, color: 'text-[#FF5E1E] bg-orange-500/10 dark:bg-orange-500/15' },
   trucking: { label: 'شركة نقل بري', icon: Truck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50' },
@@ -176,7 +71,8 @@ const STATUS_CONFIG = {
 
 export const DisbursementVouchersPage: React.FC = () => {
   const { t } = useTranslation();
-  const [vouchers, setVouchers] = useState<DisbursementVoucher[]>(DEMO_VOUCHERS);
+  const [vouchers, setVouchers] = useState<DisbursementVoucher[]>([]);
+  const [liveShipments, setLiveShipments] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -188,16 +84,24 @@ export const DisbursementVouchersPage: React.FC = () => {
     Promise.allSettled([
       api.get('/masters/vendors'),
       api.get('/shipments'),
-    ]).then(([vRes]) => {
+    ]).then(([vRes, sRes]) => {
       if (vRes.status === 'fulfilled' && vRes.value) {
         setIsLiveConnected(true);
+      }
+      if (sRes.status === 'fulfilled') {
+        const val: any = sRes.value;
+        const list = Array.isArray(val) ? val : Array.isArray(val?.data) ? val.data : [];
+        setLiveShipments(list);
+        if (list.length > 0 && list[0]?.jobFileNumber) {
+          setFormData((prev) => ({ ...prev, shipmentNumber: list[0].jobFileNumber }));
+        }
       }
     }).catch(() => setIsLiveConnected(false));
   }, []);
 
   // New Voucher Form state
   const [formData, setFormData] = useState({
-    shipmentNumber: 'SHP-2026-001',
+    shipmentNumber: '',
     vendorName: '',
     vendorCategory: 'shipping_line' as DisbursementVoucher['vendorCategory'],
     chargeItem: 'نولون بحري وارد (Ocean Freight Import)',
@@ -506,7 +410,16 @@ export const DisbursementVouchersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredVouchers.map((v) => {
+              {filteredVouchers.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
+                    <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد أذون صرف مسجلة</p>
+                    <p className="text-xs text-slate-400 mt-1">اضغط على زر "إنشاء إذن صرف" لتسجيل مصروفات تشغيلية جديدة</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredVouchers.map((v) => {
                 const cat = VENDOR_CATEGORY_CONFIG[v.vendorCategory];
                 const CatIcon = cat.icon;
                 const status = STATUS_CONFIG[v.status];
@@ -591,8 +504,9 @@ export const DisbursementVouchersPage: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                );
-              })}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -735,9 +649,15 @@ export const DisbursementVouchersPage: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, shipmentNumber: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 >
-                  <option value="SHP-2026-001">SHP-2026-001 — الأهرام للصناعات (حاوية وارد)</option>
-                  <option value="SHP-2026-002">SHP-2026-002 — مصر للكيماويات (تخليص دمياط)</option>
-                  <option value="SHP-2026-003">SHP-2026-003 — القاهرة لتصنيع الزجاج</option>
+                  {liveShipments.length === 0 ? (
+                    <option value="">لا توجد شحنات مسجلة حالياً</option>
+                  ) : (
+                    liveShipments.map((s) => (
+                      <option key={s.id} value={s.jobFileNumber}>
+                        {s.jobFileNumber} {s.client?.name ? `— ${s.client.name}` : ''}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 

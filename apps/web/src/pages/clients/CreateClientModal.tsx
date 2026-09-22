@@ -153,7 +153,7 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="مثال: شركة الأهرام للصناعات الغذائية"
+                placeholder="مثال: شركة النيل للتجارة الدولية ش.م.م"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -167,7 +167,7 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="مثال: Al-Ahram Food Industries"
+                placeholder="مثال: Nile International Trading S.A.E"
                 value={tradeName}
                 onChange={(e) => setTradeName(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"

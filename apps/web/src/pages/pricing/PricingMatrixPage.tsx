@@ -48,130 +48,12 @@ interface FreightRate {
   isSpotRate: boolean;
 }
 
-const INITIAL_RATES: FreightRate[] = [
-  {
-    id: 'rate-1',
-    shippingLine: 'Maersk Line',
-    lineCode: 'MAEU',
-    originPort: 'Shanghai Port (ميناء شنغهاي)',
-    originPortCode: 'CNSHA',
-    destinationPort: 'Alexandria Port (ميناء الإسكندرية)',
-    destinationPortCode: 'EGALY',
-    rate20GP: 1650,
-    rate40HQ: 2300,
-    currency: 'USD',
-    transitTimeDays: 22,
-    freeDays: 14,
-    routing: 'Direct',
-    validFrom: '2026-09-01',
-    validUntil: '2026-09-30',
-    notes: 'يشمل مصاريف السوليداريتي BAF وEBS',
-    isSpotRate: true,
-  },
-  {
-    id: 'rate-2',
-    shippingLine: 'MSC (Mediterranean Shipping Co)',
-    lineCode: 'MSCU',
-    originPort: 'Shanghai Port (ميناء شنغهاي)',
-    originPortCode: 'CNSHA',
-    destinationPort: 'Alexandria Port (ميناء الإسكندرية)',
-    destinationPortCode: 'EGALY',
-    rate20GP: 1550,
-    rate40HQ: 2150,
-    currency: 'USD',
-    transitTimeDays: 26,
-    freeDays: 21,
-    routing: 'Transshipment',
-    transshipmentPort: 'Piraeus (اليونان)',
-    validFrom: '2026-09-05',
-    validUntil: '2026-09-28',
-    notes: '21 يوم سماح غرامات أرضيات (Free Days)',
-    isSpotRate: true,
-  },
-  {
-    id: 'rate-3',
-    shippingLine: 'COSCO Shipping Lines',
-    lineCode: 'COSU',
-    originPort: 'Shanghai Port (ميناء شنغهاي)',
-    originPortCode: 'CNSHA',
-    destinationPort: 'Alexandria Port (ميناء الإسكندرية)',
-    destinationPortCode: 'EGALY',
-    rate20GP: 1500,
-    rate40HQ: 2100,
-    currency: 'USD',
-    transitTimeDays: 24,
-    freeDays: 14,
-    routing: 'Direct',
-    validFrom: '2026-09-10',
-    validUntil: '2026-09-30',
-    notes: 'أفضل سعر للحاويات الـ 40HQ',
-    isSpotRate: true,
-  },
-  {
-    id: 'rate-4',
-    shippingLine: 'CMA CGM Group',
-    lineCode: 'CMDU',
-    originPort: 'Ningbo Port (ميناء نينغبو)',
-    originPortCode: 'CNNGB',
-    destinationPort: 'Sokhna Port (ميناء السخنة)',
-    destinationPortCode: 'EGSOK',
-    rate20GP: 1700,
-    rate40HQ: 2400,
-    currency: 'USD',
-    transitTimeDays: 19,
-    freeDays: 14,
-    routing: 'Direct',
-    validFrom: '2026-09-01',
-    validUntil: '2026-10-15',
-    notes: 'خدمة مباشرة وسريعة لميناء السخنة',
-    isSpotRate: false,
-  },
-  {
-    id: 'rate-5',
-    shippingLine: 'Hapag-Lloyd',
-    lineCode: 'HLCU',
-    originPort: 'Rotterdam Port (ميناء روتردام)',
-    originPortCode: 'NLRTM',
-    destinationPort: 'Port Said East (شرق بورسعيد)',
-    destinationPortCode: 'EGPSD',
-    rate20GP: 1100,
-    rate40HQ: 1650,
-    currency: 'USD',
-    transitTimeDays: 11,
-    freeDays: 14,
-    routing: 'Direct',
-    validFrom: '2026-09-01',
-    validUntil: '2026-09-30',
-    notes: 'رحلة أسبوعية ثابتة كل ثلاثاء',
-    isSpotRate: false,
-  },
-  {
-    id: 'rate-6',
-    shippingLine: 'ONE (Ocean Network Express)',
-    lineCode: 'ONEY',
-    originPort: 'Shenzhen Port (ميناء شنتشن)',
-    originPortCode: 'CNSZX',
-    destinationPort: 'Damietta Port (ميناء دمياط)',
-    destinationPortCode: 'EGDAM',
-    rate20GP: 1580,
-    rate40HQ: 2220,
-    currency: 'USD',
-    transitTimeDays: 23,
-    freeDays: 14,
-    routing: 'Direct',
-    validFrom: '2026-09-08',
-    validUntil: '2026-10-05',
-    notes: 'سعر خاص للبضائع العامة',
-    isSpotRate: true,
-  },
-];
-
 export const PricingMatrixPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const carrierParam = searchParams.get('carrier');
 
-  const [rates, setRates] = useState<FreightRate[]>(INITIAL_RATES);
+  const [rates, setRates] = useState<FreightRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -183,7 +65,7 @@ export const PricingMatrixPage: React.FC = () => {
     setLoading(true);
     try {
       const data = await pricingService.fetchTariffs();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         // Map backend tariffs to FreightRate
         const mapped: FreightRate[] = data.map((t: any) => ({
           id: t.id,
@@ -530,7 +412,28 @@ export const PricingMatrixPage: React.FC = () => {
       </div>
 
       {/* Freight Rates Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-7">
+      {loading ? (
+        <div className="py-20 text-center">
+          <div className="inline-block w-8 h-8 border-4 border-[#FF5E1E] border-t-transparent rounded-full animate-spin mb-3"></div>
+          <p className="text-sm font-medium text-slate-500">جاري تحميل مصفوفة أسعار النولون...</p>
+        </div>
+      ) : filteredRates.length === 0 ? (
+        <div className="py-16 text-center bg-white dark:bg-[#111622] rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-8">
+          <Ship className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد أسعار نولون مسجلة</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-4">
+            لم يتم العثور على أي أسعار تطابق معايير البحث المحددة. يمكنك إضافة تعريفة نولون جديدة عبر الزر أعلاه.
+          </p>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500/10 text-[#FF5E1E] hover:bg-orange-500/20 text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة نولون جديد</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-7">
         {filteredRates.map((rate) => {
           const isBestPrice = rate.rate40HQ === lowest40Rate;
           const isFastest = rate.transitTimeDays === fastestTransit;
@@ -765,6 +668,7 @@ export const PricingMatrixPage: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       {/* Add New Rate Modal */}
       {isAddModalOpen && (

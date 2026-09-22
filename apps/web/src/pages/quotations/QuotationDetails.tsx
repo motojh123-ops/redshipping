@@ -17,41 +17,6 @@ import { api } from '../../services/api';
 import { toast } from 'sonner';
 
 /* ──────────── Demo Data ──────────── */
-const DEMO_QUOTATION = {
-  id: 'quote-1',
-  quoteNumber: 'QT-2026-0891',
-  quotationNumber: 'QT-2026-0891',
-  versionNumber: 1,
-  status: 'sent',
-  client: { id: 'client-1', name: 'Al-Ahram Food Industries', nameAr: 'الأهرام للصناعات الغذائية' },
-  salesPerson: 'عمر السيد',
-  salesRep: { id: 'user-1', name: 'عمر السيد' },
-  createdAt: '2026-09-10',
-  validUntil: '2026-10-10',
-  serviceType: 'FCL Import',
-  shipmentType: 'fcl',
-  incoterm: 'CIF',
-  commodity: 'مواد غذائية معلبة — Canned Food Products',
-  originPort: { nameEn: 'Shanghai Port', unlocode: 'CNSHA', code: 'CNSHA' },
-  destinationPort: { nameEn: 'Alexandria Port', unlocode: 'EGALY', code: 'EGALY' },
-  containerType: '40HQ',
-  containerCount: 2,
-  shippingLine: 'MSC Mediterranean',
-  transitTime: '18-22 أيام',
-  estimatedTransitDays: 22,
-  currency: 'USD',
-  notes: 'العميل طلب تثبيت السعر لمدة 30 يوم — تم الموافقة من مدير التسعير',
-  items: [
-    { id: 'qi-1', chargeItem: 'Ocean Freight (نولون بحري)', description: 'Ocean Freight (نولون بحري)', costPrice: 2200, costRate: 2200, sellingPrice: 2400, sellRate: 2400, currency: 'USD', per: 'حاوية', unit: 'container', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-    { id: 'qi-2', chargeItem: 'THC Origin (مناولة ميناء المنشأ)', description: 'THC Origin (مناولة ميناء المنشأ)', costPrice: 180, costRate: 180, sellingPrice: 220, sellRate: 220, currency: 'USD', per: 'حاوية', unit: 'container', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-    { id: 'qi-3', chargeItem: 'THC Destination (مناولة ميناء الوصول)', description: 'THC Destination (مناولة ميناء الوصول)', costPrice: 250, costRate: 250, sellingPrice: 310, sellRate: 310, currency: 'USD', per: 'حاوية', unit: 'container', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-    { id: 'qi-4', chargeItem: 'Inland Haulage (نولون بري)', description: 'Inland Haulage (نولون بري)', costPrice: 12000, costRate: 12000, sellingPrice: 14000, sellRate: 14000, currency: 'EGP', per: 'حاوية', unit: 'container', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-    { id: 'qi-5', chargeItem: 'Customs Clearance (أتعاب تخليص)', description: 'Customs Clearance (أتعاب تخليص)', costPrice: 3500, costRate: 3500, sellingPrice: 4500, sellRate: 4500, currency: 'EGP', per: 'شحنة', unit: 'shipment', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-    { id: 'qi-6', chargeItem: 'B/L Fee (رسم بوليصة)', description: 'B/L Fee (رسم بوليصة)', costPrice: 50, costRate: 50, sellingPrice: 75, sellRate: 75, currency: 'USD', per: 'شحنة', unit: 'shipment', quantity: 1, reflectInQuote: true, reflectInInvoice: false, showInClientQuote: true },
-    { id: 'qi-7', chargeItem: 'Insurance (تأمين)', description: 'Insurance (تأمين)', costPrice: 0, costRate: 0, sellingPrice: 350, sellRate: 350, currency: 'USD', per: 'شحنة', unit: 'shipment', quantity: 1, reflectInQuote: true, reflectInInvoice: true, showInClientQuote: true },
-  ],
-};
-
 const CHARGE_ITEMS_CATALOG = [
   { code: 'OF-01', nameEn: 'Ocean Freight (نولون بحري)', nameAr: 'نولون شحن بحري دولي', category: 'freight', currency: 'USD', defaultPrice: 1850 },
   { code: 'THC-ORI', nameEn: 'THC Origin (مناولة ميناء المنشأ)', nameAr: 'مصاريف مناولة في ميناء الشحن', category: 'origin', currency: 'USD', defaultPrice: 180 },
@@ -85,14 +50,31 @@ export const QuotationDetails: React.FC = () => {
   const [newItemUnit, setNewItemUnit] = useState('container');
   const [newItemCurrency, setNewItemCurrency] = useState('USD');
 
-  // Local items for demo editing
+  // Local items for editing
   const [localItems, setLocalItems] = useState<any[] | null>(null);
 
-  const q = quotation || DEMO_QUOTATION;
-  const items = localItems || q.items || [];
-  const containerCount = q.containerCount || 2;
+  const q = quotation;
 
-  if (loading) return <LoadingSpinner fullPage label="جاري تحميل عرض السعر..." />;
+  if (loading) return <LoadingSpinner fullPage label="جاري تحميل عرض السعر من قاعدة البيانات..." />;
+
+  if (!q) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
+        <FileSpreadsheet className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">عرض السعر غير موجود</h2>
+        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على عرض السعر المطلوب في قاعدة البيانات الحالية.</p>
+        <button
+          onClick={() => navigate('/quotations')}
+          className="px-5 py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition"
+        >
+          العودة لقائمة عروض الأسعار
+        </button>
+      </div>
+    );
+  }
+
+  const items = localItems || q.items || [];
+  const containerCount = q.containerCount || 1;
 
   // ─── P&L Calculation ───
   const getCost = (i: any) => Number(i.costRate || i.costPrice || 0);
