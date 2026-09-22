@@ -10,12 +10,20 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:all": "powershell -ExecutionPolicy Bypass -File ./scripts/test-all.ps1",
+    "test:smoke": "playwright test e2e/smoke.spec.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:triage": "litmus-agent triage ./reports/report.json --pretty",
+    "verify:cycle": "ts-node scripts/verify_full_cycle.ts",
     "db:migrate": "npm run -w apps/api db:migrate",
     "db:seed": "npm run -w apps/api db:seed",
     "db:studio": "npm run -w apps/api db:studio"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/dom": "^10.4.2",
+    "litmus-agent": "^1.1.7",
     "turbo": "^2.4.0",
     "vitest": "^2.1.9"
   },
