@@ -1,26 +1,51 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 
-export interface AcidVerificationResult {
-  valid: boolean;
-  acidNumber: string;
-  issueDate: string;
-  expiryDate: string;
-  daysRemaining: number;
-  importer: {
-    taxId: string;
-    companyName: string;
-    status: 'ACTIVE' | 'SUSPENDED';
-  };
-  exporter: {
-    cargoXId: string;
-    companyName: string;
-    country: string;
-    isWhitelisted: boolean;
-  };
-  declaration46Status: 'ACID_ISSUED' | 'DOCS_UPLOADED' | 'CUSTOMS_VALUATION' | 'PHYSICAL_INSPECTION' | 'DUTIES_PAID' | 'FINAL_RELEASE';
-  inspectionType: 'GREEN_CHANNEL' | 'YELLOW_CHANNEL' | 'RED_CHANNEL';
-  regulatoryAgencies: string[];
-  estimatedTariffDutiesEgp: number;
+/**
+ * ── NAFEZA (Egyptian Customs Single Window) — Manual Verification Mode ──────
+ *
+ * NAFEZA / MTS Egypt does NOT offer a public, self-serve API for ACID inquiry.
+ * The only free channel is the official manual inquiry page:
+ *   https://www.nafeza.gov.eg/ar/aci/validate
+ * Automated integration is gated behind corporate registration and accredited
+ * customs-broker tokens issued by MTS Egypt (hotline 15460 / nafeza@mts-egy.com).
+ *
+ * Therefore this service performs NO live calls and returns NO simulated data.
+ * It helps staff run an honest, auditable manual workflow:
+ *   1. Validates the ACID format client-side of the workflow (9-19 digits).
+ *   2. Provides the official deep link for manual verification.
+ *   3. Hands back a checklist the operator records against the dossier.
+ */
+
+export const NAFEZA_VALIDATE_PAGE_URL = 'https://www.nafeza.gov.eg/ar/aci/validate';
+export const NAFEZA_SUPPORT_HOTLINE = '15460';
+
+export const INTEGRATION_MODE = 'MANUAL_OFFLINE' as const;
+
+export interface AcidFormatCheck {
+  provided: string;
+  cleaned: string;
+  digitCount: number;
+  formatValid: boolean;
+  formatMessage: string;
+}
+
+export interface ManualVerificationStep {
+  order: number;
+  titleAr: string;
+  titleEn: string;
+  actionUrl?: string;
+}
+
+export interface ManualAcidVerification {
+  /** Clearly labels that this is NOT a live NAFEZA response */
+  integrationMode: typeof INTEGRATION_MODE;
+  dataAuthority: string;
+  disclaimerAr: string;
+  disclaimerEn: string;
+  acidFormatCheck: AcidFormatCheck;
+  officialVerificationUrl: string;
+  clipboardReadyAcid: string;
+  verificationSteps: ManualVerificationStep[];
 }
 
 @Injectable()
@@ -28,73 +53,69 @@ export class NafezaIntegrationService {
   private readonly logger = new Logger(NafezaIntegrationService.name);
 
   /**
-   * Validates and queries ACID number from Egyptian Customs Authority (NAFEZA MTS)
+   * Validates ACID number format and returns the manual verification workflow.
+   * This is NOT a live NAFEZA inquiry — the operator must verify on the
+   * official page (link included in the response) and record the outcome.
    */
-  async verifyAcidNumber(acidNumber: string): Promise<AcidVerificationResult> {
-    const cleanAcid = (acidNumber || '').trim().replace(/\D/g, '');
+  buildManualVerification(acidNumber: string): ManualAcidVerification {
+    const raw = (acidNumber || '').trim();
+    const cleaned = raw.replace(/\D/g, '');
 
-    // ACID numbers in Egypt are 19 digits or 9-19 digits depending on shipment type
-    if (!cleanAcid || cleanAcid.length < 9) {
-      throw new BadRequestException('رقم نافذة (ACID) غير صالح: يجب أن يتكون من 9 أرقام على الأقل');
+    // Egyptian ACID numbers are 19 digits on the standard ACI manifest;
+    // older/legacy shipments may carry 9-16 digit identifiers.
+    const digitCount = cleaned.length;
+    const formatValid = digitCount >= 9 && digitCount <= 19;
+
+    if (!formatValid) {
+      throw new BadRequestException(
+        `رقم نافذة (ACID) غير صالح: ${digitCount > 0 ? `يحتوي ${digitCount} رقم فقط` : 'قيمة فارغة'} — يجب أن يتكون من 9 إلى 19 رقماً`,
+      );
     }
 
-    this.logger.log(`Verifying ACID number ${cleanAcid} against Egyptian MTS Nafeza platform`);
-
-    // Simulated authentic Nafeza MTS response based on Egyptian Customs specifications
-    const now = new Date();
-    const expiryDate = new Date(now.getTime() + 90 * 86400000); // 3 months validity
-
-    const channels: ('GREEN_CHANNEL' | 'YELLOW_CHANNEL' | 'RED_CHANNEL')[] = [
-      'GREEN_CHANNEL',
-      'YELLOW_CHANNEL',
-      'RED_CHANNEL',
-    ];
-    const assignedChannel = channels[cleanAcid.charCodeAt(cleanAcid.length - 1) % 3];
+    this.logger.log(`Manual ACID verification workflow prepared for ${cleaned} (no live NAFEZA call)`);
 
     return {
-      valid: true,
-      acidNumber: cleanAcid,
-      issueDate: new Date(now.getTime() - 15 * 86400000).toISOString().slice(0, 10),
-      expiryDate: expiryDate.toISOString().slice(0, 10),
-      daysRemaining: 75,
-      importer: {
-        taxId: 'EG-TAX-28394721',
-        companyName: 'الأهرام للصناعات الغذائية ش.م.م',
-        status: 'ACTIVE',
+      integrationMode: INTEGRATION_MODE,
+      dataAuthority: 'NAFEZA — Egyptian Customs Single Window (MTS Egypt)',
+      disclaimerAr:
+        'هذه نتيجة تحقق يدوي وليست استعلاماً مباشراً من منظومة نافذة. يجب التحقق من صلاحية الرقم على البوابة الرسمية وتسجيل النتيجة في ملف التخليص.',
+      disclaimerEn:
+        'This is a manual verification aid, NOT a live NAFEZA inquiry. Verify the number on the official portal and record the outcome on the customs dossier.',
+      acidFormatCheck: {
+        provided: raw,
+        cleaned,
+        digitCount,
+        formatValid: true,
+        formatMessage:
+          digitCount === 19
+            ? 'صيغة سليمة — 19 رقماً (نمط بيان ACI القياسي)'
+            : `صيغة مقبولة — ${digitCount} رقماً (تحقق من النمط القياسي 19 رقماً للشحنات الحديثة)`,
       },
-      exporter: {
-        cargoXId: `CX-GLOBAL-${cleanAcid.slice(-6)}`,
-        companyName: 'Shanghai Global Industrial Logistics Ltd',
-        country: 'China',
-        isWhitelisted: true,
-      },
-      declaration46Status: 'PHYSICAL_INSPECTION',
-      inspectionType: assignedChannel,
-      regulatoryAgencies: [
-        'الهيئة القومية لسلامة الغذاء (NFSA)',
-        'الهيئة العامة للرقابة على الصادرات والواردات (GOEIC)',
-        'مصلحة الجمارك المصرية - باب 27',
+      officialVerificationUrl: NAFEZA_VALIDATE_PAGE_URL,
+      clipboardReadyAcid: cleaned,
+      verificationSteps: [
+        {
+          order: 1,
+          titleAr: 'انسخ رقم ACID والصقه في نموذج الاستعلام الرسمي',
+          titleEn: 'Copy the ACID and paste it into the official inquiry form',
+          actionUrl: NAFEZA_VALIDATE_PAGE_URL,
+        },
+        {
+          order: 2,
+          titleAr: 'تحقق من صلاحية الرقم وتاريخ انتهاء الصلاحية (90 يوماً من الإصدار)',
+          titleEn: 'Confirm validity status and the 90-day expiry window',
+        },
+        {
+          order: 3,
+          titleAr: 'طابق بيانات المستورد والمصدر (CargoX) مع بيانات ملف الشحنة',
+          titleEn: 'Match importer/exporter (CargoX) details against the shipment file',
+        },
+        {
+          order: 4,
+          titleAr: 'سجل نتيجة التحقق وتاريخ الانتهاء في ملف التخليص الجمركي بالنظام',
+          titleEn: 'Record the verification outcome and expiry date on the customs dossier',
+        },
       ],
-      estimatedTariffDutiesEgp: 148500,
-    };
-  }
-
-  /**
-   * Check Declaration Form 46 status
-   */
-  async getDeclaration46(acidOrCertNumber: string) {
-    const acid = (acidOrCertNumber || '').trim();
-    return {
-      acidNumber: acid,
-      form46Number: `46-EGALY-2026-${acid.slice(-4)}`,
-      customsOffice: 'مركز الخدمات اللوجستية بميناء الإسكندرية (MTS)',
-      valuationOfficer: 'أحمد نبيل (كبير مثمنين)',
-      inspectionCommitteeDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-      status: 'قيد الفحص والمطابقة المعملية',
-      totalCustomsTaxesEgp: 185000,
-      vat14Egp: 25900,
-      paymentCode: `SADAD-${Math.floor(10000000 + Math.random() * 90000000)}`,
-      isReleased: false,
     };
   }
 }

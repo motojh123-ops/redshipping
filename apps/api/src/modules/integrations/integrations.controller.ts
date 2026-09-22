@@ -54,18 +54,26 @@ export class IntegrationsController {
     return { qrCode };
   }
 
-  // ── NAFEZA MTS Customs Integration ──
+  // ── NAFEZA Customs — Manual Verification Mode ──
   @Post('nafeza/verify-acid')
-  @ApiOperation({ summary: 'Verify Advanced Cargo Information (ACID) number with MTS Egyptian Customs' })
-  @ApiResponse({ status: 200, description: 'ACID verification details & compliance status' })
+  @ApiOperation({
+    summary: 'Manual ACID verification workflow (format check + official NAFEZA inquiry link)',
+    description:
+      'NOT a live NAFEZA inquiry. NAFEZA has no public API; the response contains format validation, the official manual verification URL, and the required operator checklist.',
+  })
+  @ApiResponse({ status: 200, description: 'Manual verification workflow — clearly labeled as MANUAL_OFFLINE mode' })
   async verifyAcid(@Body('acidNumber') acidNumber: string) {
-    return this.nafezaService.verifyAcidNumber(acidNumber);
+    return this.nafezaService.buildManualVerification(acidNumber);
   }
 
   @Get('nafeza/declaration/:acid')
-  @ApiOperation({ summary: 'Query Customs Declaration 46 and committee inspection status' })
+  @ApiOperation({
+    summary: 'DEPRECATED: Form 46 data requires a logged-in NAFEZA party account',
+    description:
+      'Returns manual-verification instructions only. Live Form 46 (customs declaration) data is unavailable without accredited MTS Egypt broker integration.',
+  })
   async getDeclaration(@Param('acid') acid: string) {
-    return this.nafezaService.getDeclaration46(acid);
+    return this.nafezaService.buildManualVerification(acid);
   }
 
   // ── DCSA Track & Trace & Demurrage ──

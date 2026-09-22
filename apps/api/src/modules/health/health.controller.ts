@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
 import { Public } from '../../common/decorators/roles.decorator';
 import { PrismaService } from '../../database/prisma.service';
+import { Request } from 'express';
 
 @Controller('health')
 export class HealthController {
@@ -33,5 +34,11 @@ export class HealthController {
   async checkReady() {
     await this.prisma.$queryRaw`SELECT 1`;
     return { status: 'ready' };
+  }
+
+  @Public()
+  @Get('debug-headers')
+  async debugHeaders(@Req() req: Request) {
+    return req.headers;
   }
 }

@@ -1,12 +1,28 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
 import { DataStoreService, StoredShipment } from '../../database/data-store.service';
 import { ShipmentStage } from '@banna/shared-types';
 import { extractSequenceNumber, parseNextSequence } from '../../common/utils/numbering.util';
+import { ShipmentStageChangedEvent } from '../../common/events/shipment-events';
 
 function isUuid(val?: string): boolean {
   if (!val) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+}
+
+function normalizeContainerType(type?: string): any {
+  if (!type) return 'HQ_40';
+  const clean = String(type).trim().toUpperCase();
+  if (clean === '40HQ' || clean === 'HQ_40' || clean === '40_HQ') return 'HQ_40';
+  if (clean === '20GP' || clean === 'GP_20' || clean === '20_GP' || clean === '20FT') return 'GP_20';
+  if (clean === '40GP' || clean === 'GP_40' || clean === '40_GP' || clean === '40FT') return 'GP_40';
+  if (clean === '45HQ' || clean === 'HQ_45' || clean === '45_HQ') return 'HQ_45';
+  if (clean === '20RF' || clean === 'RF_20' || clean === 'REEFER_20') return 'RF_20';
+  if (clean === '40RF' || clean === 'RF_40' || clean === 'REEFER_40') return 'RF_40';
+  if (clean === 'FLAT_RACK' || clean === 'FLATRACK' || clean === 'FR') return 'FLAT_RACK';
+  if (clean === 'OPEN_TOP' || clean === 'OPENTOP' || clean === 'OT') return 'OPEN_TOP';
+  return 'HQ_40';
 }
 
 @Injectable()
@@ -16,6 +32,7 @@ export class ShipmentsService {
   constructor(
     private prisma: PrismaService,
     private dataStore: DataStoreService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async findAll(tenantId: string, query?: { stage?: any; clientId?: string; search?: string }) {
@@ -35,10 +52,14 @@ export class ShipmentsService {
         where,
         include: {
           client: { select: { id: true, name: true } },
-          originPort: { select: { id: true, code: true, nameEn: true } },
-          destinationPort: { select: { id: true, code: true, nameEn: true } },
+          originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+          destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
           shippingLine: { select: { id: true, name: true } },
           containers: true,
+          events: {
+            include: { changedBy: { select: { id: true, name: true } } },
+            orderBy: { eventAt: 'desc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -84,20 +105,45 @@ export class ShipmentsService {
       const nextSeq = extractSequenceNumber(latest?.jobFileNumber) + 1;
       const jobFileNumber = `BAN-${year}-${String(nextSeq).padStart(4, '0')}`;
 
+      const resolvePortId = async (input?: string): Promise<string | null> => {
+        if (!input) return null;
+        if (isUuid(input)) return input;
+        const match = input.match(/\(([A-Z0-9]{5})\)/);
+        const code = match ? match[1] : input.trim().toUpperCase();
+        const port = await this.prisma.port.findFirst({
+          where: {
+            OR: [
+              { code },
+              { nameEn: { contains: input.trim(), mode: 'insensitive' } },
+            ],
+          },
+        });
+        return port ? port.id : null;
+      };
+
+      const originPortUuid = await resolvePortId(data.originPortId);
+      const destPortUuid = await resolvePortId(data.destinationPortId);
+
+      let eventUser = isUuid(userId) ? userId : null;
+      if (!eventUser) {
+        const u = await this.prisma.user.findFirst({ where: { companyId: tenantId } });
+        eventUser = u ? u.id : null;
+      }
+
       const created = await this.prisma.shipment.create({
         data: {
           companyId: tenantId,
           jobFileNumber,
           clientId: data.clientId,
-          salesRepId: data.salesRepId || userId,
-          opsOfficerId: data.opsOfficerId || userId,
-          shippingLineId: data.shippingLineId,
-          overseasAgentId: data.overseasAgentId,
-          shipmentType: data.shipmentType || 'fcl',
-          incoterm: data.incoterm || 'FOB',
-          originPortId: data.originPortId,
-          destinationPortId: data.destinationPortId,
-          currentStage: data.currentStage || ShipmentStage.BOOKING_CONFIRMED,
+          salesRepId: (data.salesRepId && isUuid(data.salesRepId)) ? data.salesRepId : (isUuid(userId) ? userId : null),
+          opsOfficerId: (data.opsOfficerId && isUuid(data.opsOfficerId)) ? data.opsOfficerId : (isUuid(userId) ? userId : null),
+          shippingLineId: (data.shippingLineId && isUuid(data.shippingLineId)) ? data.shippingLineId : null,
+          overseasAgentId: (data.overseasAgentId && isUuid(data.overseasAgentId)) ? data.overseasAgentId : null,
+          shipmentType: data.shipmentType ? String(data.shipmentType).toLowerCase() as any : 'fcl',
+          incoterm: (data.incoterm ? String(data.incoterm).toUpperCase() : 'FOB') as any,
+          originPortId: originPortUuid,
+          destinationPortId: destPortUuid,
+          currentStage: (data.currentStage ? String(data.currentStage).toLowerCase() : 'booking_confirmed') as any,
           blNumber: data.blNumber,
           vesselName: data.vesselName,
           voyageNumber: data.voyageNumber,
@@ -113,21 +159,21 @@ export class ShipmentsService {
             create: data.containers.map((c: any) => ({
               companyId: tenantId,
               containerNumber: c.containerNumber,
-              containerType: c.containerType || '40HQ',
+              containerType: normalizeContainerType(c.containerType),
               sealNumber: c.sealNumber,
               tareWeightKg: c.tareWeightKg ? Number(c.tareWeightKg) : null,
               cargoWeightKg: c.cargoWeightKg ? Number(c.cargoWeightKg) : null,
-              status: c.status || 'booked',
+              status: c.status ? String(c.status).toLowerCase() : 'booked',
             })),
           } : undefined,
-          events: {
+          events: eventUser ? {
             create: {
               companyId: tenantId,
-              toStage: data.currentStage || ShipmentStage.BOOKING_CONFIRMED,
-              changedById: userId,
+              toStage: (data.currentStage ? String(data.currentStage).toLowerCase() : 'booking_confirmed') as any,
+              changedById: eventUser,
               notes: data.notes || 'Shipment Job File created manually',
             },
-          },
+          } : undefined,
         },
         include: {
           client: true,
@@ -139,6 +185,12 @@ export class ShipmentsService {
     } catch (err: any) {
       if (!this.dataStore.isFallbackAllowed()) {
         this.logger.error(`Database error in shipments.create: ${err.message}`, err.stack);
+        // Translate raw Prisma FK violations into a clean client-facing 400
+        if (err?.code === 'P2003' || /foreign key/i.test(err?.message || '')) {
+          throw new BadRequestException(
+            'Invalid reference: clientId, shipping line, or port does not exist for this tenant',
+          );
+        }
         throw err;
       }
     }
@@ -331,7 +383,7 @@ export class ShipmentsService {
 
       const shipment = await this.prisma.shipment.findFirst({ where });
       if (shipment) {
-        return await this.prisma.shipment.update({
+        const updated = await this.prisma.shipment.update({
           where: { id: shipment.id },
           data: {
             currentStage: newStage,
@@ -347,6 +399,21 @@ export class ShipmentsService {
           },
           include: { events: true },
         });
+
+        // Domain event → notifications + reminder jobs (listener is fail-soft)
+        this.eventEmitter.emit(
+          'shipment.stage.changed',
+          new ShipmentStageChangedEvent(
+            tenantId,
+            updated.id,
+            updated.jobFileNumber,
+            shipment.currentStage as string,
+            newStage as string,
+            null,
+          ),
+        );
+
+        return updated;
       }
     } catch (e: any) {
       if (!this.dataStore.isFallbackAllowed()) {
@@ -380,13 +447,7 @@ export class ShipmentsService {
     const shipment = await this.prisma.shipment.findFirst({ where });
     const resolvedId = shipment ? shipment.id : shipmentId;
 
-    let containerType = data.containerType;
-    if (containerType === '40HQ') containerType = 'HQ_40';
-    else if (containerType === '20GP') containerType = 'GP_20';
-    else if (containerType === '40GP') containerType = 'GP_40';
-    else if (containerType === '45HQ') containerType = 'HQ_45';
-    else if (containerType === '20RF') containerType = 'RF_20';
-    else if (containerType === '40RF') containerType = 'RF_40';
+    const containerType = normalizeContainerType(data.containerType);
 
     return this.prisma.shipmentContainer.create({
       data: {

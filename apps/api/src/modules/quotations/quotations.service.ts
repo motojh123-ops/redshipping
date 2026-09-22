@@ -183,17 +183,39 @@ export class QuotationsService {
 
     const totalProfit = totalSell - totalCost;
 
+    const isUuid = (val?: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val || '');
+
+    let originPortUuid: string | null = null;
+    if (data.originPortId) {
+      if (isUuid(data.originPortId)) {
+        originPortUuid = data.originPortId;
+      } else {
+        const port = await this.prisma.port.findFirst({ where: { code: data.originPortId.toUpperCase() } });
+        if (port) originPortUuid = port.id;
+      }
+    }
+
+    let destPortUuid: string | null = null;
+    if (data.destinationPortId) {
+      if (isUuid(data.destinationPortId)) {
+        destPortUuid = data.destinationPortId;
+      } else {
+        const port = await this.prisma.port.findFirst({ where: { code: data.destinationPortId.toUpperCase() } });
+        if (port) destPortUuid = port.id;
+      }
+    }
+
     return this.prisma.quotation.create({
       data: {
         companyId: tenantId,
         quotationNumber,
         versionNumber: 1,
         clientId: data.clientId,
-        salesRepId: data.salesRepId || salesRepId,
-        originPortId: data.originPortId,
-        destinationPortId: data.destinationPortId,
-        shipmentType: data.shipmentType,
-        incoterm: data.incoterm,
+        salesRepId: (data.salesRepId && isUuid(data.salesRepId)) ? data.salesRepId : (isUuid(salesRepId) ? salesRepId : null),
+        originPortId: originPortUuid,
+        destinationPortId: destPortUuid,
+        shipmentType: data.shipmentType || 'fcl',
+        incoterm: data.incoterm || 'FOB',
         status: QuotationStatus.DRAFT,
         validUntil: new Date(data.validUntil || Date.now() + 14 * 24 * 60 * 60 * 1000),
         currency: data.currency || 'USD',

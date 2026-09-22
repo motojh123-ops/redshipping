@@ -179,7 +179,9 @@ export class DataStoreService {
 
   public async getItems<T = any>(tenantId: string, collectionKey: string, fallbackData?: T[]): Promise<T[]> {
     const key = `${tenantId}:${collectionKey}`;
-    if (!this.customCollections[key] || this.customCollections[key].length === 0) {
+    // Only seed with fallback if the key has NEVER been initialized.
+    // If the key exists but is empty (e.g. after an explicit reset), respect that and return [].
+    if (!(key in this.customCollections)) {
       if (fallbackData && fallbackData.length > 0) {
         this.customCollections[key] = [...fallbackData];
         this.persist();
@@ -220,6 +222,60 @@ export class DataStoreService {
     return deleted;
   }
 
+  // All known collection keys that are considered "operational" (non-master data)
+  private static readonly OPERATIONAL_COLLECTION_KEYS = [
+    'disbursements',
+    'invoices',
+    'crm_leads',
+    'dispatch_trips',
+  ];
+
+  // Collection keys that are considered "master/reference" data (kept on operational reset)
+  private static readonly MASTER_COLLECTION_KEYS = [
+    'pricing_tariffs',
+  ];
+
+  public clearOperationalData(tenantId?: string) {
+    // Clear old-style arrays
+    this.shipments = [];
+    this.customs = [];
+
+    // Clear all known operational customCollections for this tenant
+    if (tenantId) {
+      for (const key of DataStoreService.OPERATIONAL_COLLECTION_KEYS) {
+        this.customCollections[`${tenantId}:${key}`] = [];
+      }
+    }
+    // Also clear any legacy collections ending with operational keys (e.g., comp-demo-1:disbursements)
+    for (const fullKey of Object.keys(this.customCollections)) {
+      const collName = fullKey.split(':').slice(1).join(':');
+      if (DataStoreService.OPERATIONAL_COLLECTION_KEYS.includes(collName)) {
+        this.customCollections[fullKey] = [];
+      }
+    }
+    this.persist();
+    this.logger.log(`Cleared operational data${tenantId ? ` for tenant ${tenantId}` : ' (all tenants)'}`);
+  }
+
+  public clearAllData(tenantId?: string) {
+    this.clearOperationalData(tenantId);
+    this.clients = [];
+    // Also clear master collections
+    if (tenantId) {
+      for (const key of DataStoreService.MASTER_COLLECTION_KEYS) {
+        this.customCollections[`${tenantId}:${key}`] = [];
+      }
+    }
+    for (const fullKey of Object.keys(this.customCollections)) {
+      const collName = fullKey.split(':').slice(1).join(':');
+      if (DataStoreService.MASTER_COLLECTION_KEYS.includes(collName)) {
+        this.customCollections[fullKey] = [];
+      }
+    }
+    this.persist();
+    this.logger.log(`Cleared ALL data${tenantId ? ` for tenant ${tenantId}` : ' (all tenants)'}`);
+  }
+
   public seedUsers() {
     this.users = [
       {
@@ -228,8 +284,8 @@ export class DataStoreService {
         name: 'عمر السيد (مدير عام)',
         passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
         role: 'super_admin',
-        companyId: 'comp-red-1',
-        companyName: 'RED SHIPPING International Logistics',
+        companyId: '7f75539c-6168-4a0a-9519-38e3ee32022b',
+        companyName: 'Banna Freight & Logistics Egypt',
         isActive: true,
         createdAt: new Date().toISOString(),
       },
@@ -239,8 +295,8 @@ export class DataStoreService {
         name: 'أحمد الشريف (مسؤول مبيعات)',
         passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
         role: 'sales_rep',
-        companyId: 'comp-red-1',
-        companyName: 'RED SHIPPING International Logistics',
+        companyId: '7f75539c-6168-4a0a-9519-38e3ee32022b',
+        companyName: 'Banna Freight & Logistics Egypt',
         isActive: true,
         createdAt: new Date().toISOString(),
       },
@@ -250,8 +306,8 @@ export class DataStoreService {
         name: 'سارة حسين (مسؤولة عمليات وتخليص)',
         passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
         role: 'ops_officer',
-        companyId: 'comp-red-1',
-        companyName: 'RED SHIPPING International Logistics',
+        companyId: '7f75539c-6168-4a0a-9519-38e3ee32022b',
+        companyName: 'Banna Freight & Logistics Egypt',
         isActive: true,
         createdAt: new Date().toISOString(),
       },
@@ -261,8 +317,8 @@ export class DataStoreService {
         name: 'سامي كمال (المدير المالي)',
         passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
         role: 'accountant',
-        companyId: 'comp-red-1',
-        companyName: 'RED SHIPPING International Logistics',
+        companyId: '7f75539c-6168-4a0a-9519-38e3ee32022b',
+        companyName: 'Banna Freight & Logistics Egypt',
         isActive: true,
         createdAt: new Date().toISOString(),
       },
@@ -272,8 +328,8 @@ export class DataStoreService {
         name: 'عمر البنا',
         passwordHash: '$2b$10$gPv/H3pO6KCokgINtDWTQ.VG.Q/9pyn2/qs/rCOWg.iP/9wa0PJDi', // password123
         role: 'super_admin',
-        companyId: 'comp-banna-1',
-        companyName: 'البنا للخدمات اللوجستية ش.م.م',
+        companyId: '7f75539c-6168-4a0a-9519-38e3ee32022b',
+        companyName: 'Banna Freight & Logistics Egypt',
         isActive: true,
         createdAt: new Date().toISOString(),
       },

@@ -105,15 +105,59 @@ export class ClientsService {
 
   async create(tenantId: string, data: any) {
     try {
-      const { contacts, ...clientData } = data;
+      const { contacts, type, contactName, contactMobile, contactEmail, contactTitle, commodityInterest, ...rest } = data;
+
+      // Map client status: if type is 'lead' default to 'prospect', otherwise 'active'
+      let clientStatus: 'prospect' | 'active' | 'inactive' | 'blacklisted' = 'active';
+      if (rest.status && ['prospect', 'active', 'inactive', 'blacklisted'].includes(rest.status.toLowerCase())) {
+        clientStatus = rest.status.toLowerCase();
+      } else if (type === 'lead') {
+        clientStatus = 'prospect';
+      }
+
+      const cleanClientData: any = {
+        companyId: tenantId,
+        name: String(rest.name || '').trim(),
+        tradeName: rest.tradeName ? String(rest.tradeName).trim() : null,
+        taxNumber: rest.taxNumber ? String(rest.taxNumber).trim() : null,
+        commercialReg: rest.commercialReg ? String(rest.commercialReg).trim() : null,
+        status: clientStatus,
+        category: rest.category ? String(rest.category).trim() : null,
+        address: rest.address ? String(rest.address).trim() : null,
+        city: rest.city ? String(rest.city).trim() : null,
+        country: rest.country ? String(rest.country).trim() : 'Egypt',
+        notes: rest.notes ? String(rest.notes).trim() : null,
+      };
+
+      if (rest.salesRepId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rest.salesRepId)) {
+        cleanClientData.salesRepId = rest.salesRepId;
+      }
+
+      // Handle contacts array or single contact fallback
+      const contactList = Array.isArray(contacts) ? contacts : [];
+      if (contactList.length === 0 && (contactName || contactMobile || contactEmail)) {
+        contactList.push({
+          name: contactName || cleanClientData.name,
+          title: contactTitle || 'مسؤول الاتصال',
+          mobile: contactMobile || null,
+          email: contactEmail || null,
+          isPrimary: true,
+        });
+      }
+
       return await this.prisma.client.create({
         data: {
-          ...clientData,
-          companyId: tenantId,
-          contacts: contacts && contacts.length > 0 ? {
-            create: contacts.map((c: any) => ({
-              ...c,
+          ...cleanClientData,
+          contacts: contactList.length > 0 ? {
+            create: contactList.map((c: any) => ({
               companyId: tenantId,
+              name: String(c.name || cleanClientData.name).trim(),
+              title: c.title ? String(c.title).trim() : null,
+              phone: c.phone ? String(c.phone).trim() : null,
+              mobile: c.mobile ? String(c.mobile).trim() : null,
+              email: c.email ? String(c.email).trim() : null,
+              isPrimary: Boolean(c.isPrimary),
+              notes: c.notes ? String(c.notes).trim() : null,
             })),
           } : undefined,
         },
