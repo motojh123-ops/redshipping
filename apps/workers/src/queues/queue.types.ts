@@ -33,6 +33,7 @@ export interface PdfJobData {
 
 export interface PdfJobResult {
   success: boolean;
+  documentId?: string;
   filePath: string;
   fileName: string;
   sizeBytes: number;

@@ -44,8 +44,6 @@ services:
     command:
       - "gotenberg"
       - "--chromium-disable-javascript=false"
-      - "--chromium-allow-list=file:///tmp/.*"
-      - "--api-process-timeout=30s"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 15s
