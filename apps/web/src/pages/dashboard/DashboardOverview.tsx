@@ -41,77 +41,6 @@ import { AnimatedCaptainRed } from '../../components/ui/AnimatedCaptainRed';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 
 /* ============================================================
-   Speed & Telematics Dial Gauge (Fleetly Styling, App Data)
-   ============================================================ */
-const SpeedDialGauge: React.FC<{ speed?: number }> = ({ speed = 34 }) => {
-  const totalTicks = 36;
-  const activeTicks = Math.round((speed / 60) * totalTicks);
-
-  return (
-    <div className="flex flex-col items-center justify-center p-2 relative">
-      <div className="relative w-44 h-44 flex items-center justify-center">
-        <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
-          {Array.from({ length: totalTicks }).map((_, i) => {
-            const angle = (i / totalTicks) * 360;
-            const rad = (angle * Math.PI) / 180;
-            const r1 = 62;
-            const r2 = 72;
-            const x1 = 80 + r1 * Math.cos(rad);
-            const y1 = 80 + r1 * Math.sin(rad);
-            const x2 = 80 + r2 * Math.cos(rad);
-            const y2 = 80 + r2 * Math.sin(rad);
-            const isActive = i <= activeTicks;
-            const isTop = i < totalTicks * 0.6;
-
-            return (
-              <line
-                key={i}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke={
-                  isActive
-                    ? isTop
-                      ? '#FF5E1E'
-                      : '#38BDF8'
-                    : 'rgba(150, 160, 180, 0.2)'
-                }
-                strokeWidth={isActive ? '3.5' : '2'}
-                strokeLinecap="round"
-                className="transition-all duration-300"
-              />
-            );
-          })}
-        </svg>
-
-        {/* Center Speed Value */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            {speed}
-          </span>
-          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-            عقدة / سرعة الملاحة
-          </span>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-xs mt-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#FF5E1E]" />
-          <span className="text-slate-600 dark:text-slate-400 font-medium">السرعة الحالية</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-400 dark:bg-sky-500" />
-          <span className="text-slate-600 dark:text-slate-400 font-medium">متوسط الرحلة</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ============================================================
    Interactive Route Map Component (Fleetly Design)
    ============================================================ */
 const RouteMapCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }) => {
@@ -233,34 +162,39 @@ const RouteMapCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }) =>
 };
 
 /* ============================================================
-   Glowing Revenue Area Wave Chart (Fleeex Design)
+   Monthly Revenue Wave Chart — computed from REAL /invoices data
    ============================================================ */
-const GlowingEarningsChart: React.FC = () => {
-  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; val: string; month: string } | null>({
-    x: 245,
-    y: 42,
-    val: '185,000 ج.م',
-    month: 'أغسطس',
-  });
+const MONTH_NAMES_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const USD_TO_EGP = 51.5;
 
-  const data = [
-    { m: 'يناير', v: 42 },
-    { m: 'فبراير', v: 58 },
-    { m: 'مارس', v: 75 },
-    { m: 'أبريل', v: 64 },
-    { m: 'مايو', v: 92 },
-    { m: 'يونيو', v: 110 },
-    { m: 'يوليو', v: 135 },
-    { m: 'أغسطس', v: 185 },
-    { m: 'سبتمبر', v: 160 },
-    { m: 'أكتوبر', v: 195 },
-    { m: 'نوفمبر', v: 220 },
-    { m: 'ديسمبر', v: 245 },
-  ];
+const GlowingEarningsChart: React.FC<{ invoices: any[] }> = ({ invoices }) => {
+  // Aggregate real invoice totals per month of the current year (consolidated to EGP)
+  const data = useMemo(() => {
+    const year = new Date().getFullYear();
+    const monthly = new Array(12).fill(0);
+    (invoices || []).forEach((inv: any) => {
+      if (!inv?.issueDate && !inv?.createdAt) return;
+      const d = new Date(inv.issueDate || inv.createdAt);
+      if (d.getFullYear() !== year) return;
+      const total = Number(inv.total) || 0;
+      const egp = inv.currency === 'EGP' ? total : total * (Number(inv.exchangeRate) > 1 ? Number(inv.exchangeRate) : USD_TO_EGP);
+      monthly[d.getMonth()] += egp;
+    });
+    return monthly.map((v, i) => ({ m: MONTH_NAMES_AR[i], v: Math.round(v) }));
+  }, [invoices]);
+
+  const yearTotal = data.reduce((s, d) => s + d.v, 0);
+  const currentMonth = new Date().getMonth();
+  const prevMonthVal = currentMonth > 0 ? data[currentMonth - 1].v : 0;
+  const growthPct = prevMonthVal > 0 ? Math.round(((data[currentMonth].v - prevMonthVal) / prevMonthVal) * 1000) / 10 : null;
+
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; val: string; month: string } | null>(null);
+
+  const hasData = yearTotal > 0;
 
   const w = 400;
   const h = 140;
-  const maxV = 260;
+  const maxV = Math.max(1, ...data.map((d) => d.v)) * 1.15; // dynamic scale from real data
 
   const points = data.map((d, i) => {
     const x = 20 + (i / (data.length - 1)) * (w - 40);
@@ -329,7 +263,7 @@ const GlowingEarningsChart: React.FC = () => {
               setHoveredPoint({
                 x: p.x,
                 y: p.y,
-                val: `${p.v * 1000} ج.م`,
+                val: `${p.v.toLocaleString('ar-EG')} ج.م`,
                 month: p.m,
               })
             }
@@ -873,18 +807,21 @@ export const DashboardOverview: React.FC = () => {
   const { user } = useAuthStore();
   const [shipments, setShipments] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
-      const [shipmentsRes, quotesRes]: any = await Promise.all([
+      const [shipmentsRes, quotesRes, invoicesRes]: any = await Promise.all([
         api.get('/shipments').catch(() => []),
         api.get('/quotations').catch(() => []),
+        api.get('/invoices').catch(() => []),
       ]);
-      setShipments(shipmentsRes || []);
-      setQuotations(quotesRes || []);
+      setShipments(Array.isArray(shipmentsRes) ? shipmentsRes : []);
+      setQuotations(Array.isArray(quotesRes) ? quotesRes : []);
+      setInvoices(Array.isArray(invoicesRes) ? invoicesRes : []);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
@@ -896,15 +833,107 @@ export const DashboardOverview: React.FC = () => {
     fetchDashboardData();
   }, []);
 
-  // Computed Dashboard KPIs
+  // Computed Dashboard KPIs — strictly from real API data (no fallback defaults)
   const stats = useMemo(() => {
-    const totalShipments = shipments.length || 18;
-    const inTransit = shipments.filter((s) => s.currentStage === 'in_transit').length || 11;
-    const atPort = shipments.filter((s) => s.currentStage === 'arrived_destination' || s.currentStage === 'clearance_in_progress').length || 5;
-    const delivered = shipments.filter((s) => s.currentStage === 'delivered').length || 2;
-    const totalQuotes = quotations.length || 14;
+    const totalShipments = shipments.length;
+    const inTransit = shipments.filter((s) => s.currentStage === 'in_transit').length;
+    const atPort = shipments.filter((s) => s.currentStage === 'arrived_destination' || s.currentStage === 'clearance_in_progress').length;
+    const delivered = shipments.filter((s) => s.currentStage === 'delivered').length;
+    const totalQuotes = quotations.length;
     return { totalShipments, inTransit, atPort, delivered, totalQuotes };
   }, [shipments, quotations]);
+
+  // Real revenue aggregations from invoices (EGP-consolidated)
+  const revenueYearTotalEgp = useMemo(() => {
+    const year = new Date().getFullYear();
+    return (invoices || []).reduce((sum, inv) => {
+      if (!inv?.issueDate && !inv?.createdAt) return sum;
+      const d = new Date(inv.issueDate || inv.createdAt);
+      if (d.getFullYear() !== year) return sum;
+      const total = Number(inv.total) || 0;
+      return sum + (inv.currency === 'EGP' ? total : total * USD_TO_EGP);
+    }, 0);
+  }, [invoices]);
+
+  const revenueGrowthPct = useMemo(() => {
+    const year = new Date().getFullYear();
+    const monthly = new Array(12).fill(0);
+    (invoices || []).forEach((inv) => {
+      if (!inv?.issueDate && !inv?.createdAt) return;
+      const d = new Date(inv.issueDate || inv.createdAt);
+      if (d.getFullYear() !== year) return;
+      const total = Number(inv.total) || 0;
+      monthly[d.getMonth()] += inv.currency === 'EGP' ? total : total * USD_TO_EGP;
+    });
+    const m = new Date().getMonth();
+    const prev = m > 0 ? monthly[m - 1] : 0;
+    if (prev <= 0) return null;
+    return Math.round(((monthly[m] - prev) / prev) * 1000) / 10;
+  }, [invoices]);
+
+  // Real free-time risk: containers discharged vs free days from shipment eta/discharge
+  const freeTimeRisk = useMemo<{
+    totalDischarged: number;
+    atRisk: number;
+    safePct: number | null;
+    worstContainer: { number: string; daysOut: number; freeDays: number } | null;
+  }>(() => {
+    let atRisk = 0;
+    let totalDischarged = 0;
+    let worstContainer: { number: string; daysOut: number; freeDays: number } | null = null;
+    (shipments || []).forEach((s) => {
+      const freeDays = Number(s.freeDaysAllowed) || 14;
+      (s.containers || []).forEach((c: any) => {
+        if (c.status === 'discharged' || c.status === 'gated_out') {
+          totalDischarged += 1;
+          const ref = c.dischargedAt ? new Date(c.dischargedAt) : s.ata ? new Date(s.ata) : null;
+          if (ref) {
+            const daysOut = Math.floor((Date.now() - ref.getTime()) / 86400000);
+            if (daysOut > freeDays - 3) {
+              atRisk += 1;
+              if (!worstContainer || daysOut - freeDays > worstContainer.daysOut - worstContainer.freeDays) {
+                worstContainer = { number: c.containerNumber || '—', daysOut, freeDays };
+              }
+            }
+          }
+        }
+      });
+    });
+    const safePct = totalDischarged > 0 ? Math.round(((totalDischarged - atRisk) / totalDischarged) * 100) : null;
+    return { totalDischarged, atRisk, safePct, worstContainer };
+  }, [shipments]);
+
+  // Real customs compliance from dossiers carried on shipments
+  const customsStats = useMemo(() => {
+    let withAcid = 0;
+    let released = 0;
+    let total = 0;
+    (shipments || []).forEach((s) => {
+      if (s.customsDossier) {
+        total += 1;
+        if (s.customsDossier.acidNumber) withAcid += 1;
+        if (s.customsDossier.status === 'customs_cleared' || s.customsDossier.status === 'released') released += 1;
+      }
+    });
+    return { total, withAcid, released };
+  }, [shipments]);
+
+  // Real Egyptian destination-port breakdown from actual shipments
+  const portBreakdown = useMemo(() => {
+    const byPort = new Map<string, number>();
+    (shipments || []).forEach((s) => {
+      const name = s.destinationPort?.nameAr || s.destinationPort?.nameEn;
+      if (!name) return;
+      byPort.set(name, (byPort.get(name) || 0) + 1);
+    });
+    const rows = Array.from(byPort.entries())
+      .map(([port, count]) => ({ port, count, pct: 0 }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+    const max = Math.max(1, ...rows.map((r) => r.count));
+    rows.forEach((r) => (r.pct = Math.round((r.count / max) * 100)));
+    return rows;
+  }, [shipments]);
 
   const activeShipment = shipments[0] || null;
 
@@ -1039,13 +1068,13 @@ export const DashboardOverview: React.FC = () => {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight">
-              $52,400
+              {revenueYearTotalEgp.toLocaleString('ar-EG', { maximumFractionDigits: 0 })}
             </span>
-            <span className="text-xs font-bold text-slate-400 font-mono">~ 2.7M EGP</span>
+            <span className="text-xs font-bold text-slate-400 font-mono">ج.م مفوترة</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
-            <span className="text-slate-500 dark:text-slate-400">متوسط هامش الربح</span>
-            <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">+24.6% Margin</span>
+            <span className="text-slate-500 dark:text-slate-400">عدد الفواتير المُصدرة</span>
+            <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{invoices.length}</span>
           </div>
         </div>
 
@@ -1060,13 +1089,13 @@ export const DashboardOverview: React.FC = () => {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
-              94%
+              {freeTimeRisk.safePct !== null ? `${freeTimeRisk.safePct}%` : '—'}
             </span>
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">حاويات في النطاق الآمن 🟢</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">حاويات مفككة في النطاق الآمن 🟢</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
-            <span className="text-amber-600 dark:text-amber-400 font-semibold">تنبيه اقتراب الغرامة:</span>
-            <span className="font-bold text-amber-700 dark:text-amber-300 font-mono">حاويتان متبقي 48h 🟡</span>
+            <span className="text-amber-600 dark:text-amber-400 font-semibold">حاويات قرب انتهاء السماح:</span>
+            <span className="font-bold text-amber-700 dark:text-amber-300 font-mono">{freeTimeRisk.atRisk}</span>
           </div>
         </div>
 
@@ -1081,13 +1110,13 @@ export const DashboardOverview: React.FC = () => {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black font-mono text-sky-600 dark:text-sky-400 tracking-tight">
-              100%
+              {customsStats.total > 0 ? `${Math.round((customsStats.withAcid / customsStats.total) * 100)}%` : '—'}
             </span>
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">شهادات ACID مطابقة ✓</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">ملفات لديها رقم ACID ✓</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
-            <span className="text-slate-500 dark:text-slate-400">إفراجات استمارة 46:</span>
-            <span className="font-bold text-slate-700 dark:text-slate-200 font-mono">6 شحنات معتمدة</span>
+            <span className="text-slate-500 dark:text-slate-400">ملفات مُخلصة/مفرج عنها:</span>
+            <span className="font-bold text-slate-700 dark:text-slate-200 font-mono">{customsStats.released}</span>
           </div>
         </div>
       </div>
@@ -1183,19 +1212,8 @@ export const DashboardOverview: React.FC = () => {
           </div>
         </div>
 
-        {/* Center Column (Vehicle 3D Inspection & Speed Gauge) - 5 Cols */}
+        {/* Center Column (Vehicle 3D Inspection) - 5 Cols */}
         <div className="lg:col-span-5 space-y-5">
-          {/* Speed Telematics Dial Gauge */}
-          <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 shadow-sm flex flex-col items-center justify-center">
-            <div className="w-full flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-slate-900 dark:text-white">مؤشر سرعة الملاحة والتتبع (AIS Telematics)</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/10 text-[#FF5E1E]">
-                LIVE AIS
-              </span>
-            </div>
-            <SpeedDialGauge speed={34} />
-          </div>
-
           {/* 3D Vessel / Truck Inspection Card */}
           <VehicleFleetCard activeShipment={activeShipment} />
         </div>
@@ -1204,15 +1222,25 @@ export const DashboardOverview: React.FC = () => {
         <div className="lg:col-span-3 space-y-5">
           <AdditionalItemsCard />
 
-          {/* Real Demurrage Warning Card */}
+          {/* Real Demurrage Warning Card — computed from actual discharged containers */}
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 space-y-2">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span className="text-xs font-bold">تنبيه أرضيات وغرامات (Demurrage)</span>
             </div>
-            <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-              حاوية رقم (MSCU904128) بميناء الإسكندرية تجاوزت 11 يوماً من أصل 14 يوماً سماح مجاني. يرجى استكمال إجراءات الإفراج.
-            </p>
+            {freeTimeRisk.worstContainer ? (
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                حاوية رقم ({freeTimeRisk.worstContainer.number})
+                {freeTimeRisk.worstContainer.daysOut > freeTimeRisk.worstContainer.freeDays
+                  ? ` تجاوزت ${freeTimeRisk.worstContainer.daysOut - freeTimeRisk.worstContainer.freeDays} يوماً فوق `
+                  : ` اقتربت من نهاية `}
+                فترة السماح ({freeTimeRisk.worstContainer.freeDays} يوماً). يرجى استكمال إجراءات الإفراج.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                لا توجد حاويات مفككة قرب انتهاء فترة السماح حالياً.
+              </p>
+            )}
             <Link
               to="/customs"
               className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5E1E] hover:underline"
@@ -1230,29 +1258,41 @@ export const DashboardOverview: React.FC = () => {
         <div className="lg:col-span-8 rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-5 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-xs text-slate-400 font-semibold block">إجمالي إيرادات النولون والخدمات اللوجستية</span>
+              <span className="text-xs text-slate-400 font-semibold block">إجمالي إيرادات النولون والخدمات اللوجستية (مفوترة فعلية)</span>
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  1,425,000 ج.م
+                  {revenueYearTotalEgp.toLocaleString('ar-EG')} ج.م
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>+18.4% هذا الشهر</span>
-                </span>
+                {revenueGrowthPct !== null && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1 ${
+                    revenueGrowthPct >= 0
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : 'bg-red-500/10 text-red-500 border-red-500/20'
+                  }`}>
+                    <TrendingUp className="w-3 h-3" />
+                    <span>{revenueGrowthPct >= 0 ? '+' : ''}{revenueGrowthPct}% هذا الشهر</span>
+                  </span>
+                )}
               </div>
             </div>
 
-            <select className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-[#121620] border border-slate-200 dark:border-[#262E40] text-slate-700 dark:text-slate-300">
-              <option>عام 2026 (كامل السنة)</option>
-              <option>الربع الأول (Q1 2026)</option>
-              <option>الشهر الحالي</option>
-            </select>
+            <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-[#121620] border border-slate-200 dark:border-[#262E40] text-slate-700 dark:text-slate-300">
+              {new Date().getFullYear()} (كامل السنة)
+            </span>
           </div>
 
-          <GlowingEarningsChart />
+          {revenueYearTotalEgp > 0 ? (
+            <GlowingEarningsChart invoices={invoices} />
+          ) : (
+            <div className="h-44 flex flex-col items-center justify-center text-center space-y-2">
+              <TrendingUp className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm font-bold text-slate-500 dark:text-slate-400">لا توجد فواتير مُصدرة هذا العام بعد</p>
+              <p className="text-xs text-slate-400">ستظهر الإيرادات هنا تلقائياً عند إصدار أول فاتورة من قسم الفواتير</p>
+            </div>
+          )}
         </div>
 
-        {/* Egyptian Logistics Ports Breakdown - 4 Cols */}
+        {/* Egyptian Logistics Ports Breakdown — computed from real shipment destinations */}
         <div className="lg:col-span-4 rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1264,17 +1304,11 @@ export const DashboardOverview: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {[
-              { port: 'ميناء الإسكندرية البحري (EGALY)', rev: '580,000 ج.م', count: '48 شحنة', pct: 88 },
-              { port: 'ميناء السخنة البحري (EGSOK)', rev: '410,000 ج.م', count: '35 شحنة', pct: 72 },
-              { port: 'ميناء دمياط البحري (EGDAM)', rev: '260,000 ج.م', count: '22 شحنة', pct: 54 },
-              { port: 'ميناء 6 أكتوبر الجاف (EG6OC)', rev: '120,000 ج.م', count: '16 شحنة', pct: 38 },
-              { port: 'ميناء شرق بورسعيد (EGPSD)', rev: '55,000 ج.م', count: '8 شحنات', pct: 24 },
-            ].map((p, idx) => (
+            {portBreakdown.length > 0 ? portBreakdown.map((p, idx) => (
               <div key={idx} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700 dark:text-slate-300">{p.port}</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{p.rev}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{p.count} شحنة</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-slate-100 dark:bg-[#262E40] overflow-hidden">
                   <div
@@ -1283,7 +1317,11 @@ export const DashboardOverview: React.FC = () => {
                   />
                 </div>
               </div>
-            ))}
+            )) : (
+              <div className="py-8 text-center">
+                <p className="text-xs text-slate-400">لا توجد شحنات مسجلة لوصول لموانئ مصر بعد</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FileSpreadsheet, DollarSign, TrendingUp, Package, Ship, MapPin,
@@ -16,24 +16,17 @@ import { useApi } from '../../hooks/useApi';
 import { api } from '../../services/api';
 import { toast } from 'sonner';
 
-/* ──────────── Demo Data ──────────── */
-const CHARGE_ITEMS_CATALOG = [
-  { code: 'OF-01', nameEn: 'Ocean Freight (نولون بحري)', nameAr: 'نولون شحن بحري دولي', category: 'freight', currency: 'USD', defaultPrice: 1850 },
-  { code: 'THC-ORI', nameEn: 'THC Origin (مناولة ميناء المنشأ)', nameAr: 'مصاريف مناولة في ميناء الشحن', category: 'origin', currency: 'USD', defaultPrice: 180 },
-  { code: 'THC-DEST', nameEn: 'THC Destination (مناولة ميناء الوصول)', nameAr: 'مصاريف تداول الميناء وصول', category: 'local_port', currency: 'USD', defaultPrice: 250 },
-  { code: 'BL-FEE', nameEn: 'B/L Issuance (إذن تسليم)', nameAr: 'مصاريف إذن التسليم', category: 'documentation', currency: 'USD', defaultPrice: 75 },
-  { code: 'CC-SRV', nameEn: 'Customs Clearance (أتعاب تخليص)', nameAr: 'أتعاب التخليص الجمركي', category: 'customs', currency: 'EGP', defaultPrice: 5000 },
-  { code: 'INL-TRK', nameEn: 'Inland Trucking (نقل بري)', nameAr: 'نقل بري داخلي', category: 'trucking', currency: 'EGP', defaultPrice: 8500 },
-  { code: 'DEM-REC', nameEn: 'Demurrage/Detention (غرامات)', nameAr: 'غرامات أرضيات', category: 'storage', currency: 'USD', defaultPrice: 0 },
-  { code: 'INS-CRG', nameEn: 'Cargo Insurance (تأمين)', nameAr: 'تأمين على البضاعة', category: 'insurance', currency: 'USD', defaultPrice: 350 },
-  { code: 'FUMIG', nameEn: 'Fumigation (تبخير)', nameAr: 'تبخير ومعالجة', category: 'other', currency: 'EGP', defaultPrice: 2500 },
-  { code: 'INSP', nameEn: 'Inspection Fees (كشف)', nameAr: 'مصاريف كشف وتثمين', category: 'customs', currency: 'EGP', defaultPrice: 3000 },
-];
-
 export const QuotationDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: quotation, loading, refetch } = useApi<any>(`/quotations/${id}`);
+  const { data: chargeItemsData } = useApi<any[]>('/masters/charge-items', { context: 'quotation' });
+
+  const chargeItems: any[] = useMemo(() => {
+    if (Array.isArray(chargeItemsData)) return chargeItemsData;
+    if (Array.isArray((chargeItemsData as any)?.data)) return (chargeItemsData as any).data;
+    return [];
+  }, [chargeItemsData]);
 
   const [showConvertConfirm, setShowConvertConfirm] = useState(false);
   const [showCloneConfirm, setShowCloneConfirm] = useState(false);
@@ -43,7 +36,7 @@ export const QuotationDetails: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   // Add item form
-  const [selectedCharge, setSelectedCharge] = useState(CHARGE_ITEMS_CATALOG[0]);
+  const [selectedCharge, setSelectedCharge] = useState<any>(null);
   const [newItemCost, setNewItemCost] = useState('');
   const [newItemSell, setNewItemSell] = useState('');
   const [newItemQty, setNewItemQty] = useState('1');
@@ -54,6 +47,14 @@ export const QuotationDetails: React.FC = () => {
   const [localItems, setLocalItems] = useState<any[] | null>(null);
 
   const q = quotation;
+
+  // Reset add-item form defaults when charge selection changes
+  useEffect(() => {
+    if (selectedCharge) {
+      setNewItemCost(String(selectedCharge.defaultPrice ?? selectedCharge.defaultSellPrice ?? 0));
+      setNewItemCurrency(selectedCharge.standardCurrency || 'USD');
+    }
+  }, [selectedCharge]);
 
   if (loading) return <LoadingSpinner fullPage label="جاري تحميل عرض السعر من قاعدة البيانات..." />;
 
@@ -102,8 +103,8 @@ export const QuotationDetails: React.FC = () => {
       await api.patch(`/quotations/${id}/status`, { status: newStatus });
       toast.success(`تم تحديث حالة العرض إلى: ${getStatusLabel(newStatus)}`);
       refetch?.();
-    } catch {
-      toast.success(`تم تحديث الحالة (Demo): ${getStatusLabel(newStatus)}`);
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل تحديث حالة العرض');
     } finally {
       setActionLoading(false);
     }
@@ -113,13 +114,11 @@ export const QuotationDetails: React.FC = () => {
     setActionLoading(true);
     try {
       const result: any = await api.post(`/quotations/${id}/accept`);
-      toast.success(`✅ تم إنشاء ملف شحنة: ${result?.jobFileNumber || 'RED-2026-XXXX'}`);
+      toast.success(`✅ تم إنشاء ملف شحنة: ${result?.jobFileNumber || ''}`);
       setShowConvertConfirm(false);
       navigate(`/shipments/${result?.id || ''}`);
-    } catch {
-      toast.success('✅ تم تحويل العرض لملف شحنة بنجاح (Demo)');
-      setShowConvertConfirm(false);
-      navigate('/shipments');
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل تحويل العرض لملف شحنة');
     } finally {
       setActionLoading(false);
     }
@@ -132,9 +131,8 @@ export const QuotationDetails: React.FC = () => {
       toast.success(`📋 تم إنشاء نسخة معدلة: v${result?.versionNumber || 2}`);
       setShowCloneConfirm(false);
       navigate(`/quotations/${result?.id || ''}`);
-    } catch {
-      toast.success('📋 تم إنشاء نسخة معدلة من العرض (Demo)');
-      setShowCloneConfirm(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل إنشاء النسخة المعدلة');
     } finally {
       setActionLoading(false);
     }
@@ -142,52 +140,50 @@ export const QuotationDetails: React.FC = () => {
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newItem = {
-      id: `qi-${Date.now()}`,
-      description: selectedCharge.nameEn,
-      chargeItem: selectedCharge.nameEn,
+    if (!selectedCharge) return;
+
+    const payload = {
+      chargeItemId: selectedCharge.id,
+      description: selectedCharge.nameEn || selectedCharge.nameAr,
       costRate: Number(newItemCost),
-      costPrice: Number(newItemCost),
       sellRate: Number(newItemSell),
-      sellingPrice: Number(newItemSell),
       quantity: Number(newItemQty),
       unit: newItemUnit,
-      per: newItemUnit === 'container' ? 'حاوية' : 'شحنة',
       currency: newItemCurrency,
-      showInClientQuote: true,
-      reflectInQuote: true,
-      reflectInInvoice: true,
     };
 
     try {
-      await api.post(`/quotations/${id}/items`, {
-        description: selectedCharge.nameEn,
-        costRate: Number(newItemCost),
-        sellRate: Number(newItemSell),
-        quantity: Number(newItemQty),
-        unit: newItemUnit,
-        currency: newItemCurrency,
-      });
-    } catch {
-      // Demo fallback
+      const updated: any = await api.post(`/quotations/${id}/items`, payload);
+      setLocalItems(null);
+      setShowAddItemModal(false);
+      setNewItemCost('');
+      setNewItemSell('');
+      setNewItemQty('1');
+      toast.success(`✅ تم إضافة بند: ${selectedCharge.nameAr || selectedCharge.nameEn}`);
+      if (updated?.items) {
+        // server returned the updated quotation
+        setLocalItems(updated.items);
+      } else {
+        refetch?.();
+      }
+      return;
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل إضافة البند');
+      return;
     }
-
-    setLocalItems([...(localItems || items), newItem]);
-    setShowAddItemModal(false);
-    setNewItemCost('');
-    setNewItemSell('');
-    setNewItemQty('1');
-    toast.success(`✅ تم إضافة بند: ${selectedCharge.nameAr}`);
   };
 
   const handleRemoveItem = async (itemId: string) => {
+    setActionLoading(true);
     try {
       await api.delete(`/quotations/${id}/items/${itemId}`);
-    } catch {
-      // Demo
+      toast.success('تم حذف البند بنجاح');
+      refetch?.();
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل حذف البند');
+    } finally {
+      setActionLoading(false);
     }
-    setLocalItems((localItems || items).filter((i: any) => i.id !== itemId));
-    toast.success('تم حذف البند بنجاح');
   };
 
   const handleWhatsAppShare = () => {
@@ -373,10 +369,8 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
             {isEditable && (
               <button
                 onClick={() => {
-                  setSelectedCharge(CHARGE_ITEMS_CATALOG[0]);
-                  setNewItemCost(String(CHARGE_ITEMS_CATALOG[0].defaultPrice));
-                  setNewItemSell('');
-                  setNewItemCurrency(CHARGE_ITEMS_CATALOG[0].currency);
+                  const first = chargeItems[0] || null;
+                  setSelectedCharge(first);
                   setShowAddItemModal(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition"
@@ -447,6 +441,13 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
                     </tr>
                   );
                 })}
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={isEditable ? 7 : 7} className="py-8 text-center text-xs text-slate-400">
+                      لا توجد بنود تسعير في هذا العرض بعد.
+                    </td>
+                  </tr>
+                )}
               </tbody>
 
               {/* Footer Totals */}
@@ -552,7 +553,7 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
         isOpen={showAddItemModal}
         onClose={() => setShowAddItemModal(false)}
         title="إضافة بند تسعير جديد"
-        subtitle="اختيار بند من البنود الموحدة أو إضافة بند مخصص"
+        subtitle="اختيار بنود التكاليف الموحدة المسجلة في النظام (Masters)"
         maxWidth="md"
       >
         <form onSubmit={handleAddItem} className="space-y-4">
@@ -560,22 +561,27 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               البند (Charge Item) *
             </label>
-            <select
-              value={selectedCharge.code}
-              onChange={(e) => {
-                const charge = CHARGE_ITEMS_CATALOG.find((c) => c.code === e.target.value) || CHARGE_ITEMS_CATALOG[0];
-                setSelectedCharge(charge);
-                setNewItemCost(String(charge.defaultPrice));
-                setNewItemCurrency(charge.currency);
-              }}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
-            >
-              {CHARGE_ITEMS_CATALOG.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.nameAr} — {c.nameEn} ({c.currency})
-                </option>
-              ))}
-            </select>
+            {chargeItems.length === 0 ? (
+              <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+                لا توجد بنود تكاليف معرفة في النظام. أضفها أولاً من صفحة الماستر (Masters → Charge Items).
+              </p>
+            ) : (
+              <select
+                value={selectedCharge?.id || ''}
+                onChange={(e) => {
+                  const charge = chargeItems.find((c: any) => c.id === e.target.value) || null;
+                  setSelectedCharge(charge);
+                }}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="" disabled>اختر البند...</option>
+                {chargeItems.map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nameAr || c.nameEn} — {c.nameEn} ({c.standardCurrency || c.currency || 'USD'})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -644,7 +650,13 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button type="button" onClick={() => setShowAddItemModal(false)} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800">إلغاء</button>
-            <button type="submit" className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25">إضافة البند</button>
+            <button
+              type="submit"
+              disabled={chargeItems.length === 0 || !selectedCharge}
+              className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              إضافة البند
+            </button>
           </div>
         </form>
       </Modal>
@@ -655,7 +667,7 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
         onClose={() => setShowConvertConfirm(false)}
         onConfirm={handleConvertToShipment}
         title="تحويل لملف شحنة (Job File)"
-        message={`سيتم قبول عرض السعر ${q.quotationNumber || q.quoteNumber} وإنشاء ملف تشغيل جديد تلقائياً مرتبط بالعميل ${q.client?.nameAr || q.client?.name}.`}
+        message={`سيتم قبول عرض السعر ${q.quotationNumber || q.quoteNumber} وإنشاء ملف تشغيل جديد مرتبط بالعميل ${q.client?.nameAr || q.client?.name}.`}
         confirmLabel="قبول وتحويل الآن"
         variant="warning"
         icon={Ship}
@@ -764,7 +776,7 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
                 </div>
                 <div>
                   <span className="text-slate-400 block font-bold">الخط الملاحي:</span>
-                  <span className="font-semibold text-slate-800">{q.shippingLine || 'MSC'}</span>
+                  <span className="font-semibold text-slate-800">{q.shippingLine || '—'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-bold">مدة الترانزيت:</span>
@@ -846,7 +858,7 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
             <div className="grid grid-cols-3 gap-6 pt-4 border-t border-slate-200 text-center text-xs">
               <div>
                 <span className="text-slate-400 block">إعداد قسم التسعير</span>
-                <span className="font-bold text-slate-800 block mt-4">{q.salesPerson || q.salesRep?.name || 'عمر السيد'}</span>
+                <span className="font-bold text-slate-800 block mt-4">{q.salesPerson || q.salesRep?.name || '—'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">اعتماد الإدارة التجارية</span>

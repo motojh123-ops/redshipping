@@ -55,26 +55,6 @@ export const UserProfilePage: React.FC = () => {
     showToast('تم تحديث كلمة المرور وتشفير الجلسة بنجاح!');
   };
 
-  // Demo Permissions
-  const permissionsList = [
-    { module: 'العمليات والشحنات (Operations)', level: 'تحكم كامل (Full Control)', view: true, create: true, edit: true, delete: true, badge: 'مدير العمليات' },
-    { module: 'مكتب التسعير والنولون (Pricing Desk)', level: 'عرض واعتماد (Approve & View)', view: true, create: true, edit: true, delete: false, badge: 'مسؤول تسعير' },
-    { module: 'عروض الأسعار (Quotations)', level: 'إصدار وإرسال (Create & Dispatch)', view: true, create: true, edit: true, delete: false, badge: 'مفوض' },
-    { module: 'إدارة العملاء (CRM & Leads)', level: 'عرض ومتابعة (Manage)', view: true, create: true, edit: true, delete: false, badge: 'مشرف عملاء' },
-    { module: 'التخليص الجمركي ونافذة (Customs)', level: 'متابعة وفحص (Inspect & Track)', view: true, create: true, edit: true, delete: false, badge: 'فاحص معتمد' },
-    { module: 'الفواتير والحسابات (Financials)', level: 'عرض المقبوضات فقط (Read-Only)', view: true, create: false, edit: false, delete: false, badge: 'اطلاع فقط' },
-    { module: 'البيانات الأساسية والموانئ (Masters)', level: 'تعديل وإضافة (Editor)', view: true, create: true, edit: true, delete: false, badge: 'معدّل' },
-  ];
-
-  // Demo Activity Log
-  const activities = [
-    { id: '1', title: 'فتح ملف شحنة بحرية جديدة', meta: 'بوليصة رقم BL-2026-8921 • حاوية 40HC من نينغبو إلى الإسكندرية', time: 'منذ 25 دقيقة', icon: FileText, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' },
-    { id: '2', title: 'اعتماد عرض أسعار نولون بحري', meta: 'عرض رقم QT-2026-0891 • شركة السويدي إليكتريك للتجارة والتوزيع (4,850 USD)', time: 'منذ ساعتين', icon: Award, color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/40' },
-    { id: '3', title: 'تحديث بيانات شهادة الإفراج 46 الجمركية', meta: 'رقم ACID: 29481039 • تم إنهاء الكشف الظاهري وسداد الرسوم', time: 'منذ 4 ساعات', icon: Shield, color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40' },
-    { id: '4', title: 'تسجيل الدخول للنظام من جهاز جديد', meta: 'Windows 11 • متصفح Google Chrome • IP: 156.204.18.91 (القاهرة)', time: 'أمس الساعة 09:15 ص', icon: Laptop, color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40' },
-    { id: '5', title: 'إرسال أمر تحميل شاحنة برية (Trucking Order)', meta: 'سائق: محمد محمود البنا • رقم اللوحة: أ د ج 1829', time: 'أمس الساعة 03:40 م', icon: CheckCircle2, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' },
-  ];
-
   return (
     <div className="space-y-6 pb-12">
       {/* Toast Alert */}
@@ -532,56 +512,27 @@ export const UserProfilePage: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  جدول الصلاحيات الممنوحة لمسؤول العمليات
+                  جدول الصلاحيات
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  هذه الصلاحيات تدار مركزياً من إدارة النظام (Super Admin) وفق قواعد الحماية الميدانية RLS.
+                  تُعرض الصلاحيات الفعلية المرتبطة بدورك من إعدادات النظام — لم يتم ربط جدول صلاحيات تفصيلي بالباك-اند بعد.
                 </p>
               </div>
               <span className="px-3 py-1 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold text-xs border border-purple-500/20">
-                الدور: مشرف عمليات أول
+                الدور: {user?.role || '—'}
               </span>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-start text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-[#1E2638] text-slate-400">
-                    <th className="py-3 px-4 text-start font-bold">البوابة / الموديول</th>
-                    <th className="py-3 px-4 text-center font-bold">الاطلاع (View)</th>
-                    <th className="py-3 px-4 text-center font-bold">الإضافة (Create)</th>
-                    <th className="py-3 px-4 text-center font-bold">التعديل (Edit)</th>
-                    <th className="py-3 px-4 text-center font-bold">الحذف (Delete)</th>
-                    <th className="py-3 px-4 text-start font-bold">مستوى الترخيص</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-[#1E2638]">
-                  {permissionsList.map((p, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-[#181D2A] transition">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                        {p.module}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {p.view ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {p.create ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {p.edit ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {p.delete ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300 font-semibold text-[10px]">
-                          {p.badge}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="py-14 flex flex-col items-center justify-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-[#181D2A] text-slate-400 flex items-center justify-center mb-3">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 mb-1">لا يوجد جدول صلاحيات مفصّل</h4>
+                <span className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                  الصلاحيات تُطبق حالياً على مستوى الدور في الـ API (Roles Guard). جدول صلاحيات لكل موديول غير مدمج بعد.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -609,29 +560,15 @@ export const UserProfilePage: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {activities.map((act) => {
-              const Icon = act.icon;
-              return (
-                <div key={act.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-[#161B26] border border-slate-200/80 dark:border-[#222A3C] flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className={`p-2.5 rounded-2xl shrink-0 ${act.color}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                        {act.title}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        {act.meta}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-medium text-slate-400 shrink-0 whitespace-nowrap">
-                    {act.time}
-                  </span>
-                </div>
-              );
-            })}
+            <div className="py-14 flex flex-col items-center justify-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-[#181D2A] text-slate-400 flex items-center justify-center mb-3">
+                <Clock className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 mb-1">سجل النشاطات غير مدمج بعد</h4>
+              <span className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                لا يوجد بعد نقطة نهاية (endpoint) توثّق نشاطات المستخدم من الباك-اند. عند ربطها سيظهر السجل الحقيقي هنا بدل البيانات الوهمية.
+              </span>
+            </div>
           </div>
         </div>
       )}

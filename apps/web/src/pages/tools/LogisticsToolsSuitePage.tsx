@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useApi } from '../../hooks/useApi';
 import {
   Clock,
   ShieldAlert,
@@ -34,141 +35,25 @@ import {
   Zap,
 } from 'lucide-react';
 
-/* ─────────────────────────────────────────────────────────────
-   DATA & PRESETS
-───────────────────────────────────────────────────────────── */
-
-const SHIPPING_LINES_RATES: Record<
-  string,
-  { name: string; freeDaysDefault: number; t1: number; t2: number; t3: number }
-> = {
-  MSCU: { name: 'MSC (Mediterranean Shipping Co)', freeDaysDefault: 21, t1: 45, t2: 85, t3: 160 },
-  MAEU: { name: 'Maersk Line', freeDaysDefault: 14, t1: 50, t2: 95, t3: 175 },
-  CMDU: { name: 'CMA CGM Group', freeDaysDefault: 14, t1: 45, t2: 85, t3: 160 },
-  HLCU: { name: 'Hapag-Lloyd', freeDaysDefault: 14, t1: 55, t2: 100, t3: 180 },
-  ONEY: { name: 'ONE (Ocean Network Express)', freeDaysDefault: 14, t1: 45, t2: 90, t3: 165 },
-  COSU: { name: 'COSCO Shipping', freeDaysDefault: 14, t1: 40, t2: 80, t3: 150 },
-};
-
-const SAMPLE_DOCS = [
-  {
-    id: 'sample-bl-msc',
-    title: 'بوليصة شحن ملاحية رسمية (MSC Ocean B/L)',
-    type: 'B/L',
-    carrier: 'MSC Mediterranean Shipping',
-    fileRef: 'MSCU89128392.pdf',
-    data: {
-      blNumber: 'MSCU89128392',
-      containerNumber: 'MSCU9021847',
-      sealNumber: 'EGY-88910',
-      shipper: 'Ningbo Suntech Solar Technology Co., Ltd.',
-      consignee: 'شركة السويدي للكابلات والأنظمة الهندسية',
-      pol: 'Ningbo Port (CNNGB) - China',
-      pod: 'Alexandria Port (EGALY) - Egypt',
-      vesselVoyage: 'MSC TINA / 2603W',
-      grossWeight: '22,450 KG',
-      cbm: '68.20 CBM',
-      packages: '48 Pallets / 960 Cartons',
-      hsCode: '8541.40.90 (خلايا وألواح طاقة شمسية)',
-      cargoValue: '$48,200 USD',
-      freightTerms: 'Freight Prepaid (نولون مدفوع مسبقاً)',
-    },
-  },
-  {
-    id: 'sample-inv-cma',
-    title: 'فاتورة تجارية وبحث بنود (Commercial Invoice)',
-    type: 'Invoice',
-    carrier: 'CMA CGM',
-    fileRef: 'INV-2026-0941.pdf',
-    data: {
-      blNumber: 'CMDU9920194',
-      containerNumber: 'CMAU1182903',
-      sealNumber: 'ML-002914',
-      shipper: 'Milan Industrial Valves S.p.A - Italy',
-      consignee: 'العالمية للاستيراد والتصدير والمحابس الصناعية',
-      pol: 'Genoa Port (ITGOA) - Italy',
-      pod: 'Sokhna Port (EGSOK) - Egypt',
-      vesselVoyage: 'CMA CGM MOZART / 001E',
-      grossWeight: '18,300 KG',
-      cbm: '36.50 CBM',
-      packages: '24 Steel Crates',
-      hsCode: '8481.80.10 (محابس وصمامات ضغط صناعي)',
-      cargoValue: '€62,800 EUR',
-      freightTerms: 'FOB Genoa (شحن على ظهر السفينة)',
-    },
-  },
-];
-
-const VESSELS_RADAR_DATA = [
-  {
-    id: 'vessel-1',
-    name: 'MSC TINA',
-    imo: '9725134',
-    mmsi: '372481000',
-    type: 'Container Ship (Ultra Large)',
-    flag: 'Panama 🇵🇦',
-    built: 2017,
-    capacity: '19,224 TEU',
-    length: '398m × 59m',
-    status: 'Underway Using Engine (مبحرة)',
-    speed: '17.4 Knots (عقدة)',
-    course: '142° (جنوب شرق)',
-    draught: '14.8 m',
-    currentLocation: 'قناة السويس - المدخل الشمالي (بورسعيد)',
-    coordinates: '31.2653° N, 32.3019° E',
-    origin: 'Shanghai (CNSHA)',
-    destination: 'Alexandria (EGALY)',
-    eta: '2026-09-22 14:00 (خلال 22 ساعة)',
-    riskFactor: 'Low • Weather Clear',
-  },
-  {
-    id: 'vessel-2',
-    name: 'MAERSK MC-KINNEY MOLLER',
-    imo: '9619907',
-    mmsi: '219018271',
-    type: 'Container Ship (Triple-E Class)',
-    flag: 'Denmark 🇩🇰',
-    built: 2013,
-    capacity: '18,270 TEU',
-    length: '399m × 59m',
-    status: 'Anchored (في منطقة المخطاف الخارجي)',
-    speed: '0.2 Knots',
-    course: '310°',
-    draught: '15.2 m',
-    currentLocation: 'منطقة المخطاف الخارجي - ميناء الدخيلة',
-    coordinates: '31.1412° N, 29.8055° E',
-    origin: 'Ningbo (CNNGB)',
-    destination: 'Dekheila Port (EGDXH)',
-    eta: 'وصلت - انتظار دخول الرصيف رقم 96',
-    riskFactor: 'Port Congestion • 12h Delay',
-  },
-  {
-    id: 'vessel-3',
-    name: 'CMA CGM JACQUES SAADE',
-    imo: '9839179',
-    mmsi: '228386700',
-    type: 'LNG-Powered Container Ship',
-    flag: 'France 🇫🇷',
-    built: 2020,
-    capacity: '23,112 TEU (عملاقة الغاز المسال)',
-    length: '400m × 61m',
-    status: 'Underway Using Engine',
-    speed: '18.9 Knots',
-    course: '178° (جنوباً)',
-    draught: '15.9 m',
-    currentLocation: 'مضيق باب المندب - جنوب البحر الأحمر',
-    coordinates: '12.5833° N, 43.3333° E',
-    origin: 'Shenzhen (CNSZX)',
-    destination: 'Sokhna Port (EGSOK)',
-    eta: '2026-09-24 08:30 (خلال 3 أيام)',
-    riskFactor: 'Maritime Security Corridor Active',
-  },
-];
 
 export const LogisticsToolsSuitePage: React.FC = () => {
   const navigate = useNavigate();
   const { i18n } = useTranslation();
   const isRTL = i18n.dir() === 'rtl';
+
+  // Real data from the API
+  const { data: shippingLinesData } = useApi<any[]>('/masters/shipping-lines');
+  const { data: shipmentsData } = useApi<any[]>('/shipments');
+  const shippingLines: any[] = useMemo(() => {
+    if (Array.isArray(shippingLinesData)) return shippingLinesData;
+    if (Array.isArray((shippingLinesData as any)?.data)) return (shippingLinesData as any).data;
+    return [];
+  }, [shippingLinesData]);
+  const shipments: any[] = useMemo(() => {
+    if (Array.isArray(shipmentsData)) return shipmentsData;
+    if (Array.isArray((shipmentsData as any)?.data)) return (shipmentsData as any).data;
+    return [];
+  }, [shipmentsData]);
 
   // Active Tool Tab
   const [activeTab, setActiveTab] = useState<'demurrage' | 'ocr' | 'airfreight' | 'carbon' | 'ais'>('demurrage');
@@ -176,14 +61,21 @@ export const LogisticsToolsSuitePage: React.FC = () => {
   /* ─────────────────────────────────────────────────────────────
      1. DEMURRAGE & DETENTION STATE
   ───────────────────────────────────────────────────────────── */
-  const [dCarrier, setDCarrier] = useState('MSCU');
+  const [dCarrier, setDCarrier] = useState('');
   const [dContainerSize, setDContainerSize] = useState<'20' | '40'>('40');
-  const [dDischargeDate, setDDischargeDate] = useState('2026-09-02');
-  const [dFreeDays, setDFreeDays] = useState(21);
-  const [dGateOutDate, setDGateOutDate] = useState('2026-09-27');
+  const [dDischargeDate, setDDischargeDate] = useState('');
+  const [dFreeDays, setDFreeDays] = useState(14);
+  const [dGateOutDate, setDGateOutDate] = useState('');
   const [dExchangeRate, setDExchangeRate] = useState(49.5);
+  // Demurrage tier rates (USD/day) — entered by the user per the shipping line's tariff sheet
+  const [dT1, setDT1] = useState(0);
+  const [dT2, setDT2] = useState(0);
+  const [dT3, setDT3] = useState(0);
 
   const demurrageCalculation = useMemo(() => {
+    if (!dDischargeDate || !dGateOutDate) {
+      return { totalDays: 0, remaining: 0, overdueDays: 0, penaltyUsd: 0, penaltyEgp: 0, status: 'safe' as const, ready: false };
+    }
     const discharge = new Date(dDischargeDate);
     const gateOut = new Date(dGateOutDate);
     const diffTime = gateOut.getTime() - discharge.getTime();
@@ -192,7 +84,6 @@ export const LogisticsToolsSuitePage: React.FC = () => {
     const remaining = dFreeDays - totalDays;
     const overdueDays = Math.max(0, totalDays - dFreeDays);
 
-    const line = SHIPPING_LINES_RATES[dCarrier] || SHIPPING_LINES_RATES.MSCU;
     const sizeMultiplier = dContainerSize === '40' ? 1.8 : 1.0;
 
     let penaltyUsd = 0;
@@ -202,9 +93,9 @@ export const LogisticsToolsSuitePage: React.FC = () => {
       const tier3Days = Math.max(0, overdueDays - 14);
 
       penaltyUsd =
-        tier1Days * (line.t1 * sizeMultiplier) +
-        tier2Days * (line.t2 * sizeMultiplier) +
-        tier3Days * (line.t3 * sizeMultiplier);
+        tier1Days * (dT1 * sizeMultiplier) +
+        tier2Days * (dT2 * sizeMultiplier) +
+        tier3Days * (dT3 * sizeMultiplier);
     }
 
     const penaltyEgp = penaltyUsd * dExchangeRate;
@@ -217,38 +108,18 @@ export const LogisticsToolsSuitePage: React.FC = () => {
       penaltyEgp,
       status:
         overdueDays > 0
-          ? 'critical'
+          ? 'critical' as const
           : remaining <= 3
-          ? 'warning'
-          : 'safe',
+          ? 'warning' as const
+          : 'safe' as const,
+      ready: true,
     };
-  }, [dDischargeDate, dGateOutDate, dFreeDays, dCarrier, dContainerSize, dExchangeRate]);
+  }, [dDischargeDate, dGateOutDate, dFreeDays, dContainerSize, dT1, dT2, dT3, dExchangeRate]);
 
   /* ─────────────────────────────────────────────────────────────
-     2. AI OCR SCANNER STATE
+     2. AI OCR SCANNER — no OCR backend is wired yet; the tab shows
+        an honest empty state instead of fake extracted data.
   ───────────────────────────────────────────────────────────── */
-  const [selectedDoc, setSelectedDoc] = useState(SAMPLE_DOCS[0]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(100);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-
-  const triggerScan = (doc: (typeof SAMPLE_DOCS)[0]) => {
-    setSelectedDoc(doc);
-    setIsScanning(true);
-    setScanProgress(15);
-    setTimeout(() => setScanProgress(55), 250);
-    setTimeout(() => setScanProgress(85), 500);
-    setTimeout(() => {
-      setScanProgress(100);
-      setIsScanning(false);
-    }, 750);
-  };
-
-  const copyValue = (val: string, key: string) => {
-    navigator.clipboard.writeText(val);
-    setCopiedField(key);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   /* ─────────────────────────────────────────────────────────────
      3. AIR FREIGHT & VOLUMETRIC STATE
@@ -326,18 +197,40 @@ export const LogisticsToolsSuitePage: React.FC = () => {
   }, [carbonMode, cargoWeightTons, distanceKm, fuelType]);
 
   /* ─────────────────────────────────────────────────────────────
-     5. AIS VESSEL RADAR STATE
+     5. VESSEL TRACKING STATE — derived from the company's real
+        shipments (no third-party AIS feed is integrated yet).
   ───────────────────────────────────────────────────────────── */
-  const [selectedVessel, setSelectedVessel] = useState(VESSELS_RADAR_DATA[0]);
+  const vessels = useMemo(() => {
+    return (shipments || [])
+      .filter((s) => s.vesselName || s.shippingLine || s.destinationPort)
+      .map((s, idx) => ({
+        id: s.id || `s-${idx}`,
+        name: s.vesselName || 'سفينة غير محددة',
+        voyage: s.voyageNumber || '',
+        shippingLine: s.shippingLine?.name || s.shippingLineName || '',
+        status: s.currentStage?.replace(/_/g, ' ') || '',
+        currentLocation: s.destinationPort?.nameEn || s.destinationPortName || '',
+        origin: s.originPort?.nameEn || s.originPortName || '',
+        destination: s.destinationPort?.nameEn || s.destinationPortName || '',
+        eta: s.eta || s.ata || '',
+        jobFileNumber: s.jobFileNumber || '',
+      }));
+  }, [shipments]);
+  const [selectedVesselId, setSelectedVesselId] = useState('');
   const [searchImo, setSearchImo] = useState('');
 
   const filteredVessels = useMemo(() => {
-    if (!searchImo.trim()) return VESSELS_RADAR_DATA;
+    if (!searchImo.trim()) return vessels;
     const q = searchImo.toLowerCase().trim();
-    return VESSELS_RADAR_DATA.filter(
-      (v) => v.name.toLowerCase().includes(q) || v.imo.includes(q) || v.origin.toLowerCase().includes(q),
+    return vessels.filter(
+      (v) => v.name.toLowerCase().includes(q) || v.jobFileNumber.toLowerCase().includes(q) || v.destination.toLowerCase().includes(q),
     );
-  }, [searchImo]);
+  }, [searchImo, vessels]);
+
+  const selectedVessel = useMemo(
+    () => filteredVessels.find((v) => v.id === selectedVesselId) || filteredVessels[0] || null,
+    [filteredVessels, selectedVesselId],
+  );
 
   return (
     <div className="space-y-8 pb-12">
@@ -510,16 +403,13 @@ export const LogisticsToolsSuitePage: React.FC = () => {
               </label>
               <select
                 value={dCarrier}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDCarrier(val);
-                  setDFreeDays(SHIPPING_LINES_RATES[val]?.freeDaysDefault || 14);
-                }}
+                onChange={(e) => setDCarrier(e.target.value)}
                 className="w-full px-4 py-3 text-xs sm:text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white font-bold focus:outline-none focus:ring-2 focus:ring-[#FF5E1E]/40"
               >
-                {Object.entries(SHIPPING_LINES_RATES).map(([code, data]) => (
-                  <option key={code} value={code}>
-                    {data.name} ({code})
+                <option value="">— اختر التوكيل الملاحي —</option>
+                {shippingLines.map((line) => (
+                  <option key={line.id} value={line.id}>
+                    {line.name}
                   </option>
                 ))}
               </select>
@@ -601,6 +491,48 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                   onChange={(e) => setDGateOutDate(e.target.value)}
                   className="w-full px-4 py-3 text-xs sm:text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white font-mono font-bold"
                 />
+              </div>
+            </div>
+
+            {/* Demurrage Tier Rates — entered by the user from the line's tariff sheet */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">
+                شرائح الغرامة (USD/يوم لحاوية 20 قدم — من تعريفة التوكيل)
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={dT1}
+                    onChange={(e) => setDT1(Number(e.target.value))}
+                    placeholder="T1"
+                    className="w-full px-3 py-2.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                  <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">T1</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={dT2}
+                    onChange={(e) => setDT2(Number(e.target.value))}
+                    placeholder="T2"
+                    className="w-full px-3 py-2.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                  <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">T2</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={dT3}
+                    onChange={(e) => setDT3(Number(e.target.value))}
+                    placeholder="T3"
+                    className="w-full px-3 py-2.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                  <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">T3</span>
+                </div>
               </div>
             </div>
 
@@ -726,27 +658,27 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Tiered Breakdown */}
+              {/* Tiered Breakdown — user-entered tariff rates */}
               <div className="space-y-2 text-xs border-t border-slate-200/60 dark:border-slate-800/60 pt-4">
                 <span className="font-bold text-slate-600 dark:text-slate-300 block mb-2">
-                  لائحة شرائح الغرامات المعتمدة لتوكيل {SHIPPING_LINES_RATES[dCarrier]?.name}:
+                  شرائح الغرامات المُدخلة (بالدولار/يوم لحاوية 20 قدم — تُحتسب ×1.8 للـ 40 قدم):
                 </span>
                 <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                   <span>الشريحة الأولى (اليوم 1 حتى 7 تأخير):</span>
                   <strong className="font-mono text-slate-900 dark:text-white">
-                    ${(SHIPPING_LINES_RATES[dCarrier]?.t1 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
+                    ${(dT1 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
                   </strong>
                 </div>
                 <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                   <span>الشريحة الثانية (اليوم 8 حتى 14 تأخير):</span>
                   <strong className="font-mono text-slate-900 dark:text-white">
-                    ${(SHIPPING_LINES_RATES[dCarrier]?.t2 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
+                    ${(dT2 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
                   </strong>
                 </div>
                 <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                   <span>الشريحة الثالثة (من اليوم 15 فما فوق):</span>
                   <strong className="font-mono text-rose-600 dark:text-rose-400">
-                    ${(SHIPPING_LINES_RATES[dCarrier]?.t3 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
+                    ${(dT3 * (dContainerSize === '40' ? 1.8 : 1)).toFixed(0)} / يوم
                   </strong>
                 </div>
               </div>
@@ -804,35 +736,16 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                 </span>
               </div>
 
-              {/* Sample Presets */}
-              <div>
-                <span className="text-xs font-bold text-slate-500 block mb-2.5">
-                  أو اختر نموذجاً حياً للاختبار الفوري:
-                </span>
-                <div className="space-y-2">
-                  {SAMPLE_DOCS.map((doc) => (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onClick={() => triggerScan(doc)}
-                      className={`w-full text-start p-3 rounded-2xl border transition cursor-pointer flex items-center justify-between ${
-                        selectedDoc.id === doc.id
-                          ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-500/60 text-emerald-900 dark:text-emerald-200 shadow-xs'
-                          : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <FileCheck2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <div>
-                          <span className="text-xs font-bold block">{doc.title}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{doc.fileRef}</span>
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                        تحليل المستند ➔
-                      </span>
-                    </button>
-                  ))}
+              {/* OCR backend is not integrated yet — honest notice instead of fake presets */}
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-500/30 flex items-start gap-3">
+                <FileSearch className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-xs font-bold text-amber-800 dark:text-amber-300 block mb-1">
+                    خدمة الـ OCR غير مدمجة بعد
+                  </span>
+                  <span className="text-[11px] text-amber-700 dark:text-amber-400/80 leading-relaxed block">
+                    رفع المستندات هنا سيمر عبر معالجة حقيقية فور ربط محرك استخراج البيانات. حتى ذلك الحين، أدخل بيانات البوليصة يدوياً من شاشة الشحنات.
+                  </span>
                 </div>
               </div>
             </div>
@@ -845,98 +758,26 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-black text-slate-900 dark:text-white">
-                      البيانات المستخرجة آلياً (OCR Data Schema)
+                      البيانات المستخرجة آلياً (OCR)
                     </h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black">
-                      دقة 99.4%
-                    </span>
                   </div>
-                  <span className="text-xs text-slate-400 font-mono mt-0.5 block">
-                    المصدر: {selectedDoc.title} • {selectedDoc.carrier}
+                  <span className="text-xs text-slate-400 mt-0.5 block">
+                    تظهر نتائج الاستخراج هنا فور ربط محرك الـ OCR بالباك-اند
                   </span>
                 </div>
-
-                <button
-                  onClick={() => navigate('/shipments')}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>توليد شحنة جديدة فوراً</span>
-                </button>
               </div>
 
-              {/* Progress Bar when Scanning */}
-              {isScanning && (
-                <div className="mb-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-500/30">
-                  <div className="flex justify-between text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1.5">
-                    <span>جاري مسح الباركود وجداول الشحنة...</span>
-                    <span>{scanProgress}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-emerald-200 dark:bg-emerald-900 overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
-                      style={{ width: `${scanProgress}%` }}
-                    />
-                  </div>
+              {/* Empty state — real OCR output appears here once the extraction backend is wired */}
+              <div className="py-14 flex flex-col items-center justify-center text-center">
+                <div className="w-14 h-14 rounded-3xl bg-slate-100 dark:bg-slate-900 text-slate-400 flex items-center justify-center mb-4">
+                  <FileSearch className="w-6 h-6" />
                 </div>
-              )}
-
-              {/* Extracted Fields Table/Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {Object.entries(selectedDoc.data).map(([key, val]) => (
-                  <div
-                    key={key}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800 flex items-start justify-between gap-2 group hover:border-emerald-500/50 transition"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
-                        {key === 'blNumber'
-                          ? 'رقم بوليصة الشحن (B/L)'
-                          : key === 'containerNumber'
-                          ? 'رقم الحاوية (Container)'
-                          : key === 'sealNumber'
-                          ? 'رقم السيل الملاحي (Seal)'
-                          : key === 'shipper'
-                          ? 'الشاحن (Shipper)'
-                          : key === 'consignee'
-                          ? 'المستورد (Consignee)'
-                          : key === 'pol'
-                          ? 'ميناء الشحن (POL)'
-                          : key === 'pod'
-                          ? 'ميناء الوصول (POD)'
-                          : key === 'vesselVoyage'
-                          ? 'اسم السفينة والرحلة'
-                          : key === 'grossWeight'
-                          ? 'الوزن الإجمالي (Gross Weight)'
-                          : key === 'cbm'
-                          ? 'الحجم الإجمالي (CBM)'
-                          : key === 'packages'
-                          ? 'عدد الطرود والعبوات'
-                          : key === 'hsCode'
-                          ? 'البند الجمركي (HS Code)'
-                          : key === 'cargoValue'
-                          ? 'قيمة الفاتورة'
-                          : 'شروط الشحن (Incoterm)'}
-                      </span>
-                      <strong className="text-slate-900 dark:text-white font-mono text-xs block truncate" title={val}>
-                        {val}
-                      </strong>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => copyValue(val, key)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer"
-                      title="نسخ القيمة"
-                    >
-                      {copiedField === key ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                ))}
+                <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 mb-1">
+                  لا توجد بيانات مستخرجة بعد
+                </h4>
+                <span className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                  لم يتم ربط محرك استخراج المستندات (OCR) بالباك-اند حتى الآن. عند ربطه ستظهر بيانات البوليصة المستخرجة هنا تلقائياً.
+                </span>
               </div>
             </div>
           </div>
@@ -1357,7 +1198,7 @@ export const LogisticsToolsSuitePage: React.FC = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-         TAB 5: LIVE AIS VESSEL SATELLITE RADAR
+         TAB 5: VESSEL TRACKING (SHIPMENT-DERIVED)
       ───────────────────────────────────────────────────────────── */}
       {activeTab === 'ais' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
@@ -1371,12 +1212,12 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-base font-black text-slate-900 dark:text-white">
-                      رادار السفن الحية (AIS Live)
+                      تتبع السفن (من بيانات الشحنات)
                     </h2>
-                    <span className="text-xs text-slate-500">تتبع السفن عبر الأقمار الصناعية</span>
+                    <span className="text-xs text-slate-500">مستمد من الشحنات الفعلية — لا توجد تغذية AIS مباشرة بعد</span>
                   </div>
                 </div>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
               </div>
 
               {/* Search Bar */}
@@ -1385,19 +1226,26 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                   type="text"
                   value={searchImo}
                   onChange={(e) => setSearchImo(e.target.value)}
-                  placeholder="ابحث باسم السفينة أو رقم الـ IMO..."
+                  placeholder="ابحث باسم السفينة أو رقم ملف الشحنة..."
                   className="w-full ps-4 pe-10 py-2.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white"
                 />
               </div>
 
-              {/* Vessel Cards */}
+              {/* Vessel Cards — derived from real shipments */}
               <div className="space-y-2.5">
+                {filteredVessels.length === 0 && (
+                  <div className="p-6 text-center">
+                    <span className="text-xs text-slate-400 leading-relaxed block">
+                      لا توجد سفن للعرض — تُبنى القائمة من الشحنات الفعلية ذات بيانات سفينة أو ميناء وجهة.
+                    </span>
+                  </div>
+                )}
                 {filteredVessels.map((v) => (
                   <div
                     key={v.id}
-                    onClick={() => setSelectedVessel(v)}
+                    onClick={() => setSelectedVesselId(v.id)}
                     className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between gap-2 ${
-                      selectedVessel.id === v.id
+                      selectedVessel?.id === v.id
                         ? 'bg-indigo-50/70 dark:bg-indigo-950/25 border-indigo-500/70 shadow-sm ring-1 ring-indigo-500/30'
                         : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80'
                     }`}
@@ -1408,18 +1256,18 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                           {v.name}
                         </h3>
                         <span className="text-[11px] text-slate-400 font-mono mt-0.5 block">
-                          IMO: {v.imo} • {v.flag}
+                          {v.jobFileNumber || '—'} • {v.shippingLine || '—'}
                         </span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
-                        {v.speed}
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 max-w-[45%] truncate">
+                        {v.status || '—'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
-                      <span>الموقع: {v.currentLocation}</span>
-                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {v.destination}
+                      <span className="truncate">من: {v.origin || '—'}</span>
+                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300 truncate">
+                        إلى: {v.destination || '—'}
                       </span>
                     </div>
                   </div>
@@ -1428,8 +1276,19 @@ export const LogisticsToolsSuitePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Selected Vessel Live Telemetry Column */}
+          {/* Selected Vessel Details Column */}
           <div className="lg:col-span-7 space-y-5">
+            {!selectedVessel ? (
+              <div className="rounded-3xl bg-white dark:bg-[#111622] border border-slate-200/90 dark:border-slate-800/90 p-6 sm:p-7 shadow-sm py-20 flex flex-col items-center justify-center text-center">
+                <div className="w-14 h-14 rounded-3xl bg-slate-100 dark:bg-slate-900 text-slate-400 flex items-center justify-center mb-4">
+                  <Ship className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 mb-1">لا توجد سفينة محددة</h4>
+                <span className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                  تُبنى قائمة السفن من الشحنات الفعلية — أضف بيانات السفينة والخط الملاحي في شحنة لتظهر هنا. لا يوجد ربط مباشر بتغذية AIS بعد.
+                </span>
+              </div>
+            ) : (
             <div className="rounded-3xl bg-white dark:bg-[#111622] border border-slate-200/90 dark:border-slate-800/90 p-6 sm:p-7 shadow-sm">
               <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-5">
                 <div>
@@ -1442,45 +1301,39 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-xs text-slate-400 font-mono mt-0.5 block">
-                    {selectedVessel.type} • العلم: {selectedVessel.flag} • السعة: {selectedVessel.capacity}
-                  </span>
-                </div>
-
-                <div className="text-end">
-                  <span className="text-[10px] text-slate-400 font-bold block">إحداثيات الأقمار الصناعية (GPS)</span>
-                  <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    {selectedVessel.coordinates}
+                    {selectedVessel.shippingLine || '—'}
+                    {selectedVessel.voyage ? ` • رحلة ${selectedVessel.voyage}` : ''} • ملف: {selectedVessel.jobFileNumber || '—'}
                   </span>
                 </div>
               </div>
 
-              {/* Telemetry Gauges Grid */}
+              {/* Shipment-derived details */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-6">
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 font-bold block mb-1">السرعة الحالية</span>
-                  <span className="text-base font-black font-mono text-slate-900 dark:text-white">
-                    {selectedVessel.speed}
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 font-bold block mb-1">الاتجاه الملاحي</span>
-                  <span className="text-base font-black font-mono text-slate-900 dark:text-white">
-                    {selectedVessel.course}
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 font-bold block mb-1">الغاطس المائي</span>
-                  <span className="text-base font-black font-mono text-slate-900 dark:text-white">
-                    {selectedVessel.draught}
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 font-bold block mb-1">الأبعاد والمقاييس</span>
+                  <span className="text-[10px] text-slate-400 font-bold block mb-1">الخط الملاحي</span>
                   <span className="text-xs font-black font-mono text-slate-900 dark:text-white">
-                    {selectedVessel.length}
+                    {selectedVessel.shippingLine || '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 font-bold block mb-1">رقم الرحلة</span>
+                  <span className="text-xs font-black font-mono text-slate-900 dark:text-white">
+                    {selectedVessel.voyage || '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 font-bold block mb-1">ملف الشحنة</span>
+                  <span className="text-xs font-black font-mono text-slate-900 dark:text-white">
+                    {selectedVessel.jobFileNumber || '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200/80 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 font-bold block mb-1">المرحلة الحالية</span>
+                  <span className="text-xs font-black font-mono text-slate-900 dark:text-white">
+                    {selectedVessel.status || '—'}
                   </span>
                 </div>
               </div>
@@ -1526,11 +1379,12 @@ export const LogisticsToolsSuitePage: React.FC = () => {
                     {selectedVessel.name} • {selectedVessel.currentLocation}
                   </span>
                   <span className="text-[10px] font-mono text-indigo-300 block">
-                    LAT/LON: {selectedVessel.coordinates}
+                    ETA: {selectedVessel.eta || '—'}
                   </span>
                 </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}

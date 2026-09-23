@@ -59,19 +59,19 @@ export const StatementOfAccountPage: React.FC = () => {
         setIsLiveConnected(true);
         if (list.length > 0) {
           const mappedEntries: InvoiceLedgerEntry[] = list.map((inv: any, idx: number) => {
-            const total = inv.totalAmount || inv.total || inv.amount || 3500;
-            const paid = inv.status === 'paid' ? total : (inv.status === 'partial' ? Math.round(total * 0.6) : 0);
-            const stat = inv.status === 'paid' ? 'PAID' : (inv.status === 'partial' ? 'PARTIAL' : (inv.status === 'overdue' ? 'OVERDUE' : 'UNPAID'));
+            const total = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? 0);
+            const paid = inv.status === 'paid' ? total : (inv.status === 'partial' || inv.status === 'partially_paid' ? Number(inv.paidAmount ?? 0) : 0);
+            const stat = inv.status === 'paid' ? 'PAID' : (inv.status === 'partial' || inv.status === 'partially_paid' ? 'PARTIAL' : (inv.status === 'overdue' ? 'OVERDUE' : 'UNPAID'));
             return {
               id: `inv-live-${inv.id || idx}`,
-              invoiceNumber: inv.invoiceNumber || `INV-2026-${String(idx + 10).padStart(4, '0')}`,
-              jobFileNumber: inv.shipment?.jobFileNumber || inv.jobFileNumber || `RED-2026-${String(idx + 1).padStart(4, '0')}`,
-              blNumber: inv.shipment?.blNumber || inv.blNumber || 'MAEU-LIVE',
+              invoiceNumber: inv.invoiceNumber || `—`,
+              jobFileNumber: inv.shipment?.jobFileNumber || inv.jobFileNumber || '—',
+              blNumber: inv.shipment?.blNumber || inv.blNumber || '—',
               clientId: inv.client?.id || inv.clientId || `client-${idx + 1}`,
-              clientName: inv.client?.nameAr || inv.client?.name || inv.clientName || 'عميل معتمد',
+              clientName: inv.client?.nameAr || inv.client?.name || inv.clientName || '—',
               invoiceType: inv.type === 'client_invoice' ? 'فاتورة خدمات لوجستية وتخليص' : 'نولون شحن بحري دولي',
-              issueDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : (inv.issuedAt ? String(inv.issuedAt).slice(0, 10) : '2026-09-01'),
-              dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '2026-10-01',
+              issueDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : (inv.issuedAt ? String(inv.issuedAt).slice(0, 10) : '—'),
+              dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '—',
               amount: total,
               paidAmount: paid,
               currency: inv.currency || 'USD',

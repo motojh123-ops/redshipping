@@ -110,51 +110,118 @@ const priorityBadge = (p: string) => {
 export const LeadsPipelinePage: React.FC = () => {
   const { t } = useTranslation();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
-  useEffect(() => {
-    api.get('/clients')
+  const fetchLeads = React.useCallback(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    api
+      .get('/crm/leads')
       .then((res: any) => {
-        if (res) {
-          const list = Array.isArray(res) ? res : (Array.isArray(res.items) ? res.items : []);
-          setIsLiveConnected(true);
-          if (list.length > 0) {
-            const mappedLeads: Lead[] = list.map((c: any, idx: number) => {
-              const stages = ['new', 'contacted', 'quoted', 'negotiation', 'won'];
-              const assignedStage = c.status === 'lead' ? 'new' : (c.creditLimit > 0 ? 'won' : stages[idx % stages.length]);
-              return {
-                id: `LD-LIVE-${String(c.id).slice(0, 8)}`,
-                title: `${c.businessType || 'شحن بضائع وخدمات'} — ${c.name}`,
-                client: c.nameAr || c.name,
-                clientType: c.businessType || 'trader',
-                serviceType: 'sea_fcl',
-                origin: 'شنغهاي — CNSHA',
-                destination: 'الإسكندرية — EGALY',
-                estimatedValue: c.creditLimit || (15000 + (idx + 1) * 7500),
-                currency: 'USD',
-                salesPerson: c.assignedTo || 'فريق المبيعات',
-                stage: assignedStage,
-                expectedCloseDate: new Date(Date.now() + 86400000 * 14).toISOString().slice(0, 10),
-                createdAt: c.createdAt ? String(c.createdAt).slice(0, 10) : new Date().toISOString().slice(0, 10),
-                priority: (idx % 3 === 0 ? 'high' : idx % 3 === 1 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
-                notes: c.notes || `عميل مسجل في قاعدة البيانات المركزية (${c.taxNumber || 'سجل ضريبي معتمد'})`,
-                activities: [],
-              };
-            });
-            setLeads(mappedLeads);
-          } else {
-            setLeads([]);
-          }
-        }
+        const list = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
+        setLeads(list as Lead[]);
+        setIsLoading(false);
       })
-      .catch(() => setIsLiveConnected(false));
+      .catch(() => {
+        setLoadError('تعذر تحميل الفرص من الخادم — تأكد من تشغيل الـ API ثم أعد المحاولة.');
+        setIsLoading(false);
+      });
   }, []);
+
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [filterStage, setFilterStage] = useState<string>('all');
   const [filterSales, setFilterSales] = useState<string>('all');
+
+  // New-lead form state (real POST /crm/leads)
+  const [newLeadForm, setNewLeadForm] = useState({
+    title: '',
+    client: '',
+    serviceType: 'sea_fcl',
+    priority: 'medium',
+    origin: '',
+    destination: '',
+    estimatedValue: '',
+    currency: 'USD',
+    expectedCloseDate: '',
+    notes: '',
+  });
+  const [isSavingLead, setIsSavingLead] = useState(false);
+
+  // New-activity form state (real POST /crm/leads/:id/activities)
+  const [activityForm, setActivityForm] = useState({ type: 'call', description: '' });
+  const [isSavingActivity, setIsSavingActivity] = useState(false);
+
+  const handleCreateLead = () => {
+    if (!newLeadForm.client.trim() || !newLeadForm.title.trim()) return;
+    setIsSavingLead(true);
+    api
+      .post('/crm/leads', {
+        title: newLeadForm.title.trim(),
+        client: newLeadForm.client.trim(),
+        serviceType: newLeadForm.serviceType,
+        priority: newLeadForm.priority,
+        origin: newLeadForm.origin.trim() || undefined,
+        destination: newLeadForm.destination.trim() || undefined,
+        estimatedValue: newLeadForm.estimatedValue ? Number(newLeadForm.estimatedValue) : undefined,
+        currency: newLeadForm.currency,
+        expectedCloseDate: newLeadForm.expectedCloseDate || undefined,
+        notes: newLeadForm.notes.trim() || undefined,
+      })
+      .then(() => {
+        setShowNewLeadModal(false);
+        setNewLeadForm({
+          title: '',
+          client: '',
+          serviceType: 'sea_fcl',
+          priority: 'medium',
+          origin: '',
+          destination: '',
+          estimatedValue: '',
+          currency: 'USD',
+          expectedCloseDate: '',
+          notes: '',
+        });
+        fetchLeads();
+      })
+      .catch(() => alert('تعذر حفظ الفرصة — تأكد من الاتصال بالخادم.'))
+      .finally(() => setIsSavingLead(false));
+  };
+
+  const handleAddActivity = () => {
+    if (!selectedLead || !activityForm.description.trim()) return;
+    setIsSavingActivity(true);
+    api
+      .post(`/crm/leads/${selectedLead.id}/activities`, {
+        type: activityForm.type,
+        description: activityForm.description.trim(),
+      })
+      .then((updated: any) => {
+        if (updated) setSelectedLead(updated as Lead);
+        setShowActivityModal(false);
+        setActivityForm({ type: 'call', description: '' });
+        fetchLeads();
+      })
+      .catch(() => alert('تعذر إضافة النشاط — تأكد من الاتصال بالخادم.'))
+      .finally(() => setIsSavingActivity(false));
+  };
+
+  const handleConvert = (targetType: 'shipment' | 'client') => {
+    if (!selectedLead) return;
+    api
+      .post(`/crm/leads/${selectedLead.id}/convert`, { targetType })
+      .then(() => {
+        setSelectedLead(null);
+        fetchLeads();
+      })
+      .catch(() => alert('تعذر تحويل الفرصة — تأكد من الاتصال بالخادم.'));
+  };
 
   // KPI calculations
   const totalValue = leads.reduce((s, l) => s + l.estimatedValue, 0);
@@ -195,12 +262,10 @@ export const LeadsPipelinePage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">إدارة الفرص والعملاء المحتملين (CRM)</h1>
-            {isLiveConnected && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Sync: /clients
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Sync: /crm/leads
+            </span>
           </div>
           <p className="text-sm text-slate-500 mt-1">خط أنابيب المبيعات — متابعة الفرص من الاتصال الأول حتى التحويل لملف شحنة</p>
         </div>
@@ -214,6 +279,26 @@ export const LeadsPipelinePage: React.FC = () => {
         </div>
       </div>
 
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800 text-sm text-rose-800 dark:text-rose-300 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>{loadError}</span>
+          <button onClick={fetchLeads} className="ms-auto px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition">
+            إعادة المحاولة
+          </button>
+          <button onClick={() => setLoadError(null)} className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40 transition" title="إخفاء">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+      {isLoading && (
+        <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center">
+          <div className="w-8 h-8 rounded-full border-4 border-slate-200 border-t-brand-600 animate-spin mx-auto mb-3" />
+          <span className="text-sm text-slate-500">جاري تحميل الفرص من الخادم...</span>
+        </div>
+      )}
+      {!isLoading && !loadError && (
+      <>
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="إجمالي الفرص" value={leads.length} icon={Target} trend={`${highPriority} عالية الأولوية`} trendDirection="up" iconColor="text-sky-600" iconBg="bg-sky-50 dark:bg-sky-950/50" />
@@ -354,6 +439,9 @@ export const LeadsPipelinePage: React.FC = () => {
         </div>
       )}
 
+      </>
+      )}
+
       {/* Lead Detail Drawer Modal */}
       <Modal isOpen={!!selectedLead} onClose={() => setSelectedLead(null)} title={selectedLead?.title || ''} subtitle={`${selectedLead?.id} — ${selectedLead?.client}`} maxWidth="4xl">
         {selectedLead && (
@@ -397,6 +485,41 @@ export const LeadsPipelinePage: React.FC = () => {
                   <Plus className="w-3 h-3" /> إضافة نشاط
                 </button>
               </div>
+              {/* New activity form (real POST) */}
+              {showActivityModal && (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <select
+                      value={activityForm.type}
+                      onChange={(e) => setActivityForm((f) => ({ ...f, type: e.target.value }))}
+                      className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                    >
+                      <option value="call">مكالمة</option>
+                      <option value="email">بريد إلكتروني</option>
+                      <option value="meeting">اجتماع</option>
+                      <option value="whatsapp">واتساب</option>
+                      <option value="note">ملاحظة</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={activityForm.description}
+                      onChange={(e) => setActivityForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="وصف النشاط..."
+                      className="col-span-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowActivityModal(false)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">إلغاء</button>
+                    <button
+                      onClick={handleAddActivity}
+                      disabled={isSavingActivity || !activityForm.description.trim()}
+                      className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold transition disabled:opacity-50"
+                    >
+                      {isSavingActivity ? 'جاري الحفظ...' : 'حفظ النشاط'}
+                    </button>
+                  </div>
+                </div>
+              )}
               {selectedLead.activities.length > 0 ? (
                 <div className="space-y-2">
                   {[...selectedLead.activities].reverse().map((act) => (
@@ -422,11 +545,11 @@ export const LeadsPipelinePage: React.FC = () => {
 
             {/* Actions */}
             <div className="flex items-center gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
-              <button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-sm">
+              <button onClick={() => handleConvert('shipment')} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-sm">
                 <ArrowRightCircle className="w-4 h-4" /> تحويل لعرض أسعار
               </button>
-              <button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition shadow-sm">
-                <Ship className="w-4 h-4" /> تحويل لملف شحنة
+              <button onClick={() => handleConvert('client')} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition shadow-sm">
+                <Ship className="w-4 h-4" /> تحويل لعميل معتمد
               </button>
             </div>
           </div>
@@ -439,28 +562,43 @@ export const LeadsPipelinePage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">عنوان الفرصة *</label>
-              <input type="text" placeholder="مثال: شحن 5 حاويات FCL من الصين" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+              <input
+                type="text"
+                value={newLeadForm.title}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="مثال: شحن 5 حاويات FCL من الصين"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">العميل *</label>
-              <select className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm">
-                <option>اختر العميل...</option>
-                <option>المصرية للإنشاءات</option>
-                <option>النيل للصناعات الثقيلة</option>
-                <option>تك سوليوشنز</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">اسم العميل *</label>
+              <input
+                type="text"
+                value={newLeadForm.client}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, client: e.target.value }))}
+                placeholder="مثال: شركة النيل للصناعات"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">نوع الخدمة *</label>
-              <select className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm">
+              <select
+                value={newLeadForm.serviceType}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, serviceType: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              >
                 {SERVICE_TYPES.map((s) => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">الأولوية</label>
-              <select className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm">
+              <select
+                value={newLeadForm.priority}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, priority: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              >
                 <option value="high">🔴 عالية</option>
                 <option value="medium">🟡 متوسطة</option>
                 <option value="low">⚪ منخفضة</option>
@@ -470,36 +608,75 @@ export const LeadsPipelinePage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">ميناء الشحن</label>
-              <input type="text" placeholder="مثال: شنغهاي — CNSHA" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+              <input
+                type="text"
+                value={newLeadForm.origin}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, origin: e.target.value }))}
+                placeholder="مثال: شنغهاي — CNSHA"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">ميناء الوصول</label>
-              <input type="text" placeholder="مثال: الإسكندرية — EGALY" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+              <input
+                type="text"
+                value={newLeadForm.destination}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, destination: e.target.value }))}
+                placeholder="مثال: الإسكندرية — EGALY"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">القيمة المتوقعة</label>
-              <input type="number" placeholder="45,000" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+              <input
+                type="number"
+                value={newLeadForm.estimatedValue}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, estimatedValue: e.target.value }))}
+                placeholder="45,000"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">العملة</label>
-              <select className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm">
+              <select
+                value={newLeadForm.currency}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, currency: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              >
                 <option>USD</option><option>EUR</option><option>EGP</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">تاريخ الإغلاق المتوقع</label>
-              <input type="date" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+              <input
+                type="date"
+                value={newLeadForm.expectedCloseDate}
+                onChange={(e) => setNewLeadForm((f) => ({ ...f, expectedCloseDate: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
             </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">ملاحظات</label>
-            <textarea rows={3} placeholder="تفاصيل إضافية عن الفرصة..." className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm" />
+            <textarea
+              rows={3}
+              value={newLeadForm.notes}
+              onChange={(e) => setNewLeadForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="تفاصيل إضافية عن الفرصة..."
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+            />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setShowNewLeadModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition">إلغاء</button>
-            <button onClick={() => setShowNewLeadModal(false)} className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold shadow-sm transition">حفظ الفرصة</button>
+            <button
+              onClick={handleCreateLead}
+              disabled={isSavingLead || !newLeadForm.client.trim() || !newLeadForm.title.trim()}
+              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold shadow-sm transition disabled:opacity-50"
+            >
+              {isSavingLead ? 'جاري الحفظ...' : 'حفظ الفرصة'}
+            </button>
           </div>
         </div>
       </Modal>
