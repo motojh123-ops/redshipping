@@ -165,6 +165,7 @@ model Company {
   shipmentEvents     ShipmentEvent[]
   shipmentCosts      ShipmentCost[]
   customsDossiers    CustomsDossier[]
+  dispatchTrips      DispatchTrip[]
   notifications      Notification[]
   invoices           Invoice[]
   invoiceItems       InvoiceItem[]
@@ -337,6 +338,8 @@ model ChargeItem {
   category        String   @db.VarChar(50)
   defaultCurrency String   @default("USD") @map("default_currency") @db.VarChar(3)
   defaultPrice    Decimal? @map("default_price") @db.Decimal(12, 2)
+  defaultSellPrice Decimal? @map("default_sell_price") @db.Decimal(12, 2)
+  notes           String?  @db.Text
   showInPricing   Boolean  @default(true) @map("show_in_pricing")
   showInQuotation Boolean  @default(true) @map("show_in_quotation")
   showInInvoice   Boolean  @default(true) @map("show_in_invoice")
@@ -458,6 +461,7 @@ model Shipment {
   events          ShipmentEvent[]
   costs           ShipmentCost[]
   customsDossier  CustomsDossier?
+  dispatchTrips   DispatchTrip[]
   invoices        Invoice[]
 
   @@unique([companyId, jobFileNumber])
@@ -580,6 +584,40 @@ model Invoice {
 
   @@unique([companyId, invoiceNumber])
   @@map("invoices")
+}
+
+model DispatchTrip {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  shipmentId       String?   @map("shipment_id") @db.Uuid
+  tripNumber       String    @map("trip_number") @db.VarChar(50)
+  clientName       String    @map("client_name") @db.VarChar(255)
+  containerNumber  String?   @map("container_number") @db.VarChar(20)
+  containerType    String?   @map("container_type") @db.VarChar(50)
+  pickupLocation   String?   @map("pickup_location") @db.VarChar(255)
+  deliveryLocation String?   @map("delivery_location") @db.VarChar(255)
+  driverName       String?   @map("driver_name") @db.VarChar(150)
+  driverPhone      String?   @map("driver_phone") @db.VarChar(50)
+  truckPlate       String?   @map("truck_plate") @db.VarChar(50)
+  truckType        String?   @map("truck_type") @db.VarChar(100)
+  status           String    @default("scheduled") @db.VarChar(30)
+  scheduledDate    DateTime? @map("scheduled_date") @db.Date
+  departureTime    String?   @map("departure_time") @db.VarChar(10)
+  estimatedArrival String?   @map("estimated_arrival") @db.VarChar(10)
+  actualArrival    String?   @map("actual_arrival") @db.VarChar(10)
+  costRate         Decimal   @default(0) @map("cost_rate") @db.Decimal(12, 2)
+  sellRate         Decimal   @default(0) @map("sell_rate") @db.Decimal(12, 2)
+  currency         String    @default("EGP") @db.VarChar(3)
+  waybillNumber    String?   @map("waybill_number") @db.VarChar(50)
+  notes            String?   @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+
+  @@unique([companyId, tripNumber])
+  @@map("dispatch_trips")
 }
 
 model Notification {

@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { DataStoreService } from '../../database/data-store.service';
-import { DispatchService } from '../dispatch/dispatch.service';
 import { DisbursementsService } from '../disbursements/disbursements.service';
 
 function isUuid(val?: string): boolean {
@@ -15,8 +13,6 @@ export class SystemService {
 
   constructor(
     private prisma: PrismaService,
-    private dataStore: DataStoreService,
-    private dispatchService: DispatchService,
     private disbursementsService: DisbursementsService,
   ) {}
 
@@ -37,7 +33,7 @@ export class SystemService {
       this.prisma.invoice.count({ where: whereTenant }).catch(() => 0),
       this.prisma.customsDossier.count({ where: whereTenant }).catch(() => 0),
       this.prisma.client.count({ where: whereTenant }).catch(() => 0),
-      this.dispatchService.getTrips(tenantId).then((t) => t.length).catch(() => 0),
+      this.prisma.dispatchTrip.count({ where: whereTenant }).catch(() => 0),
       this.disbursementsService.findAll(tenantId).then((v) => v.length).catch(() => 0),
     ]);
 
@@ -92,7 +88,11 @@ export class SystemService {
       const delQuotations = await this.prisma.quotation.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
       deletedCounts.quotations = delQuotations.count;
 
-      // 5. Delete CRM Activities, Entity Documents, Scheduled Reminders, and Audit Logs
+      // 5. Delete Dispatch Trips, Notifications, CRM Activities, Entity Documents, Scheduled Reminders, and Audit Logs
+      const delTrips = await this.prisma.dispatchTrip.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
+      deletedCounts.dispatchTrips = delTrips.count;
+
+      await this.prisma.notification.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
       await this.prisma.crmActivity.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
       await this.prisma.entityDocument.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
       await this.prisma.scheduledReminder.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
@@ -105,14 +105,9 @@ export class SystemService {
 
         const delClients = await this.prisma.client.deleteMany({ where: whereTenant }).catch(() => ({ count: 0 }));
         deletedCounts.clients = delClients.count;
-
-        this.dataStore.clearAllData(tenantId);
-      } else {
-        this.dataStore.clearOperationalData(tenantId);
       }
 
-      // 7. Clear Dispatch & Disbursements in-memory state
-      this.dispatchService.clearTrips();
+      // 7. Dispatch trips cleared above via prisma.dispatchTrip.deleteMany
 
       this.logger.log(`Data reset successfully finished. Deleted counts: ${JSON.stringify(deletedCounts)}`);
 

@@ -12,12 +12,11 @@ test.describe('01 — Authentication & Access Control', () => {
     await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
-  test('should have pre-filled admin credentials', async ({ page }) => {
+  test('should NOT have pre-filled demo credentials', async ({ page }) => {
     await page.goto('/login');
-    const emailValue = await page.locator('input[type="email"]').inputValue();
-    const passValue = await page.locator('input[type="password"]').inputValue();
-    expect(emailValue).toBe('admin@redshipping.com');
-    expect(passValue).toBe('password123');
+    // Demo credentials were removed — fields must start empty
+    await expect(page.locator('input[type="email"]')).toHaveValue('');
+    await expect(page.locator('input[type="password"]')).toHaveValue('');
   });
 
   test('should show error on invalid credentials', async ({ page }) => {
@@ -39,15 +38,11 @@ test.describe('01 — Authentication & Access Control', () => {
     expect(page.url()).not.toContain('/login');
   });
 
-  test('should quick-login buttons work', async ({ page }) => {
+  test('should have no quick-login demo buttons', async ({ page }) => {
     await page.goto('/login');
-    // Look for quick login buttons (Admin/Sales/Ops)
-    const quickButtons = page.locator('button:has-text("Admin"), button:has-text("المدير")');
-    if (await quickButtons.count() > 0) {
-      await quickButtons.first().click();
-      await page.waitForURL('**/', { timeout: 15000 });
-      expect(page.url()).not.toContain('/login');
-    }
+    // Demo quick-login buttons were removed — assert they don't exist
+    const quickButtons = page.locator('button:has-text("Admin"), button:has-text("المدير"), button:has-text("Sales"), button:has-text("Ops")');
+    await expect(quickButtons).toHaveCount(0);
   });
 
   test('should redirect unauthenticated user to /login', async ({ page }) => {

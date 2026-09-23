@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { DataStoreService } from '../../database/data-store.service';
 
 export interface PricingTariff {
   id: string;
@@ -24,209 +23,81 @@ export interface PricingTariff {
   isActive: boolean;
 }
 
-const FALLBACK_PRICING_TARIFFS: PricingTariff[] = [
-  // Ocean Freight — China to Egypt
-  {
-    id: 'prc-01',
+/**
+ * Pricing tariffs persisted on the real ChargeItem master (tenant-scoped).
+ * Tariff fields that don't map 1:1 onto ChargeItem columns are encoded in
+ * the notes column as `tariff:{json}` so pricing stays in PostgreSQL.
+ */
+const TARIFF_KEY = 'tariff:';
+
+interface TariffMeta {
+  category: 'ocean' | 'inland' | 'air' | 'customs';
+  carrierCode: string;
+  originPortCode: string;
+  originPortName: string;
+  destinationPortCode: string;
+  destinationPortName: string;
+  containerType: string;
+  transitDaysEstimated: number;
+  freeDaysAllowed: number;
+  validFrom: string;
+  validTo: string;
+}
+
+function defaultMeta(): TariffMeta {
+  return {
     category: 'ocean',
-    carrierCode: 'MSCU',
-    carrierName: 'MSC Mediterranean Shipping',
-    originPortCode: 'CNNGB',
-    originPortName: 'Ningbo Port (China)',
-    destinationPortCode: 'EGALY',
-    destinationPortName: 'Alexandria Port (Egypt)',
+    carrierCode: 'GENERIC',
+    originPortCode: '—',
+    originPortName: '—',
+    destinationPortCode: '—',
+    destinationPortName: '—',
     containerType: '40HQ',
-    currency: 'USD',
-    buyRate: 2450,
-    sellRate: 2850,
-    profitMarginPercent: 16.3,
-    transitDaysEstimated: 26,
-    freeDaysAllowed: 14,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-15',
-    remarks: 'Direct ocean service via Suez Canal, includes BAF & EBS',
-    isActive: true,
-  },
-  {
-    id: 'prc-02',
-    category: 'ocean',
-    carrierCode: 'MSCU',
-    carrierName: 'MSC Mediterranean Shipping',
-    originPortCode: 'CNNGB',
-    originPortName: 'Ningbo Port (China)',
-    destinationPortCode: 'EGALY',
-    destinationPortName: 'Alexandria Port (Egypt)',
-    containerType: '20GP',
-    currency: 'USD',
-    buyRate: 1550,
-    sellRate: 1850,
-    profitMarginPercent: 19.3,
-    transitDaysEstimated: 26,
-    freeDaysAllowed: 14,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-15',
-    remarks: 'Direct ocean service, 20ft standard dry box',
-    isActive: true,
-  },
-  {
-    id: 'prc-03',
-    category: 'ocean',
-    carrierCode: 'COSU',
-    carrierName: 'COSCO Shipping Lines',
-    originPortCode: 'CNSHA',
-    originPortName: 'Shanghai Port (China)',
-    destinationPortCode: 'EGSOK',
-    destinationPortName: 'Sokhna Port (Egypt)',
-    containerType: '40HQ',
-    currency: 'USD',
-    buyRate: 2300,
-    sellRate: 2700,
-    profitMarginPercent: 17.4,
-    transitDaysEstimated: 22,
-    freeDaysAllowed: 21,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-31',
-    remarks: 'Red Sea Fast Express to Sokhna DP World terminal',
-    isActive: true,
-  },
-  {
-    id: 'prc-04',
-    category: 'ocean',
-    carrierCode: 'MAEU',
-    carrierName: 'Maersk Line Egypt',
-    originPortCode: 'CNSHA',
-    originPortName: 'Shanghai Port (China)',
-    destinationPortCode: 'EGDAM',
-    destinationPortName: 'Damietta Port (Egypt)',
-    containerType: '40HQ',
-    currency: 'USD',
-    buyRate: 2500,
-    sellRate: 2950,
-    profitMarginPercent: 18.0,
-    transitDaysEstimated: 24,
-    freeDaysAllowed: 14,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-31',
-    remarks: 'Direct call to Damietta Container Terminal',
-    isActive: true,
-  },
-  {
-    id: 'prc-05',
-    category: 'ocean',
-    carrierCode: 'HLCU',
-    carrierName: 'Hapag-Lloyd Egypt',
-    originPortCode: 'CNSHA',
-    originPortName: 'Shanghai Port (China)',
-    destinationPortCode: 'EGPSD',
-    destinationPortName: 'Port Said East (Egypt)',
-    containerType: '40HQ',
-    currency: 'USD',
-    buyRate: 2380,
-    sellRate: 2800,
-    profitMarginPercent: 17.6,
     transitDaysEstimated: 25,
     freeDaysAllowed: 14,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-31',
-    remarks: 'SCCT East Port Said Express service',
-    isActive: true,
-  },
-  {
-    id: 'prc-06',
-    category: 'ocean',
-    carrierCode: 'CMDU',
-    carrierName: 'CMA CGM Shipping Agency',
-    originPortCode: 'CNSZX',
-    originPortName: 'Shenzhen Port (China)',
-    destinationPortCode: 'EGALY',
-    destinationPortName: 'Alexandria Port (Egypt)',
-    containerType: '40HQ',
-    currency: 'USD',
-    buyRate: 2400,
-    sellRate: 2820,
-    profitMarginPercent: 17.5,
-    transitDaysEstimated: 27,
-    freeDaysAllowed: 21,
-    validFrom: '2026-09-01',
-    validTo: '2026-10-15',
-    remarks: 'BEX service via Malta hub, 21 demurrage free days',
-    isActive: true,
-  },
-  // Inland Haulage in Egypt
-  {
-    id: 'prc-07',
-    category: 'inland',
-    carrierCode: 'TRUCK-EGY',
-    carrierName: 'أسطول النقل البري المعتمد',
-    originPortCode: 'EGALY',
-    originPortName: 'Alexandria Port (ميناء الإسكندرية)',
-    destinationPortCode: '6OCT',
-    destinationPortName: '6th of October Ind. Zone (السادس من أكتوبر)',
-    containerType: '40HQ',
-    currency: 'EGP',
-    buyRate: 11000,
-    sellRate: 13500,
-    profitMarginPercent: 22.7,
-    transitDaysEstimated: 1,
-    freeDaysAllowed: 2,
-    validFrom: '2026-01-01',
-    validTo: '2026-12-31',
-    remarks: 'Heavy trailer flatbed with GPS tracking and cargo insurance',
-    isActive: true,
-  },
-  {
-    id: 'prc-08',
-    category: 'inland',
-    carrierCode: 'TRUCK-EGY',
-    carrierName: 'أسطول النقل البري المعتمد',
-    originPortCode: 'EGSOK',
-    originPortName: 'Sokhna Port (ميناء السخنة)',
-    destinationPortCode: '10RAM',
-    destinationPortName: '10th of Ramadan Ind. Zone (العاشر من رمضان)',
-    containerType: '40HQ',
-    currency: 'EGP',
-    buyRate: 9500,
-    sellRate: 12000,
-    profitMarginPercent: 26.3,
-    transitDaysEstimated: 1,
-    freeDaysAllowed: 2,
-    validFrom: '2026-01-01',
-    validTo: '2026-12-31',
-    remarks: 'Direct highway route via Regional Ring Road',
-    isActive: true,
-  },
-  // Customs Clearance
-  {
-    id: 'prc-09',
-    category: 'customs',
-    carrierCode: 'CUST-CLEAR',
-    carrierName: 'خدمات التخليص الجمركي الموحدة',
-    originPortCode: 'EGALY',
-    originPortName: 'Alexandria Port (الإسكندرية)',
-    destinationPortCode: 'EGALY',
-    destinationPortName: 'Alexandria Customs (جمرك الإسكندرية)',
-    containerType: '40HQ',
-    currency: 'EGP',
-    buyRate: 4000,
-    sellRate: 6500,
-    profitMarginPercent: 62.5,
-    transitDaysEstimated: 3,
-    freeDaysAllowed: 14,
-    validFrom: '2026-01-01',
-    validTo: '2026-12-31',
-    remarks: 'Full clearance service including ACID upload, Form 46 & inspection',
-    isActive: true,
-  },
-];
+    validFrom: new Date().toISOString().slice(0, 10),
+    validTo: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+  };
+}
+
+function toTariff(ci: any): PricingTariff {
+  let meta: TariffMeta = defaultMeta();
+  try {
+    const line = (ci.notes || '').split('\n').find((l: string) => l.startsWith(TARIFF_KEY));
+    if (line) meta = { ...meta, ...JSON.parse(line.slice(TARIFF_KEY.length)) };
+  } catch {
+    // keep defaults
+  }
+  const buy = Number(ci.defaultPrice) || 0;
+  const sell = Number(ci.defaultSellPrice ?? ci.defaultPrice) || 0;
+  return {
+    id: ci.id,
+    category: meta.category,
+    carrierCode: meta.carrierCode || ci.code,
+    carrierName: ci.nameEn,
+    originPortCode: meta.originPortCode,
+    originPortName: meta.originPortName,
+    destinationPortCode: meta.destinationPortCode,
+    destinationPortName: meta.destinationPortName,
+    containerType: meta.containerType as any,
+    currency: (ci.defaultCurrency as 'USD' | 'EUR' | 'EGP') || 'USD',
+    buyRate: buy,
+    sellRate: sell,
+    profitMarginPercent: buy > 0 ? Number((((sell - buy) / buy) * 100).toFixed(1)) : 0,
+    transitDaysEstimated: meta.transitDaysEstimated,
+    freeDaysAllowed: meta.freeDaysAllowed,
+    validFrom: meta.validFrom,
+    validTo: meta.validTo,
+    remarks: (ci.notes || '').split('\n').filter((l: string) => l && !l.startsWith(TARIFF_KEY)).join(' '),
+    isActive: ci.isActive,
+  };
+}
 
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
 
-  constructor(
-    private prisma: PrismaService,
-    private dataStore: DataStoreService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async getTariffs(tenantId: string, filter?: {
     category?: string;
@@ -235,34 +106,43 @@ export class PricingService {
     destination?: string;
     containerType?: string;
   }): Promise<PricingTariff[]> {
-    const tariffs = await this.dataStore.getItems<PricingTariff>(tenantId, 'pricing_tariffs', FALLBACK_PRICING_TARIFFS);
-    let result = tariffs;
+    const chargeItems = await this.prisma.chargeItem.findMany({
+      where: {
+        companyId: tenantId,
+        isActive: true,
+        category: { in: ['ocean', 'inland', 'air', 'customs'] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let tariffs = chargeItems.map(toTariff);
 
     if (filter?.category) {
-      result = result.filter((t) => t.category === filter.category);
+      tariffs = tariffs.filter((t) => t.category === filter.category);
     }
     if (filter?.carrierCode) {
       const code = filter.carrierCode.toLowerCase();
-      result = result.filter((t) => t.carrierCode.toLowerCase().includes(code));
+      tariffs = tariffs.filter((t) => t.carrierCode.toLowerCase().includes(code));
     }
     if (filter?.origin) {
       const origin = filter.origin.toLowerCase();
-      result = result.filter((t) => t.originPortCode === filter.origin || t.originPortName.toLowerCase().includes(origin));
+      tariffs = tariffs.filter((t) => t.originPortCode === filter.origin || t.originPortName.toLowerCase().includes(origin));
     }
     if (filter?.destination) {
       const dest = filter.destination.toLowerCase();
-      result = result.filter((t) => t.destinationPortCode === filter.destination || t.destinationPortName.toLowerCase().includes(dest));
+      tariffs = tariffs.filter((t) => t.destinationPortCode === filter.destination || t.destinationPortName.toLowerCase().includes(dest));
     }
     if (filter?.containerType) {
-      result = result.filter((t) => t.containerType === filter.containerType);
+      tariffs = tariffs.filter((t) => t.containerType === filter.containerType);
     }
-
-    return result;
+    return tariffs;
   }
 
   async getTariffById(tenantId: string, id: string): Promise<PricingTariff | null> {
-    const tariffs = await this.dataStore.getItems<PricingTariff>(tenantId, 'pricing_tariffs', FALLBACK_PRICING_TARIFFS);
-    return tariffs.find((t) => t.id === id) || null;
+    const ci = await this.prisma.chargeItem.findFirst({
+      where: { id, companyId: tenantId, isActive: true },
+    });
+    return ci ? toTariff(ci) : null;
   }
 
   async createTariff(tenantId: string, dto: any): Promise<PricingTariff> {
@@ -270,33 +150,42 @@ export class PricingService {
     const sellRate = Number(dto.sellRate) || 0;
     const profitMargin = buyRate > 0 ? Number((((sellRate - buyRate) / buyRate) * 100).toFixed(1)) : 0;
 
-    const newTariff: PricingTariff = {
-      id: `prc-${Date.now()}`,
+    const meta: TariffMeta = {
       category: dto.category || 'ocean',
       carrierCode: dto.carrierCode || 'GENERIC',
-      carrierName: dto.carrierName || 'Shipping Line',
-      originPortCode: dto.originPortCode || 'CNSHA',
-      originPortName: dto.originPortName || 'Shanghai Port',
-      destinationPortCode: dto.destinationPortCode || 'EGALY',
-      destinationPortName: dto.destinationPortName || 'Alexandria Port',
+      originPortCode: dto.originPortCode || '—',
+      originPortName: dto.originPortName || '—',
+      destinationPortCode: dto.destinationPortCode || '—',
+      destinationPortName: dto.destinationPortName || '—',
       containerType: dto.containerType || '40HQ',
-      currency: dto.currency || 'USD',
-      buyRate,
-      sellRate,
-      profitMarginPercent: profitMargin,
       transitDaysEstimated: Number(dto.transitDaysEstimated) || 25,
       freeDaysAllowed: Number(dto.freeDaysAllowed) || 14,
       validFrom: dto.validFrom || new Date().toISOString().slice(0, 10),
-      validTo: dto.validTo || '2026-12-31',
-      remarks: dto.remarks || '',
-      isActive: true,
+      validTo: dto.validTo || new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
     };
 
-    await this.dataStore.saveItem(tenantId, 'pricing_tariffs', newTariff.id, newTariff);
-    return newTariff;
+    const code = `TARIFF-${meta.carrierCode}-${Date.now().toString().slice(-6)}`;
+    const ci = await this.prisma.chargeItem.create({
+      data: {
+        companyId: tenantId,
+        code,
+        nameEn: dto.carrierName || 'Shipping Line',
+        nameAr: dto.carrierName || 'خط ملاحي',
+        category: meta.category,
+        defaultCurrency: dto.currency || 'USD',
+        defaultPrice: buyRate,
+        defaultSellPrice: sellRate,
+        isActive: true,
+        notes: [`${TARIFF_KEY}${JSON.stringify(meta)}`, dto.remarks].filter(Boolean).join('\n'),
+      },
+    });
+
+    const tariff = toTariff(ci);
+    tariff.profitMarginPercent = profitMargin;
+    return tariff;
   }
 
-  async calculateQuoteEstimate(params: {
+  async calculateQuoteEstimate(tenantId: string, params: {
     originPortCode: string;
     destinationPortCode: string;
     containerType: string;
@@ -316,33 +205,52 @@ export class PricingService {
     estimatedTransitDays: number;
   }> {
     const qty = Math.max(1, params.quantity || 1);
-    const tariffs = await this.dataStore.getItems<PricingTariff>('comp-demo-1', 'pricing_tariffs', FALLBACK_PRICING_TARIFFS);
+    const tariffs = await this.getTariffs(tenantId);
 
     // Find ocean match
-    const ocean = tariffs.find(
-      (t) =>
-        t.category === 'ocean' &&
-        t.originPortCode === params.originPortCode &&
-        t.destinationPortCode === params.destinationPortCode &&
-        t.containerType === params.containerType,
-    ) || tariffs[0];
+    const ocean =
+      tariffs.find(
+        (t) =>
+          t.category === 'ocean' &&
+          t.originPortCode === params.originPortCode &&
+          t.destinationPortCode === params.destinationPortCode &&
+          t.containerType === params.containerType,
+      ) || tariffs.find((t) => t.category === 'ocean');
 
-    const oceanCost = ocean.buyRate * qty;
-    const oceanSell = ocean.sellRate * qty;
+    if (!ocean) {
+      throw new NotFoundException(
+        `No ocean tariff found for ${params.originPortCode} → ${params.destinationPortCode} (${params.containerType}). Add tariffs in the pricing masters first.`,
+      );
+    }
+
+    const egpUsd = 50; // consolidated EGP→USD conversion for local charges
+    const usdOcean = ocean.currency === 'USD' ? ocean : { ...ocean, buyRate: ocean.buyRate / egpUsd, sellRate: ocean.sellRate / egpUsd };
+
+    const oceanCost = usdOcean.buyRate * qty;
+    const oceanSell = usdOcean.sellRate * qty;
 
     let clearanceCost = 0;
     let clearanceSell = 0;
     if (params.includeClearance) {
-      // EGP ~ 50 per USD
-      clearanceCost = (4000 * qty) / 50;
-      clearanceSell = (6500 * qty) / 50;
+      const clearance = tariffs.find((t) => t.category === 'customs');
+      if (clearance) {
+        const cCost = clearance.currency === 'EGP' ? clearance.buyRate / egpUsd : clearance.buyRate;
+        const cSell = clearance.currency === 'EGP' ? clearance.sellRate / egpUsd : clearance.sellRate;
+        clearanceCost = cCost * qty;
+        clearanceSell = cSell * qty;
+      }
     }
 
     let inlandCost = 0;
     let inlandSell = 0;
     if (params.includeInland) {
-      inlandCost = (11000 * qty) / 50;
-      inlandSell = (13500 * qty) / 50;
+      const inland = tariffs.find((t) => t.category === 'inland');
+      if (inland) {
+        const iCost = inland.currency === 'EGP' ? inland.buyRate / egpUsd : inland.buyRate;
+        const iSell = inland.currency === 'EGP' ? inland.sellRate / egpUsd : inland.sellRate;
+        inlandCost = iCost * qty;
+        inlandSell = iSell * qty;
+      }
     }
 
     const totalCostUsd = oceanCost + clearanceCost + inlandCost;

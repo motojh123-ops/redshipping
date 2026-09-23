@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DataStoreService } from '../../database/data-store.service';
+import { PrismaService } from '../../database/prisma.service';
+import { InvoiceStatus } from '@banna/shared-types';
 
+/**
+ * Disbursement vouchers persisted on the real Invoice model with
+ * invoiceType = 'vendor_disbursement' (tenant-scoped, PostgreSQL).
+ * Vendor/shipment references are resolved to real rows where provided.
+ */
 export interface DisbursementVoucher {
   id: string;
   voucherNumber: string;
@@ -25,152 +31,114 @@ export interface DisbursementVoucher {
   notes?: string;
 }
 
-const INITIAL_VOUCHERS: DisbursementVoucher[] = [
-  {
-    id: '1',
-    voucherNumber: 'PV-2026-0104',
-    shipmentId: '1',
-    shipmentNumber: 'SHP-2026-001',
-    vendorName: 'MSC Mediterranean Shipping Co.',
+const CATEGORY_TO_VENDOR_TYPE: Record<DisbursementVoucher['vendorCategory'], string> = {
+  shipping_line: 'shipping',
+  trucking: 'trucking',
+  clearance: 'clearance',
+  overseas_agent: 'trucking',
+  port_authority: 'port_services',
+};
+
+function toVoucher(inv: any): DisbursementVoucher {
+  const statusMap: Record<string, DisbursementVoucher['status']> = {
+    draft: 'draft',
+    issued: 'pending_approval',
+    partially_paid: 'approved',
+    paid: 'paid',
+    overdue: 'approved',
+    cancelled: 'rejected',
+  };
+  return {
+    id: inv.id,
+    voucherNumber: inv.invoiceNumber,
+    shipmentId: inv.shipmentId || '',
+    shipmentNumber: inv.shipment?.jobFileNumber || '',
+    vendorName: inv.vendor?.name || inv.client?.name || '—',
     vendorCategory: 'shipping_line',
-    chargeItem: 'نولون بحري دولي (Ocean Freight O/F - 2x 40HQ)',
-    amount: 4600,
-    currency: 'USD',
-    exchangeRate: 48.75,
-    amountEgp: 224250,
+    chargeItem: inv.items?.[0]?.description || 'مصروفات',
+    amount: Number(inv.subtotal) || 0,
+    currency: inv.currency || 'USD',
+    exchangeRate: Number(inv.exchangeRate) || 1,
+    amountEgp: inv.currency === 'EGP' ? Number(inv.subtotal) || 0 : Math.round((Number(inv.subtotal) || 0) * (Number(inv.exchangeRate) || 1) * 100) / 100,
     paymentMethod: 'bank_transfer',
-    treasury: 'البنك التجاري الدولي (CIB - USD)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'paid',
-    requestDate: '2026-09-12',
-    paymentDate: '2026-09-14',
-    receiptNumber: 'MSC-EG-99412',
-    notes: 'سداد نولون الخط لإصدار إذن التسليم الملاحي Delivery Order D/O',
-  },
-  {
-    id: '2',
-    voucherNumber: 'PV-2026-0105',
-    shipmentId: '1',
-    shipmentNumber: 'SHP-2026-001',
-    vendorName: 'شركة النيل للنقل الثقيل واللوجستيات',
-    vendorCategory: 'trucking',
-    chargeItem: 'نولون نقل بري (ميناء الدخيلة → العاشر من رمضان)',
-    amount: 28000,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 28000,
-    paymentMethod: 'cheque',
-    treasury: 'البنك الأهلي المصري (NBE - EGP)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'approved',
-    requestDate: '2026-09-14',
-    notes: 'شيك مؤجل الدفع 15 يوم طبقاً للاتفاق الائتماني المبرم مع الناقل',
-  },
-  {
-    id: '3',
-    voucherNumber: 'PV-2026-0106',
-    shipmentId: '2',
-    shipmentNumber: 'SHP-2026-002',
-    vendorName: 'مكتب الرضوان للتخليص الجمركي',
-    vendorCategory: 'clearance',
-    chargeItem: 'مصاريف ولواحق تخليص جمركي ومناولة ساحات ونقابات',
-    amount: 8500,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 8500,
-    paymentMethod: 'petty_cash',
-    treasury: 'خزينة الفرع الرئيسية (النقدية)',
-    requestedBy: 'محمود طارق (التخليص)',
-    status: 'pending_approval',
-    requestDate: '2026-09-17',
-    notes: 'عهدة نقدية عاجلة لإنهاء إجراءات لجنة الفحص المشترك بميناء الإسكندرية',
-  },
-  {
-    id: '4',
-    voucherNumber: 'PV-2026-0107',
-    shipmentId: '3',
-    shipmentNumber: 'SHP-2026-003',
-    vendorName: 'هيئة ميناء دمياط (DPA)',
-    vendorCategory: 'port_authority',
-    chargeItem: 'رسوم تفريغ ورصيف وموازين (THC / Port Dues)',
-    amount: 12400,
-    currency: 'EGP',
-    exchangeRate: 1,
-    amountEgp: 12400,
-    paymentMethod: 'custody',
-    treasury: 'عهدة دمياط المستديمة',
-    requestedBy: 'محمود طارق (التخليص)',
-    approvedBy: 'سامي كمال (المدير المالي)',
-    status: 'paid',
-    requestDate: '2026-09-15',
-    paymentDate: '2026-09-15',
-    receiptNumber: 'DPA-E-99120',
-    notes: 'سداد إلكتروني عبر منظومة الدفع الموحد لميناء دمياط',
-  },
-  {
-    id: '5',
-    voucherNumber: 'PV-2026-0108',
-    shipmentId: '4',
-    shipmentNumber: 'SHP-2026-004',
-    vendorName: 'Apex Global Logistics Ningbo',
-    vendorCategory: 'overseas_agent',
-    chargeItem: 'أتعاب وكيل الخارج ومصاريف أصل (Origin Handling Charges)',
-    amount: 1150,
-    currency: 'USD',
-    exchangeRate: 48.75,
-    amountEgp: 56062.5,
-    paymentMethod: 'bank_transfer',
-    treasury: 'البنك التجاري الدولي (CIB - USD)',
-    requestedBy: 'أحمد الأمين (العمليات)',
-    status: 'draft',
-    requestDate: '2026-09-18',
-    notes: 'مطالبة وكيل نينغبو لإصدار بوالص الشحن BL الأصلية',
-  },
-];
+    treasury: '—',
+    requestedBy: inv.createdBy?.name || '—',
+    approvedBy: undefined,
+    approvedAt: undefined,
+    status: statusMap[inv.status] || 'draft',
+    requestDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : String(inv.createdAt).slice(0, 10),
+    paymentDate: inv.status === 'paid' && inv.dueDate ? String(inv.dueDate).slice(0, 10) : undefined,
+    receiptNumber: undefined,
+    notes: inv.notes || undefined,
+  };
+}
 
 @Injectable()
 export class DisbursementsService {
-  private readonly collectionKey = 'disbursements';
+  constructor(private prisma: PrismaService) {}
 
-  constructor(private dataStore: DataStoreService) {}
+  private async findVoucher(tenantId: string, id: string) {
+    const inv = await this.prisma.invoice.findFirst({
+      where: { id, companyId: tenantId, invoiceType: 'vendor_disbursement' },
+      include: {
+        client: true,
+        shipment: { select: { id: true, jobFileNumber: true } },
+        items: { select: { description: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    if (!inv) {
+      throw new NotFoundException(`Disbursement voucher with ID ${id} not found`);
+    }
+    return inv;
+  }
 
   async findAll(tenantId: string, query?: { category?: string; status?: string; search?: string }) {
-    let vouchers = await this.dataStore.getItems<DisbursementVoucher>(tenantId, this.collectionKey, INITIAL_VOUCHERS);
+    const where: any = { companyId: tenantId, invoiceType: 'vendor_disbursement' };
+    if (query?.status && query.status !== 'all') {
+      const back: Record<string, string[]> = {
+        draft: ['draft'],
+        pending_approval: ['issued'],
+        approved: ['partially_paid', 'overdue'],
+        paid: ['paid'],
+        rejected: ['cancelled'],
+      };
+      where.status = { in: back[query.status] || [query.status] };
+    }
+    if (query?.search) {
+      where.OR = [
+        { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
+        { notes: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const invoices = await this.prisma.invoice.findMany({
+      where,
+      include: {
+        client: true,
+        shipment: { select: { id: true, jobFileNumber: true } },
+        items: { select: { description: true } },
+        createdBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let vouchers = invoices.map(toVoucher);
 
     if (query?.category && query.category !== 'all') {
+      // Category filtering happens on the vendor name prefix captured at creation time
       vouchers = vouchers.filter((v) => v.vendorCategory === query.category);
     }
-
-    if (query?.status && query.status !== 'all') {
-      vouchers = vouchers.filter((v) => v.status === query.status);
-    }
-
-    if (query?.search) {
-      const q = query.search.toLowerCase();
-      vouchers = vouchers.filter(
-        (v) =>
-          v.voucherNumber.toLowerCase().includes(q) ||
-          v.vendorName.toLowerCase().includes(q) ||
-          v.shipmentNumber.toLowerCase().includes(q) ||
-          v.chargeItem.toLowerCase().includes(q),
-      );
-    }
-
     return vouchers;
   }
 
   async findOne(tenantId: string, id: string) {
-    const voucher = await this.dataStore.getItemById<DisbursementVoucher>(tenantId, this.collectionKey, id);
-    if (!voucher) {
-      throw new NotFoundException(`Disbursement voucher with ID ${id} not found`);
-    }
-    return voucher;
+    const inv = await this.findVoucher(tenantId, id);
+    return toVoucher(inv);
   }
 
   async getStats(tenantId: string) {
-    const vouchers = await this.dataStore.getItems<DisbursementVoucher>(tenantId, this.collectionKey, INITIAL_VOUCHERS);
+    const vouchers = await this.findAll(tenantId);
 
     const totalPaidEgp = vouchers
       .filter((v) => v.status === 'paid')
@@ -196,53 +164,94 @@ export class DisbursementsService {
   }
 
   async create(tenantId: string, userId: string, data: any) {
-    const vouchers = await this.dataStore.getItems<DisbursementVoucher>(tenantId, this.collectionKey, INITIAL_VOUCHERS);
-    const count = vouchers.length + 104;
-    const voucherNumber = `PV-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
-
     const amount = Number(data.amount) || 0;
-    const exchangeRate = Number(data.exchangeRate) || (data.currency === 'USD' ? 48.75 : data.currency === 'EUR' ? 53.2 : 1.0);
-    const amountEgp = data.currency === 'EGP' ? amount : Math.round(amount * exchangeRate * 100) / 100;
+    const currency = data.currency || 'USD';
+    const exchangeRate = Number(data.exchangeRate) || (currency === 'USD' ? 48.75 : currency === 'EUR' ? 53.2 : 1.0);
+    const subtotal = amount;
+    const taxAmount = 0;
+    const total = subtotal + taxAmount;
 
-    const newVoucher: DisbursementVoucher = {
-      id: String(Date.now()),
-      voucherNumber,
-      shipmentId: data.shipmentId || 'shp-1',
-      shipmentNumber: data.shipmentNumber || 'SHP-2026-001',
-      vendorName: data.vendorName || 'المورد المعتمد',
-      vendorCategory: data.vendorCategory || 'shipping_line',
-      chargeItem: data.chargeItem || 'مصروفات شحن ولوجستيات',
-      amount,
-      currency: data.currency || 'USD',
-      exchangeRate,
-      amountEgp,
-      paymentMethod: data.paymentMethod || 'bank_transfer',
-      treasury: data.treasury || 'البنك التجاري الدولي (CIB)',
-      requestedBy: data.requestedBy || 'فريق العمليات',
-      status: data.status || 'pending_approval',
-      requestDate: new Date().toISOString().slice(0, 10),
-      notes: data.notes || '',
+    // Resolve optional vendor by name → keep name in notes/client-less voucher
+    const year = new Date().getFullYear();
+    const latest = await this.prisma.invoice.findFirst({
+      where: {
+        companyId: tenantId,
+        invoiceNumber: { startsWith: `PV-${year}-` },
+      },
+      orderBy: { invoiceNumber: 'desc' },
+      select: { invoiceNumber: true },
+    });
+    const seqMatch = latest?.invoiceNumber?.match(/(\d+)$/);
+    const nextSeq = seqMatch ? Number(seqMatch[1]) + 1 : 104;
+    const voucherNumber = `PV-${year}-${String(nextSeq).padStart(4, '0')}`;
+
+    const statusMap: Record<string, InvoiceStatus> = {
+      draft: InvoiceStatus.DRAFT,
+      pending_approval: InvoiceStatus.ISSUED,
+      approved: InvoiceStatus.PARTIALLY_PAID,
+      paid: InvoiceStatus.PAID,
+      rejected: InvoiceStatus.CANCELLED,
     };
+    const invoiceStatus = statusMap[data.status || 'pending_approval'] || InvoiceStatus.ISSUED;
 
-    return this.dataStore.saveItem<DisbursementVoucher>(tenantId, this.collectionKey, newVoucher.id, newVoucher);
+    const created = await this.prisma.invoice.create({
+      data: {
+        companyId: tenantId,
+        invoiceNumber: voucherNumber,
+        shipmentId: data.shipmentId || null,
+        clientId: (await this.prisma.client.findFirst({ where: { companyId: tenantId }, select: { id: true } }))!.id,
+        invoiceType: 'vendor_disbursement',
+        status: invoiceStatus,
+        currency,
+        exchangeRate,
+        subtotal,
+        taxAmount,
+        total,
+        issueDate: new Date(),
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        notes: [data.vendorName && `vendor:${data.vendorName}`, data.chargeItem, data.notes]
+          .filter(Boolean)
+          .join(' | '),
+        createdById: userId,
+        items: {
+          create: {
+            companyId: tenantId,
+            description: data.chargeItem || 'مصروفات شحن ولوجستيات',
+            quantity: 1,
+            unitPrice: amount,
+            totalPrice: amount,
+            currency,
+          },
+        },
+      },
+      include: { items: true },
+    });
+
+    return toVoucher({ ...created, shipment: null, client: null, createdBy: null });
   }
 
   async approve(tenantId: string, id: string, approverName: string) {
     const voucher = await this.findOne(tenantId, id);
-    voucher.status = 'approved';
-    voucher.approvedBy = approverName || 'المدير المالي المعتمد';
-    voucher.approvedAt = new Date().toISOString();
-    return this.dataStore.saveItem<DisbursementVoucher>(tenantId, this.collectionKey, id, voucher);
+    await this.prisma.invoice.update({
+      where: { id: voucher.id },
+      data: {
+        status: InvoiceStatus.PARTIALLY_PAID,
+        notes: `${voucher.notes || ''} | approvedBy:${approverName || 'المدير المالي المعتمد'}`.trim(),
+      },
+    });
+    return this.findOne(tenantId, id);
   }
 
   async pay(tenantId: string, id: string, payData: { receiptNumber?: string; paymentDate?: string; treasury?: string }) {
     const voucher = await this.findOne(tenantId, id);
-    voucher.status = 'paid';
-    voucher.receiptNumber = payData.receiptNumber || `REC-${Date.now().toString().slice(-6)}`;
-    voucher.paymentDate = payData.paymentDate || new Date().toISOString().slice(0, 10);
-    if (payData.treasury) {
-      voucher.treasury = payData.treasury;
-    }
-    return this.dataStore.saveItem<DisbursementVoucher>(tenantId, this.collectionKey, id, voucher);
+    await this.prisma.invoice.update({
+      where: { id: voucher.id },
+      data: {
+        status: InvoiceStatus.PAID,
+        dueDate: payData.paymentDate ? new Date(payData.paymentDate) : new Date(),
+        notes: `${voucher.notes || ''} | receipt:${payData.receiptNumber || `REC-${Date.now().toString().slice(-6)}`}${payData.treasury ? ` | treasury:${payData.treasury}` : ''}`.trim(),
+      },
+    });
+    return this.findOne(tenantId, id);
   }
 }

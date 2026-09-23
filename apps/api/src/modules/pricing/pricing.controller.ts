@@ -38,6 +38,7 @@ export class PricingController {
 
   @Post('estimate')
   async calculateEstimate(
+    @TenantId() tenantId: string,
     @Body()
     body: {
       originPortCode: string;
@@ -48,6 +49,6 @@ export class PricingController {
       includeInland?: boolean;
     },
   ) {
-    return this.pricingService.calculateQuoteEstimate(body);
+    return this.pricingService.calculateQuoteEstimate(tenantId, body);
   }
 }

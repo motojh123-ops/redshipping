@@ -1,11 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 export interface DispatchTrip {
   id: string;
   tripNumber: string;
-  shipmentId?: string;
-  jobFileNumber?: string;
+  shipmentId?: string | null;
+  jobFileNumber?: string | null;
   clientName: string;
   containerNumber: string;
   containerType: string;
@@ -27,164 +27,164 @@ export interface DispatchTrip {
   notes?: string;
 }
 
-const FALLBACK_DISPATCH_TRIPS: DispatchTrip[] = [
-  {
-    id: 'dsp-01',
-    tripNumber: 'TRP-2026-081',
-    shipmentId: 'ship-1',
-    jobFileNumber: 'RED-2026-0001',
-    clientName: 'المصرية لتجارة الأجهزة والآلات الكبرى',
-    containerNumber: 'MSCU9041280',
-    containerType: "40' High Cube",
-    pickupLocation: 'ميناء الإسكندرية - رصيف 54',
-    deliveryLocation: 'مدينة السادس من أكتوبر - المنطقة الصناعية الثالثة',
-    driverName: 'محمود عبد السلام',
-    driverPhone: '+20 100 987 6543',
-    truckPlate: 'ط ر د 8941',
-    truckType: 'تريلا فرش حمولة 45 طن',
-    status: 'in_transit',
-    scheduledDate: '2026-09-18',
-    departureTime: '08:30',
-    estimatedArrival: '13:00',
-    costRate: 11000,
-    sellRate: 13500,
-    currency: 'EGP',
-    waybillNumber: 'WB-EG-89104',
-    notes: 'تحميل مباشر بعد انتهاء الكشف الجمركي وشهادة 46',
-  },
-  {
-    id: 'dsp-02',
-    tripNumber: 'TRP-2026-082',
-    shipmentId: 'ship-2',
-    jobFileNumber: 'RED-2026-0002',
-    clientName: 'السويدي للصناعات الهندسية والتطوير',
-    containerNumber: 'MAEU7612349',
-    containerType: "40' High Cube",
-    pickupLocation: 'ميناء العين السخنة - محطة موانئ دبي DP World',
-    deliveryLocation: 'مدينة العاشر من رمضان - مجمع الصناعات الثقيلة',
-    driverName: 'عصام عبد الله الجيار',
-    driverPhone: '+20 102 334 5566',
-    truckPlate: 'س ف ج 1290',
-    truckType: 'تريلا جوانب ستارة',
-    status: 'loading',
-    scheduledDate: '2026-09-19',
-    departureTime: '10:00',
-    estimatedArrival: '14:30',
-    costRate: 9500,
-    sellRate: 12000,
-    currency: 'EGP',
-    waybillNumber: 'WB-EG-89105',
-    notes: 'بضائع مصنعية حساسة - سرعة محددة بـ 70 كم/س',
-  },
-  {
-    id: 'dsp-03',
-    tripNumber: 'TRP-2026-083',
-    shipmentId: 'ship-3',
-    jobFileNumber: 'RED-2026-0003',
-    clientName: 'الأهرام للاستيراد والتصدير الدولي',
-    containerNumber: 'COSU4410982',
-    containerType: "20' Standard GP",
-    pickupLocation: 'ميناء دمياط البحري - صومعة البضائع العامة',
-    deliveryLocation: 'المنصورة - طريق المنزلة الزراعي',
-    driverName: 'تامر فتحي البرنس',
-    driverPhone: '+20 114 876 5432',
-    truckPlate: 'د ق ط 5512',
-    truckType: 'تريلا قلاب 20 قدم',
-    status: 'scheduled',
-    scheduledDate: '2026-09-20',
-    estimatedArrival: '16:00',
-    costRate: 6500,
-    sellRate: 8500,
-    currency: 'EGP',
-    waybillNumber: 'WB-EG-89106',
-    notes: 'بانتظار سداد رسوم وزن البسكول بالميناء',
-  },
-];
+const VALID_STATUSES = ['scheduled', 'loading', 'in_transit', 'delivered', 'cancelled'] as const;
+type TripStatus = (typeof VALID_STATUSES)[number];
 
+/**
+ * Dispatch trips persisted in PostgreSQL via the DispatchTrip model.
+ * Tenant-scoped on company_id; every query is filtered by tenantId.
+ */
 @Injectable()
 export class DispatchService {
-  private readonly logger = new Logger(DispatchService.name);
-  private trips: DispatchTrip[] = [...FALLBACK_DISPATCH_TRIPS];
-
   constructor(private prisma: PrismaService) {}
 
-  async getTrips(tenantId: string, filter?: { status?: string; search?: string }): Promise<DispatchTrip[]> {
-    let result = this.trips;
+  private toDto(t: any): DispatchTrip {
+    return {
+      id: t.id,
+      tripNumber: t.tripNumber,
+      shipmentId: t.shipmentId,
+      jobFileNumber: t.shipment?.jobFileNumber ?? null,
+      clientName: t.clientName,
+      containerNumber: t.containerNumber ?? '',
+      containerType: t.containerType ?? '',
+      pickupLocation: t.pickupLocation ?? '',
+      deliveryLocation: t.deliveryLocation ?? '',
+      driverName: t.driverName ?? '',
+      driverPhone: t.driverPhone ?? '',
+      truckPlate: t.truckPlate ?? '',
+      truckType: t.truckType ?? '',
+      status: t.status as TripStatus,
+      scheduledDate: t.scheduledDate ? String(t.scheduledDate).slice(0, 10) : '',
+      departureTime: t.departureTime ?? undefined,
+      estimatedArrival: t.estimatedArrival ?? undefined,
+      actualArrival: t.actualArrival ?? undefined,
+      costRate: Number(t.costRate),
+      sellRate: Number(t.sellRate),
+      currency: t.currency as 'EGP' | 'USD',
+      waybillNumber: t.waybillNumber ?? '',
+      notes: t.notes ?? undefined,
+    };
+  }
 
-    if (filter?.status) {
-      result = result.filter((t) => t.status === filter.status);
+  async getTrips(tenantId: string, filter?: { status?: string; search?: string }): Promise<DispatchTrip[]> {
+    const where: any = { companyId: tenantId };
+
+    if (filter?.status && (VALID_STATUSES as readonly string[]).includes(filter.status)) {
+      where.status = filter.status;
     }
     if (filter?.search) {
-      const q = filter.search.toLowerCase();
-      result = result.filter(
-        (t) =>
-          t.tripNumber.toLowerCase().includes(q) ||
-          t.clientName.toLowerCase().includes(q) ||
-          t.containerNumber.toLowerCase().includes(q) ||
-          t.driverName.toLowerCase().includes(q) ||
-          t.truckPlate.toLowerCase().includes(q),
-      );
+      const q = filter.search;
+      where.OR = [
+        { tripNumber: { contains: q, mode: 'insensitive' } },
+        { clientName: { contains: q, mode: 'insensitive' } },
+        { containerNumber: { contains: q, mode: 'insensitive' } },
+        { driverName: { contains: q, mode: 'insensitive' } },
+        { truckPlate: { contains: q, mode: 'insensitive' } },
+      ];
     }
 
-    return result;
+    const trips = await this.prisma.dispatchTrip.findMany({
+      where,
+      include: { shipment: { select: { jobFileNumber: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return trips.map((t) => this.toDto(t));
   }
 
   async getTripById(tenantId: string, id: string): Promise<DispatchTrip> {
-    const trip = this.trips.find((t) => t.id === id);
+    const trip = await this.prisma.dispatchTrip.findFirst({
+      where: { id, companyId: tenantId },
+      include: { shipment: { select: { jobFileNumber: true } } },
+    });
     if (!trip) {
       throw new NotFoundException(`Dispatch trip with id ${id} not found`);
     }
-    return trip;
+    return this.toDto(trip);
   }
 
   async createTrip(tenantId: string, dto: any): Promise<DispatchTrip> {
-    const tripNumber = `TRP-2026-${String(this.trips.length + 84).padStart(3, '0')}`;
-    const waybillNumber = `WB-EG-${Math.floor(10000 + Math.random() * 90000)}`;
+    // Generate a per-tenant sequential trip number: TRP-YYYY-NNNN
+    const year = new Date().getFullYear();
+    const count = await this.prisma.dispatchTrip.count({ where: { companyId: tenantId } });
+    let tripNumber = dto.tripNumber || `TRP-${year}-${String(count + 1).padStart(4, '0')}`;
 
-    const newTrip: DispatchTrip = {
-      id: `dsp-${Date.now()}`,
-      tripNumber,
-      shipmentId: dto.shipmentId,
-      jobFileNumber: dto.jobFileNumber || 'RED-2026-MANUAL',
-      clientName: dto.clientName || 'عميل محلي',
-      containerNumber: dto.containerNumber || 'MSCU0000000',
-      containerType: dto.containerType || "40' High Cube",
-      pickupLocation: dto.pickupLocation || 'ميناء الإسكندرية',
-      deliveryLocation: dto.deliveryLocation || 'مخازن العميل',
-      driverName: dto.driverName || 'سائق معتمد',
-      driverPhone: dto.driverPhone || '+20 100 000 0000',
-      truckPlate: dto.truckPlate || 'أ ب ج 1234',
-      truckType: dto.truckType || 'تريلا نقل ثقيل',
-      status: 'scheduled',
-      scheduledDate: dto.scheduledDate || new Date().toISOString().slice(0, 10),
-      costRate: Number(dto.costRate) || 8000,
-      sellRate: Number(dto.sellRate) || 10500,
-      currency: 'EGP',
-      waybillNumber,
-      notes: dto.notes || '',
-    };
+    // Guard against unique-constraint collisions on the (companyId, tripNumber) pair
+    const exists = await this.prisma.dispatchTrip.findFirst({
+      where: { companyId: tenantId, tripNumber },
+      select: { id: true },
+    });
+    if (exists) {
+      tripNumber = `TRP-${year}-${Date.now().toString().slice(-6)}`;
+    }
 
-    this.trips.unshift(newTrip);
-    return newTrip;
+    // Resolve optional shipment link (must belong to the same tenant)
+    let shipmentId: string | null = null;
+    if (dto.shipmentId) {
+      const shipment = await this.prisma.shipment.findFirst({
+        where: { id: dto.shipmentId, companyId: tenantId },
+        select: { id: true },
+      });
+      shipmentId = shipment?.id ?? null;
+    }
+
+    const newTrip = await this.prisma.dispatchTrip.create({
+      data: {
+        companyId: tenantId,
+        shipmentId,
+        tripNumber,
+        clientName: String(dto.clientName || '—').trim(),
+        containerNumber: dto.containerNumber || null,
+        containerType: dto.containerType || null,
+        pickupLocation: dto.pickupLocation || null,
+        deliveryLocation: dto.deliveryLocation || null,
+        driverName: dto.driverName || null,
+        driverPhone: dto.driverPhone || null,
+        truckPlate: dto.truckPlate || null,
+        truckType: dto.truckType || null,
+        status: 'scheduled',
+        scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : null,
+        costRate: Number(dto.costRate) || 0,
+        sellRate: Number(dto.sellRate) || 0,
+        currency: dto.currency === 'USD' ? 'USD' : 'EGP',
+        waybillNumber: dto.waybillNumber || null,
+        notes: dto.notes || null,
+      },
+      include: { shipment: { select: { jobFileNumber: true } } },
+    });
+
+    return this.toDto(newTrip);
   }
 
   async updateTripStatus(
     tenantId: string,
     id: string,
-    status: 'scheduled' | 'loading' | 'in_transit' | 'delivered' | 'cancelled',
+    status: TripStatus,
   ): Promise<DispatchTrip> {
-    const trip = await this.getTripById(tenantId, id);
-    trip.status = status;
+    if (!(VALID_STATUSES as readonly string[]).includes(status)) {
+      throw new NotFoundException(`Invalid trip status '${status}'`);
+    }
+    const trip = await this.prisma.dispatchTrip.findFirst({
+      where: { id, companyId: tenantId },
+    });
+    if (!trip) {
+      throw new NotFoundException(`Dispatch trip with id ${id} not found`);
+    }
+
+    const data: any = { status };
     if (status === 'in_transit' && !trip.departureTime) {
-      trip.departureTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+      data.departureTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     }
     if (status === 'delivered') {
-      trip.actualArrival = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+      data.actualArrival = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     }
-    return trip;
-  }
 
-  clearTrips() {
-    this.trips = [];
+    const updated = await this.prisma.dispatchTrip.update({
+      where: { id: trip.id },
+      data,
+      include: { shipment: { select: { jobFileNumber: true } } },
+    });
+
+    return this.toDto(updated);
   }
 }

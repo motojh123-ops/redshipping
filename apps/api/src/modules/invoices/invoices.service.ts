@@ -1,52 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { DataStoreService } from '../../database/data-store.service';
-import { InvoiceStatus, InvoiceType } from '@banna/shared-types';
-import { extractSequenceNumber, parseNextSequence } from '../../common/utils/numbering.util';
-
-const FALLBACK_INVOICES = [
-  {
-    id: 'inv-1',
-    invoiceNumber: 'INV-2026-0001',
-    invoiceType: 'CLIENT_FREIGHT',
-    status: 'ISSUED',
-    currency: 'USD',
-    exchangeRate: 1.0,
-    subtotal: 2850,
-    taxAmount: 399,
-    total: 3249,
-    issueDate: new Date(Date.now() - 5 * 86400000).toISOString(),
-    dueDate: new Date(Date.now() + 25 * 86400000).toISOString(),
-    createdAt: new Date().toISOString(),
-    client: { id: 'client-1', name: 'Al-Ahram Food Industries' },
-    shipment: { id: 'ship-1', jobFileNumber: 'RED-2026-0001', blNumber: 'MAEU982183910' },
-    items: [
-      { id: 'ii-1', description: 'Ocean Freight 40HQ Shanghai to Alexandria', quantity: 1, unitPrice: 2300, totalPrice: 2300, currency: 'USD' },
-      { id: 'ii-2', description: 'Terminal Handling Charges (THC)', quantity: 1, unitPrice: 280, totalPrice: 280, currency: 'USD' },
-      { id: 'ii-3', description: 'Delivery Order & Admin Fees', quantity: 1, unitPrice: 270, totalPrice: 270, currency: 'USD' },
-    ],
-  },
-  {
-    id: 'inv-2',
-    invoiceNumber: 'INV-2026-0002',
-    invoiceType: 'CLIENT_FREIGHT',
-    status: 'DRAFT',
-    currency: 'USD',
-    exchangeRate: 1.0,
-    subtotal: 1850,
-    taxAmount: 259,
-    total: 2109,
-    issueDate: new Date().toISOString(),
-    dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-    createdAt: new Date().toISOString(),
-    client: { id: 'client-2', name: 'Delta Chemicals & Polymers' },
-    shipment: { id: 'ship-2', jobFileNumber: 'RED-2026-0002', blNumber: 'MSCU771928340' },
-    items: [
-      { id: 'ii-4', description: 'Ocean Freight 20GP Rotterdam to Sokhna', quantity: 1, unitPrice: 1550, totalPrice: 1550, currency: 'USD' },
-      { id: 'ii-5', description: 'Destination THC', quantity: 1, unitPrice: 300, totalPrice: 300, currency: 'USD' },
-    ],
-  },
-];
+import { InvoiceStatus } from '@banna/shared-types';
+import { extractSequenceNumber } from '../../common/utils/numbering.util';
 
 function isUuid(val?: string): boolean {
   if (!val) return false;
@@ -56,84 +11,49 @@ function isUuid(val?: string): boolean {
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
-  private readonly collectionKey = 'invoices';
 
-  constructor(
-    private prisma: PrismaService,
-    private dataStore: DataStoreService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async findAll(tenantId: string, query?: { status?: any; clientId?: string }) {
-    try {
-      const where: any = { companyId: tenantId };
-      if (query?.status) where.status = query.status;
-      if (query?.clientId) where.clientId = query.clientId;
+    const where: any = { companyId: tenantId };
+    if (query?.status) where.status = query.status;
+    if (query?.clientId) where.clientId = query.clientId;
 
-      return await this.prisma.invoice.findMany({
-        where,
-        include: {
-          client: { select: { id: true, name: true } },
-          shipment: { select: { id: true, jobFileNumber: true, blNumber: true } },
-          items: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (err) {
-      if (!this.dataStore.isFallbackAllowed()) {
-        throw err;
-      }
-    }
-
-    const invoices = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
-    let result = [...invoices];
-    if (query?.status) {
-      result = result.filter((i: any) => i.status === query.status);
-    }
-    if (query?.clientId) {
-      result = result.filter((i: any) => i.client?.id === query.clientId || i.clientId === query.clientId);
-    }
-    return result;
+    return this.prisma.invoice.findMany({
+      where,
+      include: {
+        client: { select: { id: true, name: true } },
+        shipment: { select: { id: true, jobFileNumber: true, blNumber: true } },
+        items: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async findOne(tenantId: string, id: string) {
-    try {
-      const where: any = isUuid(id)
-        ? { id, companyId: tenantId }
-        : { invoiceNumber: id, companyId: tenantId };
+    const where: any = isUuid(id)
+      ? { id, companyId: tenantId }
+      : { invoiceNumber: id, companyId: tenantId };
 
-      const invoice = await this.prisma.invoice.findFirst({
-        where,
-        include: {
-          client: true,
-          shipment: true,
-          items: { include: { chargeItem: true } },
-          createdBy: { select: { id: true, name: true, email: true } },
-        },
-      });
+    const invoice = await this.prisma.invoice.findFirst({
+      where,
+      include: {
+        client: true,
+        shipment: true,
+        items: { include: { chargeItem: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+      },
+    });
 
-      if (invoice) return invoice;
-      if (!this.dataStore.isFallbackAllowed()) {
-        throw new NotFoundException(`Invoice with ID ${id} not found`);
-      }
-    } catch (err: any) {
-      if (err instanceof NotFoundException || !this.dataStore.isFallbackAllowed()) {
-        throw err;
-      }
+    if (!invoice) {
+      throw new NotFoundException(`Invoice with ID ${id} not found`);
     }
-
-    const invoices = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
-    const invoice = invoices.find((i: any) => i.id === id);
-    if (invoice) return invoice;
-
-    return {
-      ...FALLBACK_INVOICES[0],
-      createdBy: { id: 'user-admin', name: 'عمر البنا', email: 'admin@banna-logistics.com' },
-    };
+    return invoice;
   }
 
   async create(tenantId: string, userId: string, data: any) {
     let subtotal = 0;
-    const formattedItems = (data.items || []).map((item: any, idx: number) => {
+    const formattedItems = (data.items || []).map((item: any) => {
       const qty = Number(item.quantity || 1);
       const unitPrice = Number(item.unitPrice || 0);
       const totalPrice = qty * unitPrice;
@@ -154,58 +74,62 @@ export class InvoicesService {
     const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
     const total = subtotal + taxAmount;
 
-    try {
-      let resolvedShipmentId = data.shipmentId;
-      if (resolvedShipmentId) {
-        const where: any = isUuid(resolvedShipmentId)
-          ? { id: resolvedShipmentId, companyId: tenantId }
-          : { jobFileNumber: resolvedShipmentId, companyId: tenantId };
-        const shipment = await this.prisma.shipment.findFirst({
-          where,
-          select: { id: true },
-        });
-        if (shipment) {
-          resolvedShipmentId = shipment.id;
-        }
-      }
-
-      let resolvedClientId = data.clientId;
-      if (resolvedClientId) {
-        const where: any = isUuid(resolvedClientId)
-          ? { id: resolvedClientId, companyId: tenantId }
-          : { name: resolvedClientId, companyId: tenantId };
-        const client = await this.prisma.client.findFirst({
-          where,
-          select: { id: true },
-        });
-        if (client) {
-          resolvedClientId = client.id;
-        }
-      }
-
-      let invoiceType: any = (data.invoiceType || 'client_freight').toString().toLowerCase();
-      if (!['client_freight', 'client_clearance', 'vendor_disbursement'].includes(invoiceType)) {
-        invoiceType = 'client_freight';
-      }
-
-      let status: any = (data.status || 'draft').toString().toLowerCase();
-      if (!['draft', 'issued', 'partially_paid', 'paid', 'overdue', 'cancelled'].includes(status)) {
-        status = 'draft';
-      }
-
-      const year = new Date().getFullYear();
-      const latest = await this.prisma.invoice.findFirst({
-        where: {
-          companyId: tenantId,
-          invoiceNumber: { startsWith: `INV-${year}-` },
-        },
-        orderBy: { invoiceNumber: 'desc' },
-        select: { invoiceNumber: true },
+    let resolvedShipmentId = data.shipmentId;
+    if (resolvedShipmentId) {
+      const where: any = isUuid(resolvedShipmentId)
+        ? { id: resolvedShipmentId, companyId: tenantId }
+        : { jobFileNumber: resolvedShipmentId, companyId: tenantId };
+      const shipment = await this.prisma.shipment.findFirst({
+        where,
+        select: { id: true },
       });
+      if (shipment) {
+        resolvedShipmentId = shipment.id;
+      }
+    }
 
-      const nextSeq = extractSequenceNumber(latest?.invoiceNumber) + 1;
-      const invoiceNumber = `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
+    let resolvedClientId = data.clientId;
+    if (resolvedClientId) {
+      const where: any = isUuid(resolvedClientId)
+        ? { id: resolvedClientId, companyId: tenantId }
+        : { name: resolvedClientId, companyId: tenantId };
+      const client = await this.prisma.client.findFirst({
+        where,
+        select: { id: true },
+      });
+      if (client) {
+        resolvedClientId = client.id;
+      }
+    }
 
+    if (!resolvedClientId || !isUuid(resolvedClientId)) {
+      throw new NotFoundException('A valid clientId is required to create an invoice');
+    }
+
+    let invoiceType: any = (data.invoiceType || 'client_freight').toString().toLowerCase();
+    if (!['client_freight', 'client_clearance', 'vendor_disbursement'].includes(invoiceType)) {
+      invoiceType = 'client_freight';
+    }
+
+    let status: any = (data.status || 'draft').toString().toLowerCase();
+    if (!['draft', 'issued', 'partially_paid', 'paid', 'overdue', 'cancelled'].includes(status)) {
+      status = 'draft';
+    }
+
+    const year = new Date().getFullYear();
+    const latest = await this.prisma.invoice.findFirst({
+      where: {
+        companyId: tenantId,
+        invoiceNumber: { startsWith: `INV-${year}-` },
+      },
+      orderBy: { invoiceNumber: 'desc' },
+      select: { invoiceNumber: true },
+    });
+
+    const nextSeq = extractSequenceNumber(latest?.invoiceNumber) + 1;
+    const invoiceNumber = `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
+
+    try {
       return await this.prisma.invoice.create({
         data: {
           companyId: tenantId,
@@ -230,52 +154,26 @@ export class InvoicesService {
         include: { items: true, client: true },
       });
     } catch (err: any) {
-      if (!this.dataStore.isFallbackAllowed()) {
-        this.logger.error(`Database error creating invoice: ${err.message}`, err.stack);
-        throw err;
-      }
-
-      // Resilient store fallback
-      const invoices = await this.dataStore.getItems(tenantId, this.collectionKey, FALLBACK_INVOICES);
-      const year = new Date().getFullYear();
-      const invoiceNumber = parseNextSequence('INV', year, invoices.map((i: any) => i.invoiceNumber), 4, invoices.length);
-
-      const newInvoice = {
-        id: `inv-${Date.now()}`,
-        invoiceNumber,
-        invoiceType: data.invoiceType || 'CLIENT_FREIGHT',
-        status: 'DRAFT',
-        currency: data.currency || 'USD',
-        exchangeRate: data.exchangeRate || 1.0,
-        subtotal,
-        taxAmount,
-        total,
-        issueDate: data.issueDate || new Date().toISOString(),
-        dueDate: data.dueDate || new Date(Date.now() + 30 * 86400000).toISOString(),
-        createdAt: new Date().toISOString(),
-        client: { id: data.clientId || 'client-1', name: data.clientName || 'عميل معتمد' },
-        shipment: { id: data.shipmentId || 'ship-1', jobFileNumber: data.jobFileNumber || 'RED-2026-0001', blNumber: data.blNumber || 'BL-LIVE' },
-        items: formattedItems,
-      };
-
-      return this.dataStore.saveItem(tenantId, this.collectionKey, newInvoice.id, newInvoice);
+      this.logger.error(`Database error creating invoice: ${err.message}`, err.stack);
+      throw err;
     }
   }
 
   async updateStatus(tenantId: string, id: string, status: any) {
+    const normalizedStatus: any = (status || 'draft').toString().toLowerCase();
+    if (!Object.values(InvoiceStatus).includes(normalizedStatus)) {
+      throw new NotFoundException(`Invalid invoice status '${status}'`);
+    }
     try {
-      const normalizedStatus: any = (status || 'draft').toString().toLowerCase();
       return await this.prisma.invoice.update({
         where: { id },
         data: { status: normalizedStatus },
       });
     } catch (err: any) {
-      if (!this.dataStore.isFallbackAllowed()) {
-        throw err;
+      if (err?.code === 'P2025') {
+        throw new NotFoundException(`Invoice with ID ${id} not found`);
       }
-      const inv: any = await this.findOne(tenantId, id);
-      inv.status = status;
-      return this.dataStore.saveItem(tenantId, this.collectionKey, id, inv);
+      throw err;
     }
   }
 }
