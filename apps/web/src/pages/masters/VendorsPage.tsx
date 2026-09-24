@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Truck, Plus, Phone, Mail, Building2, ShieldCheck, Download,
-  Search, Eye, Loader2, AlertCircle, Warehouse, Anchor, Bug, ClipboardCheck
+  Search, Eye, Loader2, AlertCircle, Warehouse, Anchor, Bug, ClipboardCheck, Pencil, Power
 } from 'lucide-react';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -46,12 +46,14 @@ export const VendorsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | Vendor['vendorType']>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadVendors = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res: any = await api.get('/masters/vendors');
+      const res: any = await api.get('/masters/vendors', { params: { includeInactive: 'true' } });
       const data = Array.isArray(res) ? res : res?.data;
       setVendors(Array.isArray(data) ? data : []);
     } catch (err: any) {
@@ -280,6 +282,33 @@ export const VendorsPage: React.FC = () => {
                               <Mail className="w-4 h-4" />
                             </a>
                           )}
+                          <button
+                            onClick={() => setEditingVendor(v)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-50 dark:hover:bg-orange-950/30 transition cursor-pointer"
+                            title="تعديل بيانات المورد"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              setBusyId(v.id);
+                              try {
+                                await api.patch(`/masters/vendors/${v.id}`, { isActive: !v.isActive });
+                                setVendors((prev) => prev.map((x) => (x.id === v.id ? { ...x, isActive: !v.isActive } : x)));
+                              } catch (err: any) {
+                                alert(err?.message || 'تعذر تغيير حالة المورد');
+                              } finally {
+                                setBusyId(null);
+                              }
+                            }}
+                            disabled={busyId === v.id}
+                            className={`p-1.5 rounded-lg transition cursor-pointer disabled:opacity-50 ${
+                              v.isActive ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                            }`}
+                            title={v.isActive ? 'إيقاف المورد (لن يظهر في قوائم الاختيار)' : 'إعادة تفعيل المورد'}
+                          >
+                            <Power className={`w-4 h-4 ${busyId === v.id ? 'animate-pulse' : ''}`} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -291,12 +320,21 @@ export const VendorsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Create Vendor Modal */}
+      {/* Create/Edit Vendor Modal */}
       {isCreateOpen && (
         <CreateVendorModal
           isOpen={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
           onSuccess={(newV) => setVendors((prev) => [newV, ...prev])}
+        />
+      )}
+
+      {editingVendor && (
+        <CreateVendorModal
+          isOpen={!!editingVendor}
+          onClose={() => setEditingVendor(null)}
+          initial={editingVendor}
+          onSuccess={(v) => setVendors((prev) => prev.map((x) => (x.id === v.id ? v : x)))}
         />
       )}
     </div>
@@ -307,18 +345,20 @@ export const VendorsPage: React.FC = () => {
 const CreateVendorModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
+  initial?: Vendor | null;
   onSuccess: (v: Vendor) => void;
-}> = ({ isOpen, onClose, onSuccess }) => {
+}> = ({ isOpen, onClose, initial, onSuccess }) => {
   const [form, setForm] = useState({
-    name: '',
-    vendorType: 'trucking' as Vendor['vendorType'],
-    taxId: '',
-    contactName: '',
-    contactPhone: '',
-    contactEmail: '',
+    name: initial?.name || '',
+    vendorType: (initial?.vendorType || 'trucking') as Vendor['vendorType'],
+    taxId: initial?.taxId || '',
+    contactName: initial?.contactName || '',
+    contactPhone: initial?.contactPhone || '',
+    contactEmail: initial?.contactEmail || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEdit = !!initial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,16 +374,19 @@ const CreateVendorModal: React.FC<{
       if (form.contactPhone.trim()) payload.contactPhone = form.contactPhone.trim();
       if (form.contactEmail.trim()) payload.contactEmail = form.contactEmail.trim();
 
-      const created: any = await api.post('/masters/vendors', payload);
+      const saved: any = isEdit
+        ? await api.patch(`/masters/vendors/${initial!.id}`, payload)
+        : await api.post('/masters/vendors', payload);
+
       onSuccess({
-        id: created?.id || String(Date.now()),
-        name: created?.name ?? payload.name,
-        vendorType: created?.vendorType ?? payload.vendorType,
-        taxId: created?.taxId ?? payload.taxId ?? null,
-        contactName: created?.contactName ?? payload.contactName ?? null,
-        contactPhone: created?.contactPhone ?? payload.contactPhone ?? null,
-        contactEmail: created?.contactEmail ?? payload.contactEmail ?? null,
-        isActive: created?.isActive !== false,
+        id: saved?.id || initial?.id || String(Date.now()),
+        name: saved?.name ?? payload.name,
+        vendorType: saved?.vendorType ?? payload.vendorType,
+        taxId: saved?.taxId ?? payload.taxId ?? null,
+        contactName: saved?.contactName ?? payload.contactName ?? null,
+        contactPhone: saved?.contactPhone ?? payload.contactPhone ?? null,
+        contactEmail: saved?.contactEmail ?? payload.contactEmail ?? null,
+        isActive: saved?.isActive !== false,
       });
       onClose();
     } catch (err: any) {
@@ -467,7 +510,7 @@ const CreateVendorModal: React.FC<{
             className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ المورد'}</span>
+            <span>{saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ المورد'}</span>
           </button>
         </div>
       </form>

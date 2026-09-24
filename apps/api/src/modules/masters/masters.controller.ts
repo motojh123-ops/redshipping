@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { MastersService } from './masters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/current-user.decorator';
@@ -14,8 +14,11 @@ export class MastersController {
   }
 
   @Get('shipping-lines')
-  async getShippingLines(@TenantId() tenantId: string) {
-    return this.mastersService.getShippingLines(tenantId);
+  async getShippingLines(
+    @TenantId() tenantId: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.mastersService.getShippingLines(tenantId, includeInactive === 'true');
   }
 
   @Post('shipping-lines')
@@ -23,9 +26,21 @@ export class MastersController {
     return this.mastersService.createShippingLine(tenantId, data);
   }
 
+  @Patch('shipping-lines/:id')
+  async updateShippingLine(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.updateShippingLine(tenantId, id, data);
+  }
+
   @Get('overseas-agents')
-  async getOverseasAgents(@TenantId() tenantId: string) {
-    return this.mastersService.getOverseasAgents(tenantId);
+  async getOverseasAgents(
+    @TenantId() tenantId: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.mastersService.getOverseasAgents(tenantId, includeInactive === 'true');
   }
 
   @Post('overseas-agents')
@@ -33,9 +48,21 @@ export class MastersController {
     return this.mastersService.createOverseasAgent(tenantId, data);
   }
 
+  @Patch('overseas-agents/:id')
+  async updateOverseasAgent(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.updateOverseasAgent(tenantId, id, data);
+  }
+
   @Get('vendors')
-  async getVendors(@TenantId() tenantId: string) {
-    return this.mastersService.getVendors(tenantId);
+  async getVendors(
+    @TenantId() tenantId: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.mastersService.getVendors(tenantId, includeInactive === 'true');
   }
 
   @Post('vendors')
@@ -43,14 +70,35 @@ export class MastersController {
     return this.mastersService.createVendor(tenantId, data);
   }
 
+  @Patch('vendors/:id')
+  async updateVendor(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.updateVendor(tenantId, id, data);
+  }
+
   @Get('drivers')
-  async getDrivers(@TenantId() tenantId: string) {
-    return this.mastersService.getDrivers(tenantId);
+  async getDrivers(
+    @TenantId() tenantId: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.mastersService.getDrivers(tenantId, includeInactive === 'true');
   }
 
   @Post('drivers')
   async createDriver(@TenantId() tenantId: string, @Body() data: any) {
     return this.mastersService.createDriver(tenantId, data);
+  }
+
+  @Patch('drivers/:id')
+  async updateDriver(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.updateDriver(tenantId, id, data);
   }
 
   @Get('charge-items')

@@ -61,10 +61,10 @@ export class MastersService {
   }
 
   // =================== SHIPPING LINES ===================
-  async getShippingLines(tenantId: string) {
+  async getShippingLines(tenantId: string, includeInactive = false) {
     try {
       const lines = await this.prisma.shippingLine.findMany({
-        where: { companyId: tenantId, isActive: true },
+        where: { companyId: tenantId, ...(includeInactive ? {} : { isActive: true }) },
         orderBy: { name: 'asc' },
       });
       return lines.length > 0 ? lines : FALLBACK_SHIPPING_LINES;
@@ -72,6 +72,14 @@ export class MastersService {
       this.logger.warn('Database offline, returning fallback shipping lines');
       return FALLBACK_SHIPPING_LINES;
     }
+  }
+
+  async updateShippingLine(tenantId: string, id: string, data: any) {
+    const { companyId, id: _ignored, ...rest } = data || {};
+    return this.prisma.shippingLine.update({
+      where: { id },
+      data: rest,
+    });
   }
 
   async createShippingLine(tenantId: string, data: any) {
@@ -93,10 +101,10 @@ export class MastersService {
   }
 
   // =================== OVERSEAS AGENTS ===================
-  async getOverseasAgents(tenantId: string) {
+  async getOverseasAgents(tenantId: string, includeInactive = false) {
     try {
       const agents = await this.prisma.overseasAgent.findMany({
-        where: { companyId: tenantId, isActive: true },
+        where: { companyId: tenantId, ...(includeInactive ? {} : { isActive: true }) },
         orderBy: { name: 'asc' },
       });
       return agents.length > 0 ? agents : FALLBACK_OVERSEAS_AGENTS;
@@ -104,6 +112,14 @@ export class MastersService {
       this.logger.warn('Database offline, returning fallback overseas agents');
       return FALLBACK_OVERSEAS_AGENTS;
     }
+  }
+
+  async updateOverseasAgent(tenantId: string, id: string, data: any) {
+    const { companyId, id: _ignored, ...rest } = data || {};
+    return this.prisma.overseasAgent.update({
+      where: { id },
+      data: rest,
+    });
   }
 
   async createOverseasAgent(tenantId: string, data: any) {
@@ -125,10 +141,10 @@ export class MastersService {
   }
 
   // =================== VENDORS ===================
-  async getVendors(tenantId: string) {
+  async getVendors(tenantId: string, includeInactive = false) {
     try {
       const vendors = await this.prisma.vendor.findMany({
-        where: { companyId: tenantId, isActive: true },
+        where: { companyId: tenantId, ...(includeInactive ? {} : { isActive: true }) },
         orderBy: { name: 'asc' },
       });
       return vendors.length > 0 ? vendors : FALLBACK_VENDORS;
@@ -136,6 +152,14 @@ export class MastersService {
       this.logger.warn('Database offline, returning fallback vendors');
       return FALLBACK_VENDORS;
     }
+  }
+
+  async updateVendor(tenantId: string, id: string, data: any) {
+    const { companyId, id: _ignored, ...rest } = data || {};
+    return this.prisma.vendor.update({
+      where: { id },
+      data: rest,
+    });
   }
 
   async createVendor(tenantId: string, data: any) {
@@ -157,16 +181,25 @@ export class MastersService {
   }
 
   // =================== DRIVERS (السائقون) ===================
-  async getDrivers(tenantId: string) {
+  async getDrivers(tenantId: string, includeInactive = false) {
     try {
       return await this.prisma.driver.findMany({
-        where: { companyId: tenantId, isActive: true },
+        where: { companyId: tenantId, ...(includeInactive ? {} : { isActive: true }) },
         orderBy: { name: 'asc' },
       });
     } catch (err) {
       this.logger.warn('Database offline, returning empty drivers list');
       return [];
     }
+  }
+
+  async updateDriver(tenantId: string, id: string, data: any) {
+    const { companyId, id: _ignored, ...rest } = data || {};
+    if (rest.licenseExpiry) rest.licenseExpiry = new Date(rest.licenseExpiry);
+    return this.prisma.driver.update({
+      where: { id },
+      data: rest,
+    });
   }
 
   async createDriver(tenantId: string, data: any) {

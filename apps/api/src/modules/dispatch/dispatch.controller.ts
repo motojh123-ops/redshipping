@@ -32,7 +32,8 @@ export class DispatchController {
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body('status') status: any,
+    @Body('notes') notes?: string,
   ) {
-    return this.dispatchService.updateTripStatus(tenantId, id, status);
+    return this.dispatchService.updateTripStatus(tenantId, id, status, { notes });
   }
 }

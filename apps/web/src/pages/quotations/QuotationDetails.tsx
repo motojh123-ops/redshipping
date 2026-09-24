@@ -408,6 +408,11 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
                     <tr key={item.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group">
                       <td className="py-3.5 px-4 font-medium text-slate-900 dark:text-white text-xs max-w-[200px]">
                         {item.description || item.chargeItem}
+                        {item.chargeItem?.code && (
+                          <span className="inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-mono font-bold text-slate-500 dark:text-slate-400" title="مرتبط ببند معياري من السجل الرئيسي">
+                            {item.chargeItem.code}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-red-600 dark:text-red-400 font-semibold text-xs font-mono">
                         {cost.toLocaleString()}
@@ -817,7 +822,10 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
                     return (
                       <tr key={item.id || idx}>
                         <td className="py-2 px-3 text-slate-400">{idx + 1}</td>
-                        <td className="py-2 px-3 font-semibold text-slate-900">{item.description || item.chargeItem}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-900">
+                          {item.description || item.chargeItem}
+                          {item.chargeItem?.code ? ` (${item.chargeItem.code})` : ''}
+                        </td>
                         <td className="py-2 px-3 text-center text-slate-600">{item.unit === 'container' || item.per === 'حاوية' ? 'حاوية' : 'شحنة'}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold text-slate-800">{qty}</td>
                         <td className="py-2 px-3 text-end font-mono font-bold text-slate-900">{sell.toLocaleString()}</td>

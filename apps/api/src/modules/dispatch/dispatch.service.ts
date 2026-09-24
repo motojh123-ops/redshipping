@@ -16,7 +16,7 @@ export interface DispatchTrip {
   driverPhone: string;
   truckPlate: string;
   truckType: string;
-  status: 'scheduled' | 'loading' | 'in_transit' | 'delivered' | 'cancelled';
+  status: 'scheduled' | 'loading' | 'in_transit' | 'delivered' | 'empty_returned' | 'cancelled';
   scheduledDate: string;
   departureTime?: string;
   estimatedArrival?: string;
@@ -28,7 +28,7 @@ export interface DispatchTrip {
   notes?: string;
 }
 
-const VALID_STATUSES = ['scheduled', 'loading', 'in_transit', 'delivered', 'cancelled'] as const;
+const VALID_STATUSES = ['scheduled', 'loading', 'in_transit', 'delivered', 'empty_returned', 'cancelled'] as const;
 type TripStatus = (typeof VALID_STATUSES)[number];
 
 /**
@@ -182,6 +182,7 @@ export class DispatchService {
     tenantId: string,
     id: string,
     status: TripStatus,
+    extra?: { notes?: string | null },
   ): Promise<DispatchTrip> {
     if (!(VALID_STATUSES as readonly string[]).includes(status)) {
       throw new NotFoundException(`Invalid trip status '${status}'`);
@@ -199,6 +200,9 @@ export class DispatchService {
     }
     if (status === 'delivered') {
       data.actualArrival = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    }
+    if (extra?.notes) {
+      data.notes = extra.notes;
     }
 
     const updated = await this.prisma.dispatchTrip.update({

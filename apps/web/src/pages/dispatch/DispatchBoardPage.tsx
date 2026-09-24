@@ -1,115 +1,115 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Truck,
   Search,
   Plus,
   FileSpreadsheet,
   Printer,
-  Calendar,
   Clock,
   CheckCircle2,
   AlertTriangle,
   MapPin,
   Building2,
-  ShieldCheck,
-  ArrowRight,
-  Filter,
   User,
   Phone,
-  Box,
   RotateCcw,
   RefreshCw,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportUtils';
 import { Modal } from '../../components/ui/Modal';
 import { api } from '../../services/api';
 
-interface DispatchOrder {
+/** Shape returned by GET/POST /dispatch/trips (see dispatch.service.ts DTO) */
+interface DispatchTrip {
   id: string;
-  orderNumber: string;
-  jobFileNumber: string;
-  blNumber: string;
+  tripNumber: string;
+  shipmentId?: string | null;
+  jobFileNumber?: string | null;
+  clientName: string;
   containerNumber: string;
   containerType: string;
-  sealNumber: string;
-  clientName: string;
-  factoryDestination: string;
-  departurePort: string;
-  truckingVendor: string;
+  pickupLocation: string;
+  deliveryLocation: string;
+  driverId?: string | null;
   driverName: string;
   driverPhone: string;
-  driverNationalId: string;
-  truckHeadPlate: string;
-  trailerPlate: string;
-  dispatchDate: string;
-  deliveryDate?: string;
-  emptyReturnDate?: string;
-  emptyReturnYard: string;
-  status: 'ASSIGNED' | 'GATE_OUT' | 'DELIVERED_TO_FACTORY' | 'EMPTY_RETURNED';
-  eirNumber?: string;
-  eirStatus?: 'CLEAN' | 'DAMAGED';
-  eirNotes?: string;
-  eirSurveyorName?: string;
-  eirDamagesFeeEgp?: number;
+  truckPlate: string;
+  truckType: string;
+  status: 'scheduled' | 'loading' | 'in_transit' | 'delivered' | 'empty_returned' | 'cancelled';
+  scheduledDate: string;
+  departureTime?: string;
+  estimatedArrival?: string;
+  actualArrival?: string;
+  costRate: number;
+  sellRate: number;
+  currency: string;
+  waybillNumber: string;
   notes?: string;
 }
 
+type UiStatus = 'ASSIGNED' | 'GATE_OUT' | 'DELIVERED_TO_FACTORY' | 'EMPTY_RETURNED' | 'CANCELLED';
+
+const apiToUi = (s: DispatchTrip['status']): UiStatus =>
+  s === 'in_transit'
+    ? 'GATE_OUT'
+    : s === 'delivered'
+    ? 'DELIVERED_TO_FACTORY'
+    : s === 'empty_returned'
+    ? 'EMPTY_RETURNED'
+    : s === 'cancelled'
+    ? 'CANCELLED'
+    : 'ASSIGNED';
+
+const uiToApi = (s: UiStatus): DispatchTrip['status'] =>
+  s === 'GATE_OUT'
+    ? 'in_transit'
+    : s === 'DELIVERED_TO_FACTORY'
+    ? 'delivered'
+    : s === 'EMPTY_RETURNED'
+    ? 'empty_returned'
+    : 'scheduled';
+
+const STATUS_LABELS: Record<UiStatus, string> = {
+  ASSIGNED: 'تم تعيين السائق والشاحنة',
+  GATE_OUT: 'في الطريق (Gate-Out)',
+  DELIVERED_TO_FACTORY: 'تم التسليم بالمصنع',
+  EMPTY_RETURNED: 'تم إرجاع الفارغ',
+  CANCELLED: 'ملغي',
+};
+
 export const DispatchBoardPage: React.FC = () => {
-  const [orders, setOrders] = useState<DispatchOrder[]>([]);
+  const [trips, setTrips] = useState<DispatchTrip[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [activeOrderForPrint, setActiveOrderForPrint] = useState<DispatchOrder | null>(null);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [activeOrderForPrint, setActiveOrderForPrint] = useState<DispatchTrip | null>(null);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+
   // Masters data: trucking vendors + drivers (linked from السجل الرئيسي)
   const [truckingVendors, setTruckingVendors] = useState<any[]>([]);
   const [availableDrivers, setAvailableDrivers] = useState<any[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState('');
 
-  useEffect(() => {
-    api.get('/shipments')
-      .then((res: any) => {
-        if (res) {
-          const list = Array.isArray(res) ? res : (Array.isArray(res.items) ? res.items : []);
-          setIsLiveConnected(true);
-          if (list.length > 0) {
-            const mappedOrders: DispatchOrder[] = list
-              .filter((s: any) => s.containers && s.containers.length > 0)
-              .flatMap((s: any, sIdx: number) =>
-                s.containers.map((c: any, cIdx: number) => ({
-                  id: `dsp-live-${s.id}-${cIdx}`,
-                  orderNumber: s.jobFileNumber ? `${s.jobFileNumber}-T${cIdx + 1}` : `dsp-live-${s.id}-${cIdx}`,
-                  jobFileNumber: s.jobFileNumber || '—',
-                  blNumber: s.blNumber || s.masterBlNumber || '—',
-                  containerNumber: c.containerNumber || '—',
-                  containerType: c.type || '—',
-                  sealNumber: c.sealNumber || '—',
-                  clientName: typeof s.client === 'object' ? (s.client?.nameAr || s.client?.name || '—') : (s.clientName || '—'),
-                  factoryDestination: s.deliveryAddress || '—',
-                  departurePort: s.dischargePort || '—',
-                  truckingVendor: '—',
-                  driverName: '—',
-                  driverPhone: '—',
-                  driverNationalId: '—',
-                  truckHeadPlate: '—',
-                  trailerPlate: '—',
-                  dispatchDate: new Date().toISOString().slice(0, 16).replace('T', ' '),
-                  emptyReturnYard: '—',
-                  status: (c.status === 'DELIVERED' ? 'DELIVERED_TO_FACTORY' : 'GATE_OUT') as DispatchOrder['status'],
-                  notes: 'بيانات الناقل والسائق تُستكمل من أمر النقل الفعلي',
-                }))
-              );
-            setOrders(mappedOrders);
-          } else {
-            setOrders([]);
-          }
-        }
-      })
-      .catch(() => setIsLiveConnected(false));
+  const loadTrips = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res: any = await api.get('/dispatch/trips');
+      const list = Array.isArray(res) ? res : res?.items || [];
+      setTrips(list);
+    } catch (err: any) {
+      setLoadError(err?.message || 'تعذر تحميل أوامر النقل من الخادم');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Load trucking vendors & drivers from the masters registry
   useEffect(() => {
+    loadTrips();
     api.get('/masters/vendors').then((res: any) => {
       const list = Array.isArray(res) ? res : res?.data || [];
       setTruckingVendors(list.filter((v: any) => v.vendorType === 'trucking'));
@@ -118,7 +118,127 @@ export const DispatchBoardPage: React.FC = () => {
       const list = Array.isArray(res) ? res : res?.data || [];
       setAvailableDrivers(list);
     }).catch(() => {});
-  }, []);
+  }, [loadTrips]);
+
+  // EIR Clean Return Modal State
+  const [isEirModalOpen, setIsEirModalOpen] = useState(false);
+  const [selectedOrderForEir, setSelectedOrderForEir] = useState<DispatchTrip | null>(null);
+  const [eirForm, setEirForm] = useState({
+    eirNumber: '',
+    emptyReturnDate: '',
+    emptyReturnYard: '',
+    eirStatus: 'CLEAN' as 'CLEAN' | 'DAMAGED',
+    eirSurveyorName: '',
+    eirDamagesFeeEgp: 0,
+    eirNotes: '',
+  });
+
+  // New Dispatch Form State
+  const [newOrder, setNewOrder] = useState({
+    containerNumber: '',
+    containerType: '40HQ',
+    clientName: '',
+    pickupLocation: '',
+    deliveryLocation: '',
+    truckingVendor: '',
+    driverName: '',
+    driverPhone: '',
+    driverNationalId: '',
+    truckHeadPlate: '',
+    trailerPlate: '',
+    emptyReturnYard: '',
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const filteredTrips = useMemo(() => {
+    return trips.filter((t) => {
+      const ui = apiToUi(t.status);
+      const matchesStatus = statusFilter === 'ALL' || ui === statusFilter;
+      const q = searchTerm.toLowerCase();
+      const matchesSearch =
+        !q ||
+        t.tripNumber.toLowerCase().includes(q) ||
+        (t.jobFileNumber || '').toLowerCase().includes(q) ||
+        t.containerNumber.toLowerCase().includes(q) ||
+        t.driverName.toLowerCase().includes(q) ||
+        t.driverPhone.includes(searchTerm) ||
+        t.truckPlate.toLowerCase().includes(q) ||
+        t.clientName.toLowerCase().includes(q);
+      return matchesStatus && matchesSearch;
+    });
+  }, [trips, statusFilter, searchTerm]);
+
+  // KPIs
+  const stats = useMemo(() => {
+    const total = trips.length;
+    const gateOut = trips.filter((t) => apiToUi(t.status) === 'GATE_OUT').length;
+    const delivered = trips.filter((t) => apiToUi(t.status) === 'DELIVERED_TO_FACTORY').length;
+    const emptyReturned = trips.filter((t) => apiToUi(t.status) === 'EMPTY_RETURNED').length;
+    return { total, gateOut, delivered, emptyReturned };
+  }, [trips]);
+
+  const handleUpdateStatus = async (tripId: string, uiStatus: Exclude<UiStatus, 'ASSIGNED' | 'CANCELLED'>) => {
+    setActionBusyId(tripId);
+    try {
+      const updated: any = await api.patch(`/dispatch/trips/${tripId}/status`, {
+        status: uiToApi(uiStatus),
+      });
+      setTrips((prev) => prev.map((t) => (t.id === tripId ? updated : t)));
+    } catch (err: any) {
+      alert(err?.message || 'تعذر تحديث حالة أمر النقل');
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
+  const handleOpenEirModal = (trip: DispatchTrip) => {
+    setSelectedOrderForEir(trip);
+    const linePrefix = (trip.containerNumber || 'XXXX').slice(0, 4);
+    setEirForm({
+      eirNumber: `EIR-${linePrefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      emptyReturnDate: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      emptyReturnYard: 'المستودع المصري لتخزين الحاويات - العامرية',
+      eirStatus: 'CLEAN',
+      eirSurveyorName: '',
+      eirDamagesFeeEgp: 0,
+      eirNotes: 'تم فحص الحاوية بالكامل وخلتها من التلفيات (Clean & Sound).',
+    });
+    setIsEirModalOpen(true);
+  };
+
+  const handleConfirmEirReturn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrderForEir) return;
+
+    const composedNotes = [
+      `EIR: ${eirForm.eirNumber} (${eirForm.eirStatus})`,
+      `ساحة الإرجاع: ${eirForm.emptyReturnYard}`,
+      `توقيت الإرجاع: ${eirForm.emptyReturnDate}`,
+      eirForm.eirSurveyorName ? `المعاين: ${eirForm.eirSurveyorName}` : '',
+      eirForm.eirStatus === 'DAMAGED' && eirForm.eirDamagesFeeEgp ? `تقدير التلفيات: ${eirForm.eirDamagesFeeEgp} EGP` : '',
+      eirForm.eirNotes,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    setActionBusyId(selectedOrderForEir.id);
+    try {
+      const updated: any = await api.patch(`/dispatch/trips/${selectedOrderForEir.id}/status`, {
+        status: 'empty_returned',
+        notes: composedNotes,
+      });
+      setTrips((prev) => prev.map((t) => (t.id === selectedOrderForEir.id ? updated : t)));
+      setIsEirModalOpen(false);
+      setSelectedOrderForEir(null);
+    } catch (err: any) {
+      alert(err?.message || 'تعذر توثيق إرجاع الحاوية الفارغة');
+    } finally {
+      setActionBusyId(null);
+    }
+  };
 
   // Autofill driver fields when a master driver is selected
   const handleSelectDriver = (driverId: string) => {
@@ -132,172 +252,92 @@ export const DispatchBoardPage: React.FC = () => {
         driverNationalId: d.nationalId || prev.driverNationalId,
         truckHeadPlate: d.truckPlate || prev.truckHeadPlate,
         trailerPlate: d.trailerPlate || prev.trailerPlate,
+        truckingVendor: d.vendor?.name || (d.vendorId ? truckingVendors.find((v: any) => v.id === d.vendorId)?.name : '') || prev.truckingVendor,
       }));
     }
   };
 
-  // EIR Clean Return Modal State
-  const [isEirModalOpen, setIsEirModalOpen] = useState(false);
-  const [selectedOrderForEir, setSelectedOrderForEir] = useState<DispatchOrder | null>(null);
-  const [eirForm, setEirForm] = useState({
-    eirNumber: '',
-    emptyReturnDate: '',
-    emptyReturnYard: '',
-    eirStatus: 'CLEAN' as 'CLEAN' | 'DAMAGED',
-    eirSurveyorName: '',
-    eirDamagesFeeEgp: 0,
-    eirNotes: '',
-  });
-
-  // New Dispatch Form State
-  const [newOrder, setNewOrder] = useState({
-    jobFileNumber: '',
-    blNumber: '',
-    containerNumber: '',
-    containerType: '40HQ',
-    sealNumber: '',
-    clientName: '',
-    factoryDestination: '',
-    departurePort: '',
-    truckingVendor: '',
-    driverName: '',
-    driverPhone: '',
-    driverNationalId: '',
-    truckHeadPlate: '',
-    trailerPlate: '',
-    emptyReturnYard: '',
-    notes: '',
-  });
-
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      const matchesStatus = statusFilter === 'ALL' || o.status === statusFilter;
-      const matchesSearch =
-        o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.jobFileNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.containerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.driverPhone.includes(searchTerm) ||
-        o.truckHeadPlate.includes(searchTerm) ||
-        o.clientName.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesStatus && matchesSearch;
-    });
-  }, [orders, statusFilter, searchTerm]);
-
-  // KPIs
-  const stats = useMemo(() => {
-    const total = orders.length;
-    const gateOut = orders.filter((o) => o.status === 'GATE_OUT').length;
-    const delivered = orders.filter((o) => o.status === 'DELIVERED_TO_FACTORY').length;
-    const emptyReturned = orders.filter((o) => o.status === 'EMPTY_RETURNED').length;
-    return { total, gateOut, delivered, emptyReturned };
-  }, [orders]);
-
-  const handleUpdateStatus = (
-    orderId: string,
-    newStatus: 'ASSIGNED' | 'GATE_OUT' | 'DELIVERED_TO_FACTORY' | 'EMPTY_RETURNED',
-  ) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
-        return {
-          ...o,
-          status: newStatus,
-          deliveryDate: newStatus === 'DELIVERED_TO_FACTORY' ? now : o.deliveryDate,
-          emptyReturnDate: newStatus === 'EMPTY_RETURNED' ? now : o.emptyReturnDate,
-        };
-      }),
-    );
-  };
-
-  const handleOpenEirModal = (order: DispatchOrder) => {
-    setSelectedOrderForEir(order);
-    const linePrefix = order.containerNumber.slice(0, 4);
-    setEirForm({
-      eirNumber: `EIR-${linePrefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      emptyReturnDate: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      emptyReturnYard: order.emptyReturnYard || 'المستودع المصري لتخزين الحاويات - العامرية',
-      eirStatus: 'CLEAN',
-      eirSurveyorName: 'ك. حسام الديب (معاين الساحة)',
-      eirDamagesFeeEgp: 0,
-      eirNotes: 'تم فحص الحاوية بالكامل: الأرضية الخشبية سليمة، القوائم والزوايا خالية من الانبعاج، خالية من الروائح (Clean & Sound).',
-    });
-    setIsEirModalOpen(true);
-  };
-
-  const handleConfirmEirReturn = (e: React.FormEvent) => {
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOrderForEir) return;
+    setCreateError(null);
+    setCreating(true);
+    try {
+      // Persist the fields that have no dedicated columns (national ID, trailer plate, vendor) into notes
+      const extraNotes = [
+        newOrder.truckingVendor ? `شركة النقل: ${newOrder.truckingVendor}` : '',
+        newOrder.driverNationalId ? `الرقم القومي للسائق: ${newOrder.driverNationalId}` : '',
+        newOrder.trailerPlate ? `لوحة المقطورة: ${newOrder.trailerPlate}` : '',
+        newOrder.emptyReturnYard ? `ساحة الفارغ: ${newOrder.emptyReturnYard}` : '',
+        newOrder.notes,
+      ]
+        .filter(Boolean)
+        .join(' | ');
 
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== selectedOrderForEir.id) return o;
-        return {
-          ...o,
-          status: 'EMPTY_RETURNED',
-          emptyReturnDate: eirForm.emptyReturnDate,
-          emptyReturnYard: eirForm.emptyReturnYard,
-          eirNumber: eirForm.eirNumber,
-          eirStatus: eirForm.eirStatus,
-          eirSurveyorName: eirForm.eirSurveyorName,
-          eirDamagesFeeEgp: eirForm.eirStatus === 'DAMAGED' ? Number(eirForm.eirDamagesFeeEgp) : 0,
-          eirNotes: eirForm.eirNotes,
-          notes: `تم تسليم الفارغ واستلام إيصال EIR Clean رقم ${eirForm.eirNumber} وإيقاف عداد غرامات التأخير.`,
-        };
-      }),
-    );
+      const created: any = await api.post('/dispatch/trips', {
+        clientName: newOrder.clientName,
+        containerNumber: newOrder.containerNumber.toUpperCase(),
+        containerType: newOrder.containerType,
+        pickupLocation: newOrder.pickupLocation || undefined,
+        deliveryLocation: newOrder.deliveryLocation || undefined,
+        driverId: selectedDriverId || undefined,
+        driverName: newOrder.driverName || undefined,
+        driverPhone: newOrder.driverPhone || undefined,
+        truckPlate: newOrder.truckHeadPlate || undefined,
+        truckType: undefined,
+        scheduledDate: newOrder.scheduledDate || undefined,
+        notes: extraNotes || undefined,
+      });
 
-    setIsEirModalOpen(false);
-    setSelectedOrderForEir(null);
-  };
-
-  const handleCreateOrder = (e: React.FormEvent) => {
-    e.preventDefault();
-    const created: DispatchOrder = {
-      id: `dsp-${Date.now()}`,
-      orderNumber: `TRK-2026-${String(orders.length + 41).padStart(4, '0')}`,
-      ...newOrder,
-      dispatchDate: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      status: 'ASSIGNED',
-    };
-    setOrders([created, ...orders]);
-    setIsAddModalOpen(false);
+      setTrips((prev) => [created, ...prev]);
+      setIsAddModalOpen(false);
+      setSelectedDriverId('');
+      setNewOrder({
+        containerNumber: '',
+        containerType: '40HQ',
+        clientName: '',
+        pickupLocation: '',
+        deliveryLocation: '',
+        truckingVendor: '',
+        driverName: '',
+        driverPhone: '',
+        driverNationalId: '',
+        truckHeadPlate: '',
+        trailerPlate: '',
+        emptyReturnYard: '',
+        scheduledDate: new Date().toISOString().slice(0, 10),
+        notes: '',
+      });
+    } catch (err: any) {
+      setCreateError(err?.message || 'تعذر إصدار أمر النقل — حاول مجدداً');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleExport = () => {
     exportToCsv(
-      'redshipping_inland_trucking_dispatch_orders',
-      filteredOrders,
+      'redshipping_dispatch_trips',
+      filteredTrips,
       [
-        { header: 'أمر النقل', accessor: (o) => o.orderNumber },
-        { header: 'ملف العملية', accessor: (o) => o.jobFileNumber },
-        { header: 'رقم الحاوية', accessor: (o) => o.containerNumber },
-        { header: 'النوع', accessor: (o) => o.containerType },
-        { header: 'العميل', accessor: (o) => o.clientName },
-        { header: 'وجهة المصنع', accessor: (o) => o.factoryDestination },
-        { header: 'السائق', accessor: (o) => o.driverName },
-        { header: 'هاتف السائق', accessor: (o) => o.driverPhone },
-        { header: 'رقم السيارة (رأس)', accessor: (o) => o.truckHeadPlate },
-        { header: 'المقطورة', accessor: (o) => o.trailerPlate },
-        { header: 'تاريخ الخروج', accessor: (o) => o.dispatchDate },
-        {
-          header: 'حالة النقل',
-          accessor: (o) =>
-            o.status === 'EMPTY_RETURNED'
-              ? 'تم إرجاع الفارغ'
-              : o.status === 'DELIVERED_TO_FACTORY'
-              ? 'تم التسليم بالمصنع'
-              : o.status === 'GATE_OUT'
-              ? 'في الطريق'
-              : 'تم التعيين',
-        },
+        { header: 'أمر النقل', accessor: (t: DispatchTrip) => t.tripNumber },
+        { header: 'ملف العملية', accessor: (t: DispatchTrip) => t.jobFileNumber || '—' },
+        { header: 'رقم الحاوية', accessor: (t: DispatchTrip) => t.containerNumber },
+        { header: 'النوع', accessor: (t: DispatchTrip) => t.containerType },
+        { header: 'العميل', accessor: (t: DispatchTrip) => t.clientName },
+        { header: 'ميناء السحب', accessor: (t: DispatchTrip) => t.pickupLocation },
+        { header: 'وجهة التسليم', accessor: (t: DispatchTrip) => t.deliveryLocation },
+        { header: 'السائق', accessor: (t: DispatchTrip) => t.driverName },
+        { header: 'هاتف السائق', accessor: (t: DispatchTrip) => t.driverPhone },
+        { header: 'لوحة الرأس', accessor: (t: DispatchTrip) => t.truckPlate },
+        { header: 'تاريخ الجدولة', accessor: (t: DispatchTrip) => t.scheduledDate },
+        { header: 'الحالة', accessor: (t: DispatchTrip) => STATUS_LABELS[apiToUi(t.status)] },
+        { header: 'ملاحظات', accessor: (t: DispatchTrip) => t.notes || '—' },
       ],
     );
   };
 
-  const handlePrint = (order: DispatchOrder) => {
-    setActiveOrderForPrint(order);
+  const handlePrint = (trip: DispatchTrip) => {
+    setActiveOrderForPrint(trip);
     setTimeout(() => {
       window.print();
     }, 200);
@@ -314,10 +354,10 @@ export const DispatchBoardPage: React.FC = () => {
               <Truck className="w-3 h-3" />
               Dispatch Operations
             </span>
-            {isLiveConnected && (
+            {!loading && !loadError && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Sync: /shipments
+                أوامر محفوظة في قاعدة البيانات
               </span>
             )}
           </div>
@@ -328,8 +368,16 @@ export const DispatchBoardPage: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button
+            onClick={loadTrips}
+            className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 dark:bg-[#181D2A] dark:hover:bg-[#1E2638] dark:text-slate-300 border border-slate-200 dark:border-[#1E2638] transition shadow-sm cursor-pointer"
+            title="تحديث القائمة من الخادم"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 dark:bg-[#181D2A] dark:hover:bg-[#1E2638] dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-[#1E2638] transition shadow-sm cursor-pointer"
+            disabled={filteredTrips.length === 0}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 dark:bg-[#181D2A] dark:hover:bg-[#1E2638] dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-[#1E2638] transition shadow-sm cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             تصدير إكسيل
@@ -344,7 +392,7 @@ export const DispatchBoardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Operational Dispatch & Fleet Coordination Banner ── */}
+      {/* ── Operational Banner ── */}
       <div className="relative rounded-3xl overflow-hidden bg-white/90 dark:bg-[#121620]/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 p-5 sm:p-6 shadow-sm transition-all duration-300">
         <div className="absolute top-0 end-0 w-80 h-80 bg-gradient-to-bl from-emerald-500/10 via-orange-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
 
@@ -365,16 +413,16 @@ export const DispatchBoardPage: React.FC = () => {
           <div className="flex flex-col gap-2 bg-slate-50 dark:bg-[#181D2A] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 min-w-[220px] text-xs">
             <span className="font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200/80 dark:border-slate-800 pb-1">جاهزية الأسطول الميداني</span>
             <div className="flex justify-between py-0.5">
-              <span className="text-slate-500 dark:text-slate-400">شاحنات مخصصة:</span>
-              <span className="font-bold text-slate-900 dark:text-white font-mono">{stats.total} شاحنة</span>
+              <span className="text-slate-500 dark:text-slate-400">أوامر مجدولة:</span>
+              <span className="font-bold text-slate-900 dark:text-white font-mono">{stats.total}</span>
             </div>
             <div className="flex justify-between py-0.5">
               <span className="text-slate-500 dark:text-slate-400">على الطريق الآن:</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">{stats.gateOut} شاحنة</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">{stats.gateOut}</span>
             </div>
             <div className="flex justify-between py-0.5">
               <span className="text-slate-500 dark:text-slate-400">فارغ مسترد (EIR):</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">{stats.emptyReturned} حاوية</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">{stats.emptyReturned}</span>
             </div>
           </div>
         </div>
@@ -391,13 +439,13 @@ export const DispatchBoardPage: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">حاوية برية</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">أمر نقل</span>
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] p-4 rounded-2xl shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">شاحنات في الطريق (Gate-Out)</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">في الطريق (Gate-Out)</span>
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
               <Clock className="w-4 h-4" />
             </div>
@@ -417,13 +465,13 @@ export const DispatchBoardPage: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">{stats.delivered}</span>
-            <span className="text-xs text-indigo-600 dark:text-indigo-400">قيد التعتيق والتفريغ</span>
+            <span className="text-xs text-indigo-600 dark:text-indigo-400">مسلّمة</span>
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] p-4 rounded-2xl shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">تم إرجاع الفارغ (EIR Clean)</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">تم إرجاع الفارغ (EIR)</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-4 h-4" />
             </div>
@@ -438,7 +486,6 @@ export const DispatchBoardPage: React.FC = () => {
       {/* Filter and Search Bar */}
       <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] p-4 rounded-2xl shadow-sm space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {/* Search bar */}
           <div className="md:col-span-2 relative">
             <Search className="w-4 h-4 text-slate-400 absolute start-3 top-3" />
             <input
@@ -450,7 +497,6 @@ export const DispatchBoardPage: React.FC = () => {
             />
           </div>
 
-          {/* Status Filter */}
           <div>
             <select
               value={statusFilter}
@@ -469,156 +515,166 @@ export const DispatchBoardPage: React.FC = () => {
 
       {/* Dispatch Orders Table */}
       <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-start text-xs">
-            <thead className="bg-slate-50 dark:bg-[#0E121A] border-b border-slate-200 dark:border-[#1E2638] text-slate-500 dark:text-slate-400 font-semibold">
-              <tr>
-                <th className="py-3 px-4 text-start">أمر النقل</th>
-                <th className="py-3 px-4 text-start">الحاوية / الشحنة</th>
-                <th className="py-3 px-4 text-start">العميل ومكان التسليم</th>
-                <th className="py-3 px-4 text-start">السائق وبيانات السيارة</th>
-                <th className="py-3 px-4 text-start">ميناء الخروج / ساحة الفارغ</th>
-                <th className="py-3 px-4 text-center">حالة النقل</th>
-                <th className="py-3 px-4 text-center">إجراءات المتابعة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredOrders.length === 0 ? (
+        {loading ? (
+          <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+            <Loader2 className="w-7 h-7 animate-spin" />
+            <span className="text-xs font-bold">جارٍ تحميل أوامر النقل من الخادم...</span>
+          </div>
+        ) : loadError ? (
+          <div className="p-8 flex flex-col items-center gap-3 text-center">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+            <div>
+              <h3 className="text-sm font-black text-red-600 dark:text-red-400 mb-1">تعذر تحميل البيانات</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{loadError}</p>
+              <button onClick={loadTrips} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer">
+                إعادة المحاولة
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-start text-xs">
+              <thead className="bg-slate-50 dark:bg-[#0E121A] border-b border-slate-200 dark:border-[#1E2638] text-slate-500 dark:text-slate-400 font-semibold">
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    <Truck className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
-                    <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد أوامر نقل وتعتيق مسجلة</p>
-                    <p className="text-xs text-slate-400 mt-1">يتم إنشاء أوامر النقل تلقائياً لحاويات الشحنات الجاهزة للنقل والتسليم</p>
-                  </td>
+                  <th className="py-3 px-4 text-start">أمر النقل</th>
+                  <th className="py-3 px-4 text-start">الحاوية / الشحنة</th>
+                  <th className="py-3 px-4 text-start">العميل ومكان التسليم</th>
+                  <th className="py-3 px-4 text-start">السائق وبيانات السيارة</th>
+                  <th className="py-3 px-4 text-start">ميناء السحب / الجدولة</th>
+                  <th className="py-3 px-4 text-center">حالة النقل</th>
+                  <th className="py-3 px-4 text-center">إجراءات المتابعة</th>
                 </tr>
-              ) : (
-                filteredOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-slate-50/70 dark:hover:bg-[#181D2A] transition">
-                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                      <span>{o.orderNumber}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-normal">{o.dispatchDate}</span>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {filteredTrips.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <Truck className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">لا توجد أوامر نقل محفوظة بعد</p>
+                      <p className="text-xs text-slate-400 mt-1">اضغط «أمر نقل بري جديد» لإصدار أول أمر سحب حاوية — سيُحفظ في قاعدة البيانات</p>
                     </td>
-
-                  <td className="py-3 px-4">
-                    <span className="font-mono font-bold text-[#FF5E1E] block">{o.containerNumber}</span>
-                    <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
-                      {o.containerType} • Seal: {o.sealNumber}
-                    </span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 block">ملف: {o.jobFileNumber}</span>
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <span className="font-semibold text-slate-900 dark:text-white block">{o.clientName}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                      {o.factoryDestination}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
-                      <User className="w-3.5 h-3.5 text-[#FF5E1E]" />
-                      <span>{o.driverName}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Phone className="w-3 h-3 text-emerald-500" />
-                      <a href={`tel:${o.driverPhone}`} className="hover:underline font-mono">
-                        {o.driverPhone}
-                      </a>
-                    </div>
-                    <div className="text-[10px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-[#0E121A] px-2 py-0.5 rounded border border-slate-200 dark:border-[#1E2638] mt-1 inline-block">
-                      رأس: <strong className="text-slate-900 dark:text-white">{o.truckHeadPlate}</strong> • مقطورة: <strong className="text-slate-900 dark:text-white">{o.trailerPlate}</strong>
-                    </div>
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                    <div className="text-xs font-medium text-slate-800 dark:text-slate-200">من: {o.departurePort}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">ساحة الفارغ: {o.emptyReturnYard}</div>
-                  </td>
-
-                  <td className="py-3 px-4 text-center">
-                    {o.status === 'EMPTY_RETURNED' ? (
-                      <div className="flex flex-col items-center">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            o.eirStatus === 'DAMAGED'
-                              ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
-                              : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3 h-3" />
-                          {o.eirStatus === 'DAMAGED' ? 'فارغ بملاحظات تلف ⚠️' : 'تم إرجاع الفارغ (EIR Clean) ✓'}
-                        </span>
-                        {o.eirNumber && (
-                          <span className="font-mono text-[9px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
-                            {o.eirNumber}
-                          </span>
-                        )}
-                        <span className="text-[9px] text-slate-400 font-mono">
-                          {o.emptyReturnDate}
-                        </span>
-                      </div>
-                    ) : (
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                          o.status === 'DELIVERED_TO_FACTORY'
-                            ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20'
-                            : o.status === 'GATE_OUT'
-                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {o.status === 'DELIVERED_TO_FACTORY'
-                          ? 'تم التسليم بالمصنع 🏭'
-                          : o.status === 'GATE_OUT'
-                          ? 'في الطريق 🚛'
-                          : 'تم التعيين 📋'}
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
-                      {o.status === 'ASSIGNED' && (
-                        <button
-                          onClick={() => handleUpdateStatus(o.id, 'GATE_OUT')}
-                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition cursor-pointer"
-                        >
-                          تسجيل خروج من الميناء
-                        </button>
-                      )}
-                      {o.status === 'GATE_OUT' && (
-                        <button
-                          onClick={() => handleUpdateStatus(o.id, 'DELIVERED_TO_FACTORY')}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold transition cursor-pointer"
-                        >
-                          تأكيد وصول المصنع
-                        </button>
-                      )}
-                      {o.status === 'DELIVERED_TO_FACTORY' && (
-                        <button
-                          onClick={() => handleOpenEirModal(o)}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          إرجاع الفارغ (EIR Clean)
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handlePrint(o)}
-                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-[#181D2A] hover:bg-slate-200 dark:hover:bg-[#1E2638] text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                        title="طباعة إذن نقل بري EIR"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filteredTrips.map((t) => {
+                    const ui = apiToUi(t.status);
+                    const busy = actionBusyId === t.id;
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-50/70 dark:hover:bg-[#181D2A] transition">
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                          <span>{t.tripNumber}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-normal">{t.scheduledDate || '—'}</span>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span className="font-mono font-bold text-[#FF5E1E] block">{t.containerNumber || '—'}</span>
+                          <span className="text-[11px] text-slate-600 dark:text-slate-300 block">{t.containerType}</span>
+                          {t.jobFileNumber && <span className="text-[10px] text-slate-400 dark:text-slate-500 block">ملف: {t.jobFileNumber}</span>}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-slate-900 dark:text-white block">{t.clientName}</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-red-500 shrink-0" />
+                            {t.deliveryLocation || '—'}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                            <User className="w-3.5 h-3.5 text-[#FF5E1E]" />
+                            <span>{t.driverName || '—'}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Phone className="w-3 h-3 text-emerald-500" />
+                            <a href={`tel:${t.driverPhone}`} className="hover:underline font-mono">
+                              {t.driverPhone || '—'}
+                            </a>
+                          </div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-[#0E121A] px-2 py-0.5 rounded border border-slate-200 dark:border-[#1E2638] mt-1 inline-block">
+                            رأس: <strong className="text-slate-900 dark:text-white">{t.truckPlate || '—'}</strong>
+                            {t.truckType ? <span> • {t.truckType}</span> : null}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                          <div className="text-xs font-medium text-slate-800 dark:text-slate-200">من: {t.pickupLocation || '—'}</div>
+                          {t.departureTime && <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">خروج: {t.departureTime}</div>}
+                          {t.actualArrival && <div className="text-[10px] text-emerald-600 dark:text-emerald-400">وصول: {t.actualArrival}</div>}
+                        </td>
+
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                              ui === 'EMPTY_RETURNED'
+                                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                : ui === 'DELIVERED_TO_FACTORY'
+                                ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20'
+                                : ui === 'GATE_OUT'
+                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                                : ui === 'CANCELLED'
+                                ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                                : 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20'
+                            }`}
+                          >
+                            {ui === 'EMPTY_RETURNED' && <CheckCircle2 className="w-3 h-3 me-1" />}
+                            {STATUS_LABELS[ui]}
+                          </span>
+                          {t.notes && (
+                            <span className="text-[9px] text-slate-400 block mt-1 max-w-[180px] mx-auto truncate" title={t.notes}>
+                              {t.notes}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            {ui === 'ASSIGNED' && (
+                              <button
+                                onClick={() => handleUpdateStatus(t.id, 'GATE_OUT')}
+                                disabled={busy}
+                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
+                              >
+                                {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
+                                خروج من الميناء
+                              </button>
+                            )}
+                            {ui === 'GATE_OUT' && (
+                              <button
+                                onClick={() => handleUpdateStatus(t.id, 'DELIVERED_TO_FACTORY')}
+                                disabled={busy}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
+                              >
+                                {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Building2 className="w-3 h-3" />}
+                                تأكيد وصول المصنع
+                              </button>
+                            )}
+                            {ui === 'DELIVERED_TO_FACTORY' && (
+                              <button
+                                onClick={() => handleOpenEirModal(t)}
+                                disabled={busy}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                إرجاع الفارغ (EIR Clean)
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handlePrint(t)}
+                              className="p-1.5 rounded-lg bg-slate-100 dark:bg-[#181D2A] hover:bg-slate-200 dark:hover:bg-[#1E2638] text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                              title="طباعة إذن نقل بري EIR"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* New Dispatch Order Modal */}
@@ -627,7 +683,7 @@ export const DispatchBoardPage: React.FC = () => {
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
           title="إنشاء أمر نقل بري وسحب حاوية"
-          subtitle="تعيين شركة النقل، السائق، والشاحنة لسحب الحاوية من الميناء"
+          subtitle="تعيين شركة النقل، السائق، والشاحنة لسحب الحاوية من الميناء — يُحفظ الأمر في قاعدة البيانات"
           maxWidth="lg"
         >
           <form onSubmit={handleCreateOrder} className="space-y-4">
@@ -668,12 +724,32 @@ export const DispatchBoardPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">عنوان المصنع / مخزن التسليم *</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">تاريخ الجدولة</label>
+                <input
+                  type="date"
+                  value={newOrder.scheduledDate}
+                  onChange={(e) => setNewOrder({ ...newOrder, scheduledDate: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">ميناء سحب الحاوية</label>
                 <input
                   type="text"
-                  required
-                  value={newOrder.factoryDestination}
-                  onChange={(e) => setNewOrder({ ...newOrder, factoryDestination: e.target.value })}
+                  placeholder="مثال: ميناء الإسكندرية"
+                  value={newOrder.pickupLocation}
+                  onChange={(e) => setNewOrder({ ...newOrder, pickupLocation: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">عنوان المصنع / مخزن التسليم</label>
+                <input
+                  type="text"
+                  value={newOrder.deliveryLocation}
+                  onChange={(e) => setNewOrder({ ...newOrder, deliveryLocation: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
                 />
               </div>
@@ -761,40 +837,52 @@ export const DispatchBoardPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">رقم لوحات المقطورة *</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">رقم لوحات المقطورة</label>
                 <input
                   type="text"
-                  required
                   value={newOrder.trailerPlate}
                   onChange={(e) => setNewOrder({ ...newOrder, trailerPlate: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">ساحة إرجاع الحاوية الفارغة</label>
+                <input
+                  type="text"
+                  value={newOrder.emptyReturnYard}
+                  onChange={(e) => setNewOrder({ ...newOrder, emptyReturnYard: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">ساحة إرجاع الحاوية الفارغة</label>
-              <input
-                type="text"
-                value={newOrder.emptyReturnYard}
-                onChange={(e) => setNewOrder({ ...newOrder, emptyReturnYard: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
+            <p className="text-[10px] text-slate-400">
+              الحقول غير المخصصة بأعمدة في قاعدة البيانات (الرقم القومي، المقطورة، شركة النقل، ساحة الفارغ) تُحفظ ضمن ملاحظات الأمر.
+            </p>
+
+            {createError && (
+              <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{createError}</span>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-[#1E2638]">
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-[#181D2A] dark:hover:bg-[#1E2638] dark:text-slate-300 text-xs font-semibold transition"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-[#181D2A] dark:hover:bg-[#1E2638] dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#FF7034] text-white text-xs font-semibold shadow-lg shadow-orange-500/25 transition"
+                disabled={creating}
+                className="px-5 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#FF7034] disabled:opacity-60 text-white text-xs font-semibold shadow-lg shadow-orange-500/25 transition flex items-center gap-2 cursor-pointer"
               >
-                إصدار أمر النقل وتثبيت السائق
+                {creating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {creating ? 'جارٍ الإصدار...' : 'إصدار أمر النقل وتثبيت السائق'}
               </button>
             </div>
           </form>
@@ -817,7 +905,7 @@ export const DispatchBoardPage: React.FC = () => {
                   رقم الحاوية: {selectedOrderForEir.containerNumber} ({selectedOrderForEir.containerType})
                 </span>
                 <span className="text-emerald-700 dark:text-emerald-400 block mt-0.5">
-                  بوليصة: {selectedOrderForEir.blNumber} • ملف: {selectedOrderForEir.jobFileNumber}
+                  أمر النقل: {selectedOrderForEir.tripNumber} • ملف: {selectedOrderForEir.jobFileNumber || '—'}
                 </span>
               </div>
               <div className="text-end">
@@ -958,9 +1046,10 @@ export const DispatchBoardPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/25 transition cursor-pointer flex items-center gap-1.5"
+                disabled={actionBusyId === selectedOrderForEir.id}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold shadow-lg shadow-emerald-500/25 transition cursor-pointer flex items-center gap-1.5"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                {actionBusyId === selectedOrderForEir.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                 تأكيد إرجاع الفارغ وإيقاف غرامة التأخير
               </button>
             </div>
@@ -977,20 +1066,18 @@ export const DispatchBoardPage: React.FC = () => {
               <p className="text-xs">إذن صرف وتكليف نقل بري لحاوية وارد (EIR Dispatch Waybill)</p>
             </div>
             <div className="text-end">
-              <p className="font-mono font-bold text-lg">{activeOrderForPrint.orderNumber}</p>
-              <p className="text-xs">التاريخ: {activeOrderForPrint.dispatchDate}</p>
+              <p className="font-mono font-bold text-lg">{activeOrderForPrint.tripNumber}</p>
+              <p className="text-xs">التاريخ: {activeOrderForPrint.scheduledDate}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 text-xs mb-6 border p-4">
-            <div><strong>رقم ملف العملية:</strong> {activeOrderForPrint.jobFileNumber}</div>
-            <div><strong>رقم بوليصة الشحن B/L:</strong> {activeOrderForPrint.blNumber}</div>
+            <div><strong>رقم ملف العملية:</strong> {activeOrderForPrint.jobFileNumber || '—'}</div>
             <div><strong>رقم الحاوية:</strong> {activeOrderForPrint.containerNumber} ({activeOrderForPrint.containerType})</div>
-            <div><strong>رقم الرصاص الجمركي:</strong> {activeOrderForPrint.sealNumber}</div>
             <div><strong>العميل المستورد:</strong> {activeOrderForPrint.clientName}</div>
-            <div><strong>ميناء الخروج:</strong> {activeOrderForPrint.departurePort}</div>
-            <div><strong>وجهة التسليم (المصنع):</strong> {activeOrderForPrint.factoryDestination}</div>
-            <div><strong>ساحة تسليم الفارغ:</strong> {activeOrderForPrint.emptyReturnYard}</div>
+            <div><strong>ميناء الخروج:</strong> {activeOrderForPrint.pickupLocation || '—'}</div>
+            <div><strong>وجهة التسليم (المصنع):</strong> {activeOrderForPrint.deliveryLocation || '—'}</div>
+            <div><strong>ساحة تسليم الفارغ:</strong> حسب ملاحظات الأمر</div>
           </div>
 
           <div className="border p-4 text-xs mb-6">
@@ -998,10 +1085,8 @@ export const DispatchBoardPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-2">
               <div><strong>اسم السائق:</strong> {activeOrderForPrint.driverName}</div>
               <div><strong>هاتف السائق:</strong> {activeOrderForPrint.driverPhone}</div>
-              <div><strong>الرقم القومي:</strong> {activeOrderForPrint.driverNationalId}</div>
-              <div><strong>لوحات رأس السيارة:</strong> {activeOrderForPrint.truckHeadPlate}</div>
-              <div><strong>لوحات المقطورة:</strong> {activeOrderForPrint.trailerPlate}</div>
-              <div><strong>شركة النقل:</strong> {activeOrderForPrint.truckingVendor}</div>
+              <div><strong>لوحات رأس السيارة:</strong> {activeOrderForPrint.truckPlate}</div>
+              <div><strong>نوع الشاحنة:</strong> {activeOrderForPrint.truckType || '—'}</div>
             </div>
           </div>
 

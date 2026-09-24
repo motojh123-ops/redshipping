@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Truck, Plus, Phone, Download, Search, Contact, Loader2, AlertCircle,
-  Building2, CalendarDays, AlertTriangle, Contact as LicenseIcon
+  Building2, CalendarDays, AlertTriangle, Contact as LicenseIcon, Pencil, Power
 } from 'lucide-react';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -39,12 +39,14 @@ export const DriversPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadDrivers = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res: any = await api.get('/masters/drivers');
+      const res: any = await api.get('/masters/drivers', { params: { includeInactive: 'true' } });
       const data = Array.isArray(res) ? res : res?.data;
       setDrivers(Array.isArray(data) ? data : []);
     } catch (err: any) {
@@ -61,6 +63,15 @@ export const DriversPage: React.FC = () => {
       setVendors(list.filter((v: any) => v.vendorType === 'trucking'));
     }).catch(() => {});
   }, []);
+
+  const handleToggleActive = async (d: Driver) => {
+    try {
+      await api.patch(`/masters/drivers/${d.id}`, { isActive: !d.isActive });
+      setDrivers((prev) => prev.map((x) => (x.id === d.id ? { ...x, isActive: !d.isActive } : x)));
+    } catch (err: any) {
+      alert(err?.message || 'تعذر تغيير حالة السائق');
+    }
+  };
 
   const filtered = drivers.filter((d) => {
     if (!search) return true;
@@ -233,16 +244,35 @@ export const DriversPage: React.FC = () => {
                   }`}>
                     {d.isActive ? 'نشط' : 'معطّل'}
                   </span>
-                  {d.phone && (
-                    <a
-                      href={`https://wa.me/${d.phone.replace(/[^0-9]/g, '')}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 transition"
+                  <div className="flex items-center gap-1.5">
+                    {d.phone && (
+                      <a
+                        href={`https://wa.me/${d.phone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 transition"
+                      >
+                        واتساب
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setEditingDriver(d)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-500/10 transition cursor-pointer"
+                      title="تعديل بيانات السائق"
                     >
-                      واتساب
-                    </a>
-                  )}
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleActive(d)}
+                      disabled={busyId === d.id}
+                      className={`p-1.5 rounded-lg transition cursor-pointer disabled:opacity-50 ${
+                        d.isActive ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                      }`}
+                      title={d.isActive ? 'إيقاف السائق (لن يظهر في قوائم الاختيار)' : 'إعادة تفعيل السائق'}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -258,6 +288,16 @@ export const DriversPage: React.FC = () => {
           onSuccess={(d) => setDrivers((prev) => [d, ...prev])}
         />
       )}
+
+      {editingDriver && (
+        <CreateDriverModal
+          isOpen={!!editingDriver}
+          onClose={() => setEditingDriver(null)}
+          vendors={vendors}
+          initial={editingDriver}
+          onSuccess={(d) => setDrivers((prev) => prev.map((x) => (x.id === d.id ? d : x)))}
+        />
+      )}
     </div>
   );
 };
@@ -267,14 +307,23 @@ const CreateDriverModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   vendors: any[];
+  initial?: Driver | null;
   onSuccess: (d: Driver) => void;
-}> = ({ isOpen, onClose, vendors, onSuccess }) => {
+}> = ({ isOpen, onClose, vendors, initial, onSuccess }) => {
   const [form, setForm] = useState({
-    name: '', phone: '', nationalId: '', licenseNumber: '', licenseExpiry: '',
-    truckPlate: '', trailerPlate: '', truckType: '', vendorId: '',
+    name: initial?.name || '',
+    phone: initial?.phone || '',
+    nationalId: initial?.nationalId || '',
+    licenseNumber: initial?.licenseNumber || '',
+    licenseExpiry: initial?.licenseExpiry ? initial.licenseExpiry.slice(0, 10) : '',
+    truckPlate: initial?.truckPlate || '',
+    trailerPlate: initial?.trailerPlate || '',
+    truckType: initial?.truckType || '',
+    vendorId: initial?.vendorId || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEdit = !!initial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -289,24 +338,26 @@ const CreateDriverModal: React.FC<{
       if (form.truckPlate.trim()) payload.truckPlate = form.truckPlate.trim();
       if (form.trailerPlate.trim()) payload.trailerPlate = form.trailerPlate.trim();
       if (form.truckType.trim()) payload.truckType = form.truckType.trim();
-      if (form.vendorId) payload.vendorId = form.vendorId;
+      payload.vendorId = form.vendorId || '';
 
-      const created: any = await api.post('/masters/drivers', payload);
+      const saved: any = isEdit
+        ? await api.patch(`/masters/drivers/${initial!.id}`, payload)
+        : await api.post('/masters/drivers', payload);
+
       onSuccess({
-        id: created?.id || String(Date.now()),
-        name: created?.name ?? payload.name,
-        phone: created?.phone ?? payload.phone ?? null,
-        nationalId: created?.nationalId ?? payload.nationalId ?? null,
-        licenseNumber: created?.licenseNumber ?? payload.licenseNumber ?? null,
-        licenseExpiry: created?.licenseExpiry ?? payload.licenseExpiry ?? null,
-        truckPlate: created?.truckPlate ?? payload.truckPlate ?? null,
-        trailerPlate: created?.trailerPlate ?? payload.trailerPlate ?? null,
-        truckType: created?.truckType ?? payload.truckType ?? null,
-        vendorId: created?.vendorId ?? payload.vendorId ?? null,
-        isActive: created?.isActive !== false,
+        id: saved?.id || initial?.id || String(Date.now()),
+        name: saved?.name ?? payload.name,
+        phone: saved?.phone ?? payload.phone ?? null,
+        nationalId: saved?.nationalId ?? payload.nationalId ?? null,
+        licenseNumber: saved?.licenseNumber ?? payload.licenseNumber ?? null,
+        licenseExpiry: saved?.licenseExpiry ?? payload.licenseExpiry ?? null,
+        truckPlate: saved?.truckPlate ?? payload.truckPlate ?? null,
+        trailerPlate: saved?.trailerPlate ?? payload.trailerPlate ?? null,
+        truckType: saved?.truckType ?? payload.truckType ?? null,
+        vendorId: saved?.vendorId ?? payload.vendorId ?? '',
+        isActive: saved?.isActive !== false,
       });
       onClose();
-      setForm({ name: '', phone: '', nationalId: '', licenseNumber: '', licenseExpiry: '', truckPlate: '', trailerPlate: '', truckType: '', vendorId: '' });
     } catch (err: any) {
       setError(err?.message || 'تعذر حفظ السائق — حاول مجدداً');
     } finally {
@@ -389,7 +440,7 @@ const CreateDriverModal: React.FC<{
             className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ السائق'}</span>
+            <span>{saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ السائق'}</span>
           </button>
         </div>
       </form>

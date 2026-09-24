@@ -12,6 +12,7 @@ interface CreateQuotationModalProps {
 }
 
 interface QuoteItemInput {
+  chargeItemId?: string;
   description: string;
   currency: string;
   costRate: number;
@@ -27,6 +28,7 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
 }) => {
   const [clients, setClients] = useState<any[]>([]);
   const [ports, setPorts] = useState<any[]>([]);
+  const [chargeItems, setChargeItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Form State
@@ -70,9 +72,12 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch available clients and ports
-      api.get('/clients').then((res: any) => setClients(res || [])).catch(() => {});
-      api.get('/masters/ports').then((res: any) => setPorts(res || [])).catch(() => {});
+      // Fetch available clients, ports and the standard charge-items registry
+      api.get('/clients').then((res: any) => setClients(Array.isArray(res) ? res : res?.data || [])).catch(() => {});
+      api.get('/masters/ports').then((res: any) => setPorts(Array.isArray(res) ? res : res?.data || [])).catch(() => {});
+      api.get('/masters/charge-items', { params: { context: 'quotation' } }).then((res: any) => {
+        setChargeItems(Array.isArray(res) ? res : res?.data || []);
+      }).catch(() => {});
     }
   }, [isOpen]);
 
@@ -94,6 +99,25 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
         unit: 'container',
       },
     ]);
+  };
+
+  // Pick a standard charge item from the masters registry → autofill the line
+  const handleSelectChargeItem = (index: number, chargeItemId: string) => {
+    const ci = chargeItems.find((c: any) => c.id === chargeItemId);
+    if (!ci) {
+      handleItemChange(index, 'chargeItemId', undefined);
+      return;
+    }
+    const updated = [...items];
+    updated[index] = {
+      ...updated[index],
+      chargeItemId,
+      description: ci.nameAr || ci.nameEn || updated[index].description,
+      currency: ci.defaultCurrency || updated[index].currency,
+      costRate: Number(ci.defaultPrice ?? 0) || updated[index].costRate,
+      sellRate: Number(ci.defaultSellPrice ?? ci.defaultPrice ?? 0) || updated[index].sellRate,
+    };
+    setItems(updated);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -128,7 +152,7 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
         validUntil: validUntil.toISOString(),
         estimatedTransitDays: transitDays,
         notes,
-        items,
+        items: items.map((it) => ({ ...it, chargeItemId: it.chargeItemId || undefined })),
       });
 
       onSuccess();
@@ -287,6 +311,19 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
             {items.map((item, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-center text-xs">
                 <div className="col-span-4">
+                  <select
+                    value={item.chargeItemId || ''}
+                    onChange={(e) => handleSelectChargeItem(idx, e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-2 text-xs focus:ring-2 focus:ring-brand-500 mb-1"
+                    title="اختيار بند معياري من السجل الرئيسي (Charges)"
+                  >
+                    <option value="">— بند حر (بدون ربط بالسجل) —</option>
+                    {chargeItems.map((ci: any) => (
+                      <option key={ci.id} value={ci.id}>
+                        {ci.code} — {ci.nameAr || ci.nameEn}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     placeholder="وصف البند"

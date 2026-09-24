@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Ship, Plus, ExternalLink, Phone, Globe, Download, TrendingUp,
-  Compass, Mail, ChevronDown, User, Search, Pencil, Loader2, CheckCircle2, AlertCircle, X
+  Compass, Mail, ChevronDown, User, Search, Pencil, Loader2, CheckCircle2, AlertCircle, X, Power
 } from 'lucide-react';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -30,12 +30,14 @@ export const ShippingLinesPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<ShippingLine | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadLines = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res: any = await api.get('/masters/shipping-lines');
+      const res: any = await api.get('/masters/shipping-lines', { params: { includeInactive: 'true' } });
       const data = Array.isArray(res) ? res : res?.data;
       setLines(Array.isArray(data) ? data : []);
     } catch (err: any) {
@@ -236,11 +238,32 @@ export const ShippingLinesPage: React.FC = () => {
                   </Link>
 
                   <button
-                    onClick={() => setIsCreateOpen(true)}
+                    onClick={() => setEditingLine(line)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-500/10 transition cursor-pointer"
-                    title="إضافة خط جديد"
+                    title="تعديل بيانات الخط"
                   >
                     <Pencil className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      setBusyId(line.id);
+                      try {
+                        await api.patch(`/masters/shipping-lines/${line.id}`, { isActive: !line.isActive });
+                        setLines((prev) => prev.map((x) => (x.id === line.id ? { ...x, isActive: !line.isActive } : x)));
+                      } catch (err: any) {
+                        alert(err?.message || 'تعذر تغيير حالة الخط الملاحي');
+                      } finally {
+                        setBusyId(null);
+                      }
+                    }}
+                    disabled={busyId === line.id}
+                    className={`p-1.5 rounded-lg transition cursor-pointer disabled:opacity-50 ${
+                      line.isActive ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                    }`}
+                    title={line.isActive ? 'إيقاف الخط (لن يظهر في قوائم الاختيار)' : 'إعادة تفعيل الخط'}
+                  >
+                    <Power className={`w-3.5 h-3.5 ${busyId === line.id ? 'animate-pulse' : ''}`} />
                   </button>
                 </div>
               </div>
@@ -249,7 +272,7 @@ export const ShippingLinesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Create Shipping Line Modal */}
+      {/* Create/Edit Shipping Line Modal */}
       {isCreateOpen && (
         <CreateShippingLineModal
           isOpen={isCreateOpen}
@@ -257,26 +280,37 @@ export const ShippingLinesPage: React.FC = () => {
           onSuccess={(newLine) => setLines((prev) => [newLine, ...prev])}
         />
       )}
+
+      {editingLine && (
+        <CreateShippingLineModal
+          isOpen={!!editingLine}
+          onClose={() => setEditingLine(null)}
+          initial={editingLine}
+          onSuccess={(l) => setLines((prev) => prev.map((x) => (x.id === l.id ? l : x)))}
+        />
+      )}
     </div>
   );
 };
 
-/* ── Create Shipping Line Modal (posts to /masters/shipping-lines) ── */
+/* ── Create/Edit Shipping Line Modal (posts/patches /masters/shipping-lines) ── */
 const CreateShippingLineModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
+  initial?: ShippingLine | null;
   onSuccess: (line: ShippingLine) => void;
-}> = ({ isOpen, onClose, onSuccess }) => {
+}> = ({ isOpen, onClose, initial, onSuccess }) => {
   const [form, setForm] = useState({
-    name: '',
-    scac: '',
-    contactName: '',
-    contactEmail: '',
-    contactPhone: '',
-    website: '',
+    name: initial?.name || '',
+    scac: initial?.scac || '',
+    contactName: initial?.contactName || '',
+    contactEmail: initial?.contactEmail || '',
+    contactPhone: initial?.contactPhone || '',
+    website: initial?.website || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEdit = !!initial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -291,16 +325,18 @@ const CreateShippingLineModal: React.FC<{
       if (form.contactPhone.trim()) payload.contactPhone = form.contactPhone.trim();
       if (form.website.trim()) payload.website = form.website.trim().replace(/^https?:\/\//, '');
 
-      const created: any = await api.post('/masters/shipping-lines', payload);
+      const saved: any = isEdit
+        ? await api.patch(`/masters/shipping-lines/${initial!.id}`, payload)
+        : await api.post('/masters/shipping-lines', payload);
       onSuccess({
-        id: created?.id || String(Date.now()),
-        name: created?.name ?? payload.name,
-        scac: created?.scac ?? payload.scac,
-        contactName: created?.contactName ?? payload.contactName,
-        contactEmail: created?.contactEmail ?? payload.contactEmail,
-        contactPhone: created?.contactPhone ?? payload.contactPhone,
-        website: created?.website ?? payload.website,
-        isActive: created?.isActive !== false,
+        id: saved?.id || initial?.id || String(Date.now()),
+        name: saved?.name ?? payload.name,
+        scac: saved?.scac ?? payload.scac,
+        contactName: saved?.contactName ?? payload.contactName,
+        contactEmail: saved?.contactEmail ?? payload.contactEmail,
+        contactPhone: saved?.contactPhone ?? payload.contactPhone,
+        website: saved?.website ?? payload.website,
+        isActive: saved?.isActive !== false,
       });
       onClose();
     } catch (err: any) {
@@ -407,7 +443,7 @@ const CreateShippingLineModal: React.FC<{
             className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ الخط الملاحي'}</span>
+            <span>{saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ الخط الملاحي'}</span>
           </button>
         </div>
       </form>

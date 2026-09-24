@@ -310,7 +310,7 @@ export const ShipmentDetails: React.FC = () => {
       const dd = calculateDemurrageDetention({
         containerNumber: c.containerNumber || '',
         containerType: c.containerType || '40HQ',
-        shippingLine: shipment?.shippingLine?.name || 'MSC',
+        shippingLine: shipment?.shippingLine?.name || '',
         dischargedAt: c.dischargedAt,
         gatedOutAt: c.emptyReturnedAt,
         agreedFreeDays: shipment?.freeDaysAllowed || 14,
@@ -416,7 +416,10 @@ export const ShipmentDetails: React.FC = () => {
               </button>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              العميل: <span className="font-semibold text-slate-800 dark:text-slate-200">{shipment.client?.name}</span> | بوليصة B/L: <span className="font-mono text-slate-800 dark:text-slate-200">{shipment.blNumber || 'MEDU19281'}</span> | الخط: <span className="font-semibold text-slate-800 dark:text-slate-200">{shipment.shippingLine?.name || 'MSC'}</span>
+              العميل: <span className="font-semibold text-slate-800 dark:text-slate-200">{shipment.client?.name || '—'}</span> | بوليصة B/L: <span className="font-mono text-slate-800 dark:text-slate-200">{shipment.blNumber || '—'}</span> | الخط: <span className="font-semibold text-slate-800 dark:text-slate-200">{shipment.shippingLine?.name || '—'}</span>
+              {shipment.overseasAgent ? (
+                <span> | وكيل الخارج: <span className="font-semibold text-slate-800 dark:text-slate-200">{shipment.overseasAgent.name}{shipment.overseasAgent.city ? ` (${shipment.overseasAgent.city})` : ''}</span></span>
+              ) : null}
             </p>
           </div>
         </div>

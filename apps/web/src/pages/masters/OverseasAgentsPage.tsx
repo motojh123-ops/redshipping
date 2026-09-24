@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe2, Plus, Mail, Phone, MapPin, Loader2, AlertCircle, Search } from 'lucide-react';
+import { Globe2, Plus, Mail, Phone, MapPin, Loader2, AlertCircle, Search, Pencil, Power } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -27,12 +27,14 @@ export const OverseasAgentsPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<OverseasAgent | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadAgents = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res: any = await api.get('/masters/overseas-agents');
+      const res: any = await api.get('/masters/overseas-agents', { params: { includeInactive: 'true' } });
       const data = Array.isArray(res) ? res : res?.data;
       setAgents(Array.isArray(data) ? data : []);
     } catch (err: any) {
@@ -110,6 +112,33 @@ export const OverseasAgentsPage: React.FC = () => {
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
                   agent.isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                 }`}>{agent.isActive ? 'نشط' : 'غير نشط'}</span>
+                <button
+                  onClick={() => setEditingAgent(agent)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-500/10 transition cursor-pointer shrink-0"
+                  title="تعديل بيانات الوكيل"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={async () => {
+                    setBusyId(agent.id);
+                    try {
+                      await api.patch(`/masters/overseas-agents/${agent.id}`, { isActive: !agent.isActive });
+                      setAgents((prev) => prev.map((x) => (x.id === agent.id ? { ...x, isActive: !agent.isActive } : x)));
+                    } catch (err: any) {
+                      alert(err?.message || 'تعذر تغيير حالة الوكيل');
+                    } finally {
+                      setBusyId(null);
+                    }
+                  }}
+                  disabled={busyId === agent.id}
+                  className={`p-1.5 rounded-lg transition cursor-pointer disabled:opacity-50 shrink-0 ${
+                    agent.isActive ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                  }`}
+                  title={agent.isActive ? 'إيقاف الوكيل (لن يظهر في قوائم الاختيار)' : 'إعادة تفعيل الوكيل'}
+                >
+                  <Power className={`w-3.5 h-3.5 ${busyId === agent.id ? 'animate-pulse' : ''}`} />
+                </button>
               </div>
 
               <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
@@ -142,14 +171,32 @@ export const OverseasAgentsPage: React.FC = () => {
       )}
 
       <CreateAgentModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={(newAgent) => setAgents((prev) => [newAgent, ...prev])} />
+
+      {editingAgent && (
+        <CreateAgentModal
+          isOpen={!!editingAgent}
+          onClose={() => setEditingAgent(null)}
+          initial={editingAgent}
+          onSuccess={(a) => setAgents((prev) => prev.map((x) => (x.id === a.id ? a : x)))}
+        />
+      )}
     </div>
   );
 };
 
-const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; onSuccess: (agent: OverseasAgent) => void }> = ({ isOpen, onClose, onSuccess }) => {
-  const [form, setForm] = useState({ name: '', countryCode: '', city: '', contactPerson: '', contactEmail: '', contactPhone: '', specialization: '' });
+const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial?: OverseasAgent | null; onSuccess: (agent: OverseasAgent) => void }> = ({ isOpen, onClose, initial, onSuccess }) => {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    countryCode: initial?.countryCode || '',
+    city: initial?.city || '',
+    contactPerson: initial?.contactPerson || '',
+    contactEmail: initial?.contactEmail || '',
+    contactPhone: initial?.contactPhone || '',
+    specialization: initial?.specialization || '',
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEdit = !!initial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,20 +219,21 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; onSucce
       if (form.contactPhone.trim()) payload.contactPhone = form.contactPhone.trim();
       if (form.specialization.trim()) payload.specialization = form.specialization.trim();
 
-      const created: any = await api.post('/masters/overseas-agents', payload);
+      const saved: any = isEdit
+        ? await api.patch(`/masters/overseas-agents/${initial!.id}`, payload)
+        : await api.post('/masters/overseas-agents', payload);
       onSuccess({
-        id: created?.id || String(Date.now()),
-        name: created?.name ?? payload.name,
-        countryCode: created?.countryCode ?? payload.countryCode,
-        city: created?.city ?? payload.city,
-        contactPerson: created?.contactPerson ?? payload.contactPerson ?? null,
-        contactEmail: created?.contactEmail ?? payload.contactEmail ?? null,
-        contactPhone: created?.contactPhone ?? payload.contactPhone ?? null,
-        specialization: created?.specialization ?? payload.specialization ?? null,
-        isActive: created?.isActive !== false,
+        id: saved?.id || initial?.id || String(Date.now()),
+        name: saved?.name ?? payload.name,
+        countryCode: saved?.countryCode ?? payload.countryCode,
+        city: saved?.city ?? payload.city,
+        contactPerson: saved?.contactPerson ?? payload.contactPerson ?? null,
+        contactEmail: saved?.contactEmail ?? payload.contactEmail ?? null,
+        contactPhone: saved?.contactPhone ?? payload.contactPhone ?? null,
+        specialization: saved?.specialization ?? payload.specialization ?? null,
+        isActive: saved?.isActive !== false,
       });
       onClose();
-      setForm({ name: '', countryCode: '', city: '', contactPerson: '', contactEmail: '', contactPhone: '', specialization: '' });
     } catch (err: any) {
       setError(err?.message || 'تعذر حفظ الوكيل — حاول مجدداً');
     } finally {
@@ -246,7 +294,7 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; onSucce
           <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer">إلغاء</button>
           <button type="submit" disabled={saving} className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-sm font-semibold shadow-md shadow-brand-600/20 transition flex items-center gap-2 cursor-pointer">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ الوكيل'}</span>
+            <span>{saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ الوكيل'}</span>
           </button>
         </div>
       </form>
