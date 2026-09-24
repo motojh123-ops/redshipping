@@ -29,6 +29,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   onSuccess,
 }) => {
   const [shippingLines, setShippingLines] = useState<any[]>([]);
+  const [overseasAgents, setOverseasAgents] = useState<any[]>([]);
   const { data: clients = [] } = useClients();
   const createShipmentMutation = useCreateShipment();
 
@@ -75,7 +76,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      api.get('/masters/shipping-lines').then((res: any) => setShippingLines(res || [])).catch(() => {});
+      api.get('/masters/shipping-lines').then((res: any) => setShippingLines(Array.isArray(res) ? res : res?.data || [])).catch(() => {});
+      api.get('/masters/overseas-agents').then((res: any) => setOverseasAgents(Array.isArray(res) ? res : res?.data || [])).catch(() => {});
     }
   }, [isOpen]);
 
@@ -155,6 +157,27 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              وكيل الخارج (Origin Agent)
+            </label>
+            <select
+              {...register('overseasAgentId')}
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">-- بدون وكيل خارجي --</option>
+              {overseasAgents.map((ag) => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.name} {ag.city ? `(${ag.city})` : ''}
+                </option>
+              ))
+              }
+            </select>
+          </div>
+        </div>
+
+        {/* Row: B/L + Booking ref */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               رقم بوليصة الشحن (B/L Number)
             </label>
             <input
@@ -164,6 +187,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 font-mono font-bold"
             />
           </div>
+          <div className="md:col-span-2" />
         </div>
 
         {/* Row: Global Ports Selection (POL & POD) */}

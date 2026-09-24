@@ -30,6 +30,7 @@ import {
   Globe,
   Sparkles,
   Layers,
+  Contact,
 } from 'lucide-react';
 import { useThemeStore } from '../../store/themeStore';
 
@@ -187,6 +188,7 @@ export const Sidebar: React.FC = () => {
         { to: '/masters/ports', labelAr: 'سجل الموانئ (UN/LOCODE)', labelEn: 'Ports & Terminals', icon: MapPin, badge: 'Global' },
         { to: '/masters/shipping-lines', labelAr: 'خطوط الملاحة والاتصالات', labelEn: 'Shipping Lines', icon: Ship },
         { to: '/masters/vendors', labelAr: 'الموردين (نقل وتخليص)', labelEn: 'Vendors & Fleet', icon: Truck },
+        { to: '/masters/drivers', labelAr: 'السائقون وأسطول النقل', labelEn: 'Drivers Registry', icon: Contact },
         { to: '/masters/overseas-agents', labelAr: 'وكلاء الشحن بالخارج', labelEn: 'Overseas Agents', icon: Globe2 },
         { to: '/reports', labelAr: 'لوحة التحليلات والتقارير', labelEn: 'Analytics & Reports', icon: BarChart3 },
         { to: '/notifications', labelAr: 'مركز الإشعارات', labelEn: 'Notifications', icon: Bell, badge: '4' },

@@ -43,6 +43,16 @@ export class MastersController {
     return this.mastersService.createVendor(tenantId, data);
   }
 
+  @Get('drivers')
+  async getDrivers(@TenantId() tenantId: string) {
+    return this.mastersService.getDrivers(tenantId);
+  }
+
+  @Post('drivers')
+  async createDriver(@TenantId() tenantId: string, @Body() data: any) {
+    return this.mastersService.createDriver(tenantId, data);
+  }
+
   @Get('charge-items')
   async getChargeItems(
     @TenantId() tenantId: string,

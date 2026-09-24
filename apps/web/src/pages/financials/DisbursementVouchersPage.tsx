@@ -73,6 +73,8 @@ export const DisbursementVouchersPage: React.FC = () => {
   const { t } = useTranslation();
   const [vouchers, setVouchers] = useState<DisbursementVoucher[]>([]);
   const [liveShipments, setLiveShipments] = useState<any[]>([]);
+  const [liveVendors, setLiveVendors] = useState<any[]>([]);
+  const [useManualVendor, setUseManualVendor] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -86,6 +88,8 @@ export const DisbursementVouchersPage: React.FC = () => {
       api.get('/shipments'),
     ]).then(([vRes, sRes]) => {
       if (vRes.status === 'fulfilled' && vRes.value) {
+        const vList = Array.isArray(vRes.value) ? vRes.value : (vRes.value as any)?.data || [];
+        setLiveVendors(vList);
         setIsLiveConnected(true);
       }
       if (sRes.status === 'fulfilled') {
@@ -679,14 +683,51 @@ export const DisbursementVouchersPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">اسم المورد / الجهة المستفيدة *</label>
-              <input
-                type="text"
-                required
-                placeholder="مثال: ميرسك مصر / شركة الأمل للنقل / مكتب الرضوان للتخليص"
-                value={formData.vendorName}
-                onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-              />
+              {liveVendors.length > 0 && !useManualVendor ? (
+                <div className="flex items-center gap-2">
+                  <select
+                    required
+                    value={formData.vendorName}
+                    onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })}
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  >
+                    <option value="">-- اختر المورد من القائمة --</option>
+                    {liveVendors.map((v: any) => (
+                      <option key={v.id} value={v.name}>
+                        {v.name}{v.vendorType ? ` — ${v.vendorType === 'trucking' ? 'نقل بري' : v.vendorType === 'clearance' ? 'تخليص جمركي' : v.vendorType}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setUseManualVendor(true)}
+                    className="px-2.5 py-2 rounded-xl text-[11px] font-bold text-brand-600 bg-brand-50 dark:bg-brand-950/40 whitespace-nowrap transition"
+                    title="إدخال اسم مورد غير مسجل في القائمة"
+                  >
+                    ＋ جديد
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: ميرسك مصر / شركة الأمل للنقل / مكتب الرضوان للتخليص"
+                    value={formData.vendorName}
+                    onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })}
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                  {liveVendors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setUseManualVendor(false); setFormData({ ...formData, vendorName: '' }); }}
+                      className="px-2.5 py-2 rounded-xl text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 whitespace-nowrap transition"
+                    >
+                      ⟲ من القائمة
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>

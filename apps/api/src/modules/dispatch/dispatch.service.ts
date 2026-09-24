@@ -11,6 +11,7 @@ export interface DispatchTrip {
   containerType: string;
   pickupLocation: string;
   deliveryLocation: string;
+  driverId?: string | null;
   driverName: string;
   driverPhone: string;
   truckPlate: string;
@@ -49,6 +50,7 @@ export class DispatchService {
       containerType: t.containerType ?? '',
       pickupLocation: t.pickupLocation ?? '',
       deliveryLocation: t.deliveryLocation ?? '',
+      driverId: t.driverId ?? null,
       driverName: t.driverName ?? '',
       driverPhone: t.driverPhone ?? '',
       truckPlate: t.truckPlate ?? '',
@@ -128,20 +130,40 @@ export class DispatchService {
       shipmentId = shipment?.id ?? null;
     }
 
+    // Resolve optional driver from the drivers master (tenant-scoped); snapshot its data onto the trip
+    let driverId: string | null = null;
+    let driverSnapshot: { driverName?: string | null; driverPhone?: string | null; truckPlate?: string | null; truckType?: string | null } = {};
+    if (dto.driverId) {
+      const driver = await this.prisma.driver.findFirst({
+        where: { id: dto.driverId, companyId: tenantId },
+        select: { id: true, name: true, phone: true, truckPlate: true, truckType: true },
+      });
+      if (driver) {
+        driverId = driver.id;
+        driverSnapshot = {
+          driverName: driver.name,
+          driverPhone: driver.phone,
+          truckPlate: driver.truckPlate,
+          truckType: driver.truckType,
+        };
+      }
+    }
+
     const newTrip = await this.prisma.dispatchTrip.create({
       data: {
         companyId: tenantId,
         shipmentId,
+        driverId,
         tripNumber,
         clientName: String(dto.clientName || '—').trim(),
         containerNumber: dto.containerNumber || null,
         containerType: dto.containerType || null,
         pickupLocation: dto.pickupLocation || null,
         deliveryLocation: dto.deliveryLocation || null,
-        driverName: dto.driverName || null,
-        driverPhone: dto.driverPhone || null,
-        truckPlate: dto.truckPlate || null,
-        truckType: dto.truckType || null,
+        driverName: dto.driverName || driverSnapshot.driverName || null,
+        driverPhone: dto.driverPhone || driverSnapshot.driverPhone || null,
+        truckPlate: dto.truckPlate || driverSnapshot.truckPlate || null,
+        truckType: dto.truckType || driverSnapshot.truckType || null,
         status: 'scheduled',
         scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : null,
         costRate: Number(dto.costRate) || 0,

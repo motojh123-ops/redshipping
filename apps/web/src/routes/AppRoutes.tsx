@@ -19,6 +19,7 @@ import { PortsPage } from '../pages/masters/PortsPage';
 import { ShippingLinesPage } from '../pages/masters/ShippingLinesPage';
 import { OverseasAgentsPage } from '../pages/masters/OverseasAgentsPage';
 import { VendorsPage } from '../pages/masters/VendorsPage';
+import { DriversPage } from '../pages/masters/DriversPage';
 import { SettingsPage } from '../pages/settings/SettingsPage';
 import { PricingMatrixPage } from '../pages/pricing/PricingMatrixPage';
 import { StatementOfAccountPage } from '../pages/financials/StatementOfAccountPage';
@@ -83,6 +84,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="masters/shipping-lines" element={<ShippingLinesPage />} />
         <Route path="masters/overseas-agents" element={<OverseasAgentsPage />} />
         <Route path="masters/vendors" element={<VendorsPage />} />
+        <Route path="masters/drivers" element={<DriversPage />} />
 
         {/* Reports & Analytics */}
         <Route path="reports" element={<ReportsDashboardPage />} />

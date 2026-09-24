@@ -156,6 +156,46 @@ export class MastersService {
     }
   }
 
+  // =================== DRIVERS (السائقون) ===================
+  async getDrivers(tenantId: string) {
+    try {
+      return await this.prisma.driver.findMany({
+        where: { companyId: tenantId, isActive: true },
+        orderBy: { name: 'asc' },
+      });
+    } catch (err) {
+      this.logger.warn('Database offline, returning empty drivers list');
+      return [];
+    }
+  }
+
+  async createDriver(tenantId: string, data: any) {
+    try {
+      return await this.prisma.driver.create({
+        data: {
+          name: String(data.name || '').trim(),
+          phone: data.phone || null,
+          nationalId: data.nationalId || null,
+          licenseNumber: data.licenseNumber || null,
+          licenseExpiry: data.licenseExpiry ? new Date(data.licenseExpiry) : null,
+          truckPlate: data.truckPlate || null,
+          trailerPlate: data.trailerPlate || null,
+          truckType: data.truckType || null,
+          vendorId: data.vendorId || null,
+          notes: data.notes || null,
+          companyId: tenantId,
+        },
+      });
+    } catch (err) {
+      return {
+        id: `driver-${Date.now()}`,
+        ...data,
+        companyId: tenantId,
+        isActive: true,
+      };
+    }
+  }
+
   // =================== CHARGE ITEMS (البنود) ===================
   async getChargeItems(tenantId: string, context?: 'pricing' | 'quotation' | 'invoice') {
     try {

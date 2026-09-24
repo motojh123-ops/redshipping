@@ -61,6 +61,10 @@ export const DispatchBoardPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeOrderForPrint, setActiveOrderForPrint] = useState<DispatchOrder | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
+  // Masters data: trucking vendors + drivers (linked from السجل الرئيسي)
+  const [truckingVendors, setTruckingVendors] = useState<any[]>([]);
+  const [availableDrivers, setAvailableDrivers] = useState<any[]>([]);
+  const [selectedDriverId, setSelectedDriverId] = useState('');
 
   useEffect(() => {
     api.get('/shipments')
@@ -103,6 +107,34 @@ export const DispatchBoardPage: React.FC = () => {
       })
       .catch(() => setIsLiveConnected(false));
   }, []);
+
+  // Load trucking vendors & drivers from the masters registry
+  useEffect(() => {
+    api.get('/masters/vendors').then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setTruckingVendors(list.filter((v: any) => v.vendorType === 'trucking'));
+    }).catch(() => {});
+    api.get('/masters/drivers').then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setAvailableDrivers(list);
+    }).catch(() => {});
+  }, []);
+
+  // Autofill driver fields when a master driver is selected
+  const handleSelectDriver = (driverId: string) => {
+    setSelectedDriverId(driverId);
+    const d = availableDrivers.find((x: any) => x.id === driverId);
+    if (d) {
+      setNewOrder((prev) => ({
+        ...prev,
+        driverName: d.name || prev.driverName,
+        driverPhone: d.phone || prev.driverPhone,
+        driverNationalId: d.nationalId || prev.driverNationalId,
+        truckHeadPlate: d.truckPlate || prev.truckHeadPlate,
+        trailerPlate: d.trailerPlate || prev.trailerPlate,
+      }));
+    }
+  };
 
   // EIR Clean Return Modal State
   const [isEirModalOpen, setIsEirModalOpen] = useState(false);
@@ -648,13 +680,40 @@ export const DispatchBoardPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">شركة النقل البري</label>
+                {truckingVendors.length > 0 ? (
+                  <select
+                    value={newOrder.truckingVendor}
+                    onChange={(e) => setNewOrder({ ...newOrder, truckingVendor: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
+                  >
+                    <option value="">-- اختر شركة النقل --</option>
+                    {truckingVendors.map((v: any) => (
+                      <option key={v.id} value={v.name}>{v.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={newOrder.truckingVendor}
+                    onChange={(e) => setNewOrder({ ...newOrder, truckingVendor: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">السائق (من السجل الرئيسي)</label>
                 <select
-                  value={newOrder.truckingVendor}
-                  onChange={(e) => setNewOrder({ ...newOrder, truckingVendor: e.target.value })}
+                  value={selectedDriverId}
+                  onChange={(e) => handleSelectDriver(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#0E121A] border border-slate-200 dark:border-[#1E2638] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white"
                 >
-                  <option value="شركة الإسكندرية لخدمات النقل البري والتريلات">شركة الإسكندرية لخدمات النقل البري</option>
-                  <option value="شركة النيل لنقل الحاويات الثقيلة">شركة النيل لنقل الحاويات الثقيلة</option>
+                  <option value="">-- إدخال يدوي / اختر سائق --</option>
+                  {availableDrivers.map((d: any) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}{d.truckPlate ? ` — ${d.truckPlate}` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 

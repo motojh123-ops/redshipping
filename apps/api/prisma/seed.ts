@@ -233,6 +233,28 @@ async function main() {
   }
   console.log('✅ Created Demo Clients');
 
+  // 8b. Create Demo Drivers (السائقون) linked to the trucking vendor
+  const truckingVendor = await prisma.vendor.findFirst({
+    where: { companyId: company.id, vendorType: VendorType.trucking },
+  });
+  const drivers = [
+    { name: 'محمود عبد الرحمن', phone: '+20 111 234 5601', nationalId: '30101011202345', licenseNumber: 'EG-DL-771201', truckPlate: 'ق ط ر 1234', trailerPlate: 'ق ط ر 5678', truckType: 'رأس دبلو 40 قدم' },
+    { name: 'سيد كامل إبراهيم', phone: '+20 111 234 5602', nationalId: '30203021202346', licenseNumber: 'EG-DL-771202', truckPlate: 'ر ن ل 4321', trailerPlate: 'ر ن ل 8765', truckType: 'رأس دبلو 20 قدم' },
+    { name: 'عادل مصطفى فهمي', phone: '+20 111 234 5603', nationalId: '30305031202347', licenseNumber: 'EG-DL-771203', truckPlate: 'ب س ن 9012', trailerPlate: 'ب س ن 3456', truckType: 'رأس تريلا 40 قدم' },
+  ];
+
+  for (const dr of drivers) {
+    const existing = await prisma.driver.findFirst({
+      where: { companyId: company.id, name: dr.name },
+    });
+    if (!existing) {
+      await prisma.driver.create({
+        data: { ...dr, vendorId: truckingVendor?.id, companyId: company.id },
+      });
+    }
+  }
+  console.log('✅ Created 3 Demo Drivers linked to the trucking vendor');
+
   // 9. Create Demo Shipments with ports, containers & full event timelines (ملفات الشحن)
   const ahramClient = await prisma.client.findFirst({ where: { companyId: company.id, name: 'Al-Ahram Food Industries' } });
   const deltaClient = await prisma.client.findFirst({ where: { companyId: company.id, name: 'Delta Chemicals & Polymers' } });

@@ -8,6 +8,49 @@ import {
   searchPorts,
   getPortByCode,
 } from '../../data/worldPorts';
+import { api } from '../../services/api';
+
+/** Ports added by the user in Masters (from /masters/ports), merged into the picker */
+let livePortsCache: PortDefinition[] | null = null;
+let livePortsPromise: Promise<PortDefinition[]> | null = null;
+
+async function fetchLivePorts(): Promise<PortDefinition[]> {
+  if (livePortsCache) return livePortsCache;
+  if (!livePortsPromise) {
+    livePortsPromise = api
+      .get('/masters/ports')
+      .then((res: any) => {
+        const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+        const staticCodes = new Set(Object.keys(WORLD_PORTS));
+        // Map DB rows to the PortDefinition shape used by the picker; skip duplicates of the static dataset
+        livePortsCache = list
+          .filter((p: any) => p?.code && !staticCodes.has(String(p.code).toUpperCase()))
+          .map((p: any) => ({
+            unlocode: String(p.code).toUpperCase(),
+            name: p.nameEn || p.code,
+            nameAr: p.nameAr || '',
+            country: p.nameAr || p.nameEn || '',
+            countryCode: p.countryCode || '',
+            flagEmoji: '🏴',
+            coordinates: { lat: 0, lng: 0 },
+            portType: p.portType === 'dry' ? 'dry' : 'sea',
+            region: p.countryCode === 'EG' ? 'Egypt' : undefined,
+            terminals: [],
+          })) as PortDefinition[];
+        return livePortsCache;
+      })
+      .catch(() => {
+        livePortsPromise = null;
+        return [];
+      });
+  }
+  return livePortsPromise;
+}
+
+/**
+ * PortOptions: Renders grouped <optgroup> and <option> tags for native HTML <select> elements.
+ * Ideal for quick drop-in replacement into existing native selects across the app.
+ */
 
 /**
  * PortOptions: Renders grouped <optgroup> and <option> tags for native HTML <select> elements.
@@ -87,10 +130,22 @@ export const PortSelect: React.FC<PortSelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRegionFilter, setActiveRegionFilter] = useState<string>('all');
+  const [livePorts, setLivePorts] = useState<PortDefinition[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selectedPort = getPortByCode(value);
+  // Merge ports added from Masters (module-level cache avoids refetching per instance)
+  useEffect(() => {
+    let mounted = true;
+    fetchLivePorts().then((ports) => {
+      if (mounted) setLivePorts(ports);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const selectedPort = getPortByCode(value) || livePorts.find((p) => p.unlocode === value);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -103,11 +158,28 @@ export const PortSelect: React.FC<PortSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filtered ports
-  const filteredPorts = searchPorts(searchQuery, {
+  // Filtered ports: static world dataset + live master ports (deduped by UN/LOCODE)
+  const staticFiltered = searchPorts(searchQuery, {
     region: activeRegionFilter === 'all' ? undefined : activeRegionFilter,
     portType: preferredPortType,
   });
+  const staticFilteredCodes = new Set(staticFiltered.map((p) => p.unlocode));
+  const liveFiltered = livePorts.filter((p) => {
+    if (activeRegionFilter !== 'all' && p.region !== activeRegionFilter) return false;
+    if (preferredPortType && (p.portType || 'sea') !== preferredPortType) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return (
+        p.unlocode.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        (p.nameAr || '').includes(searchQuery) ||
+        p.countryCode.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+  const filteredPorts = [...staticFiltered, ...liveFiltered.filter((lp) => !staticFilteredCodes.has(lp.unlocode))];
+  const totalPortsCount = Object.keys(WORLD_PORTS).length + livePorts.length;
 
   const handleSelect = (port: PortDefinition) => {
     onChange(port.unlocode, port);
@@ -216,7 +288,7 @@ export const PortSelect: React.FC<PortSelectProps> = ({
                     : 'bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300'
                 }`}
               >
-                الكل ({Object.keys(WORLD_PORTS).length})
+                الكل ({totalPortsCount})
               </button>
               {PORT_REGIONS_ORDER.map((reg) => (
                 <button
@@ -294,7 +366,7 @@ export const PortSelect: React.FC<PortSelectProps> = ({
 
           {/* Footer Info */}
           <div className="p-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/30 flex items-center justify-between text-[10px] text-slate-400">
-            <span>إجمالي الموانئ العالمية: {Object.keys(WORLD_PORTS).length} ميناء</span>
+            <span>إجمالي الموانئ العالمية: {totalPortsCount} ميناء</span>
             <span className="font-mono">RED SHIPPING UN/LOCODE</span>
           </div>
         </div>
