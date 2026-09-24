@@ -1,9 +1,9 @@
-import { Injectable, UnauthorizedException, OnModuleInit, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, UnauthorizedException, OnModuleInit, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
-import { LoginDto, RefreshTokenDto } from './dto/login.dto';
+import { ChangePasswordDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto/login.dto';
 import { JwtPayload } from './jwt.strategy';
 
 @Injectable()
@@ -100,6 +100,65 @@ export class AuthService implements OnModuleInit {
       email: user.email,
       role: user.role,
       companyId: user.companyId,
+    });
+  }
+
+  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto) {
+    const cleanEmail = (updateProfileDto.email || '').trim().toLowerCase();
+
+    // Prevent taking another user's email within the same company
+    const emailTaken = await this.prisma.user.findFirst({
+      where: {
+        companyId: (await this.prisma.user.findUnique({ where: { id: userId }, select: { companyId: true } }))?.companyId,
+        email: cleanEmail,
+        id: { not: userId },
+      },
+    });
+    if (emailTaken) {
+      throw new ConflictException('This email is already used by another user in your company');
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: updateProfileDto.name.trim(),
+        email: cleanEmail,
+        phone: updateProfileDto.phone?.trim() || null,
+      },
+      include: { company: true },
+    });
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      companyId: user.companyId,
+      companyName: user.company?.name || '',
+      currencyDefault: user.company?.currencyDefault || 'USD',
+    };
+  }
+
+  async changePassword(userId: string, changePasswordDto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const currentValid = await bcrypt.compare(changePasswordDto.currentPassword, user.passwordHash);
+    if (!currentValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (changePasswordDto.currentPassword === changePasswordDto.newPassword) {
+      throw new ConflictException('New password must be different from the current password');
+    }
+
+    const passwordHash = await bcrypt.hash(changePasswordDto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
     });
   }
 

@@ -52,9 +52,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: user.id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       companyId: user.companyId,
       companyName: user.company?.name || '',
+      lastLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt,
     };
   }
 }

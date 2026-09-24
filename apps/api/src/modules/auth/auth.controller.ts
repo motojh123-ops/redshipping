@@ -1,6 +1,6 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Patch } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto } from './dto/login.dto';
+import { ChangePasswordDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto/login.dto';
 import { Public } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,5 +27,19 @@ export class AuthController {
   @Get('me')
   async getProfile(@CurrentUser() user: any) {
     return user;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  async updateProfile(@CurrentUser('id') userId: string, @Body() updateProfileDto: UpdateProfileDto) {
+    return this.authService.updateProfile(userId, updateProfileDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(@CurrentUser('id') userId: string, @Body() changePasswordDto: ChangePasswordDto) {
+    await this.authService.changePassword(userId, changePasswordDto);
+    return { message: 'Password updated successfully' };
   }
 }
