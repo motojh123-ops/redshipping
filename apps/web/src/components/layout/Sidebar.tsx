@@ -276,7 +276,8 @@ export const Sidebar: React.FC = () => {
                 <button
                   key={portal.key}
                   onClick={() => handlePortalClick(portal)}
-                  className={`group relative flex flex-col items-center justify-center w-12 h-12 rounded-2xl transition-all duration-200 ${
+                  aria-label={isArabic ? portal.titleAr : portal.titleEn}
+                  className={`group relative flex flex-col items-center justify-center w-12 h-12 rounded-2xl transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[#FF5E1E]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#0E121A] ${
                     isActive
                       ? 'bg-gradient-to-br from-[#FF5E1E] to-[#EA580C] text-white shadow-lg shadow-orange-500/35 scale-105'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#181D2A]'
@@ -309,7 +310,8 @@ export const Sidebar: React.FC = () => {
           {/* Quick Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:bg-slate-100 dark:hover:bg-[#181D2A] transition-colors"
+            aria-label={isDark ? 'Light Mode' : 'Dark Mode'}
+            className="w-10 h-10 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#FF5E1E]/60 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:bg-slate-100 dark:hover:bg-[#181D2A] transition-colors"
             title={isDark ? 'Light Mode' : 'Dark Mode'}
           >
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
@@ -318,7 +320,8 @@ export const Sidebar: React.FC = () => {
           {/* Language Toggle */}
           <button
             onClick={toggleLanguage}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:bg-slate-100 dark:hover:bg-[#181D2A] text-xs font-bold transition-colors"
+            aria-label="Switch Language"
+            className="w-10 h-10 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#FF5E1E]/60 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:bg-slate-100 dark:hover:bg-[#181D2A] text-xs font-bold transition-colors"
             title="Switch Language"
           >
             {isArabic ? 'EN' : 'ع'}
@@ -353,7 +356,8 @@ export const Sidebar: React.FC = () => {
             {/* Collapse Drawer Button */}
             <button
               onClick={() => setIsDrawerOpen(false)}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-[#1E2638] transition-colors shrink-0"
+              aria-label="Collapse Portal Panel"
+              className="p-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[#FF5E1E]/60 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-[#1E2638] transition-colors shrink-0"
               title="Collapse Portal Panel"
             >
               {isArabic ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -435,6 +439,7 @@ export const Sidebar: React.FC = () => {
         <div className="relative">
           <button
             onClick={() => setIsDrawerOpen(true)}
+            aria-label="Expand Portal Panel"
             className={`absolute top-4 ${
               isArabic ? 'left-2' : 'right-2'
             } z-30 p-2 rounded-xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#1E2638] text-slate-500 dark:text-slate-300 hover:text-[#FF5E1E] shadow-md transition-all hover:scale-105`}

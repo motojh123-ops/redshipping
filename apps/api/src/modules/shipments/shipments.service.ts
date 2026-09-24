@@ -48,11 +48,18 @@ export class ShipmentsService {
     return this.prisma.shipment.findMany({
       where,
       include: {
-        client: { select: { id: true, name: true } },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            contacts: { select: { phone: true, mobile: true, isPrimary: true } },
+          },
+        },
         originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
         destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
         shippingLine: { select: { id: true, name: true } },
         containers: true,
+        customsDossier: true,
         events: {
           include: { changedBy: { select: { id: true, name: true } } },
           orderBy: { eventAt: 'desc' },

@@ -16,12 +16,13 @@ import {
   Globe2,
   Anchor,
   Package,
-  Loader2,
   Inbox,
 } from 'lucide-react';
 import { StatCard } from '../../components/ui/StatCard';
+import { SkeletonCard, SkeletonTable } from '../../components/ui/Skeleton';
 import { exportToCsv } from '../../utils/exportUtils';
 import { api } from '../../services/api';
+import { toast } from 'sonner';
 
 export const ReportsDashboardPage: React.FC = () => {
   const [period, setPeriod] = useState('ytd');
@@ -34,8 +35,8 @@ export const ReportsDashboardPage: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     Promise.allSettled([
-      api.get('/reports/kpi-summary'),
-      api.get('/reports/lanes-performance'),
+      api.get('/reports/kpi-summary', { params: { period } }),
+      api.get('/reports/lanes-performance', { params: { period } }),
       api.get('/clients'),
     ]).then(([kpiRes, lanesRes, clientsRes]) => {
       if (kpiRes.status === 'fulfilled' && kpiRes.value && typeof kpiRes.value === 'object') {
@@ -53,7 +54,7 @@ export const ReportsDashboardPage: React.FC = () => {
       }
       setLoading(false);
     });
-  }, []);
+  }, [period]);
 
   const monthlyTrend = kpiData?.monthlyRevenueTrend || [];
   const carriers = kpiData?.carrierMarketShare || [];
@@ -77,11 +78,25 @@ export const ReportsDashboardPage: React.FC = () => {
     </div>
   );
 
+  /* Client has no phone/email columns — they live on ClientContact */
+  const primaryContact = (c: any) =>
+    c?.contacts?.find((x: any) => x.isPrimary) || c?.contacts?.[0] || null;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 text-[#FF5E1E] animate-spin" />
-        <span className="mr-3 text-sm text-slate-500">جارٍ تحميل بيانات التقارير...</span>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-7 w-48 animate-shimmer rounded-lg bg-slate-200/80 dark:bg-[#1E2638]" />
+            <div className="h-3.5 w-72 animate-shimmer rounded-lg bg-slate-200/80 dark:bg-[#1E2638]" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <SkeletonTable rows={6} cols={5} />
       </div>
     );
   }
@@ -95,15 +110,34 @@ export const ReportsDashboardPage: React.FC = () => {
           <p className="text-sm text-slate-500 mt-1">لوحة أداء شاملة — الإيرادات، المبيعات، المسارات التجارية، ومؤشرات الأداء</p>
         </div>
         <div className="flex items-center gap-2">
-          <select value={period} onChange={(e) => setPeriod(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300">
+          <select value={period} onChange={(e) => setPeriod(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E2638] text-xs font-medium text-slate-700 dark:text-slate-300">
             <option value="ytd">منذ بداية السنة</option>
             <option value="q3">الربع الثالث 2026</option>
             <option value="q2">الربع الثاني 2026</option>
             <option value="q1">الربع الأول 2026</option>
             <option value="last30">آخر 30 يوم</option>
           </select>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium text-slate-600 dark:text-slate-300 transition">
-            <Download className="w-4 h-4" /> تقرير PDF
+          <button
+            onClick={() => {
+              exportToCsv(
+                'reports_summary',
+                [
+                  ...monthlyTrend.map((m: any) => ({ section: 'monthly', month: m.month, revenue: m.revenue, cost: m.cost, profit: m.profit })),
+                  ...lanesData.map((l: any) => ({ section: 'lane', month: l.lane, revenue: l.shipmentsCount, cost: l.averageTransitDays, profit: l.averageMarginPercent })),
+                ],
+                [
+                  { header: 'القسم', accessor: (r: any) => r.section },
+                  { header: 'الشهر/المسار', accessor: (r: any) => r.month },
+                  { header: 'القيمة 1', accessor: (r: any) => r.revenue },
+                  { header: 'القيمة 2', accessor: (r: any) => r.cost },
+                  { header: 'القيمة 3', accessor: (r: any) => r.profit },
+                ],
+              );
+              toast.success('تم تصدير ملخص التقارير (CSV)');
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-[#262E40] hover:bg-slate-50 dark:hover:bg-[#1E2638] text-sm font-medium text-slate-600 dark:text-slate-300 transition"
+          >
+            <Download className="w-4 h-4" /> تصدير CSV
           </button>
         </div>
       </div>
@@ -117,7 +151,7 @@ export const ReportsDashboardPage: React.FC = () => {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex items-center gap-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-1.5">
+      <div className="flex items-center gap-1 bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] p-1.5">
         {[
           { key: 'overview', label: 'نظرة عامة', icon: BarChart3 },
           { key: 'routes', label: 'المسارات التجارية', icon: Globe2 },
@@ -133,27 +167,28 @@ export const ReportsDashboardPage: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Revenue Chart (from API monthly trend) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6">
+          <div className="bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] p-6">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">الإيرادات الشهرية (EGP)</h3>
-            {monthlyTrend.length > 0 ? (
+            {monthlyTrend.some((m: any) => m.revenue > 0 || m.cost > 0) ? (
               <>
                 <div className="flex items-end gap-3 h-52">
                   {monthlyTrend.map((m: any, i: number) => {
                     const height = (m.revenue / maxRevenue) * 100;
                     const profitHeight = (m.profit / maxRevenue) * 100;
+                    const profitShare = height > 0 ? Math.min(100, (profitHeight / height) * 100) : 0;
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
                         <span className="text-[9px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition">{(m.revenue / 1000).toFixed(0)}K</span>
                         <div className="w-full relative" style={{ height: `${height}%` }}>
                           <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-brand-500/80 transition-all group-hover:bg-brand-600" style={{ height: '100%' }} />
-                          <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-emerald-400/60" style={{ height: `${profitHeight / height * 100}%` }} />
+                          <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-emerald-400/60" style={{ height: `${profitShare}%` }} />
                         </div>
                         <span className="text-[9px] font-medium text-slate-400 mt-1">{(m.month || '').substring(0, 3)}</span>
                       </div>
                     );
                   })}
                 </div>
-                <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 dark:border-[#262E40]">
                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-brand-500/80" /><span className="text-[10px] text-slate-500">الإيرادات</span></div>
                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-400/60" /><span className="text-[10px] text-slate-500">صافي الربح</span></div>
                 </div>
@@ -166,7 +201,7 @@ export const ReportsDashboardPage: React.FC = () => {
           {/* Carrier Market Share + Port KPIs */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Carrier Share */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6">
+            <div className="bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] p-6">
               <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">حصة الخطوط الملاحية</h3>
               {carriers.length > 0 ? (
                 <div className="space-y-3">
@@ -181,7 +216,7 @@ export const ReportsDashboardPage: React.FC = () => {
                             <span className="text-xs font-bold text-slate-800 dark:text-white">{c.sharePercent}%</span>
                           </div>
                         </div>
-                        <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-2 bg-slate-100 dark:bg-[#1E2638] rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${colors[i % colors.length]} transition-all duration-700`} style={{ width: `${c.sharePercent}%` }} />
                         </div>
                       </div>
@@ -194,7 +229,7 @@ export const ReportsDashboardPage: React.FC = () => {
             </div>
 
             {/* Top Ports KPIs */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6">
+            <div className="bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] p-6">
               <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">أعلى الموانئ حسب الحجم</h3>
               {topPorts.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">
@@ -222,8 +257,8 @@ export const ReportsDashboardPage: React.FC = () => {
       {/* ===== Routes Tab ===== */}
       {activeTab === 'routes' && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-[#262E40]">
               <h3 className="text-sm font-bold text-slate-800 dark:text-white">أكثر المسارات التجارية نشاطاً</h3>
               <p className="text-[10px] text-slate-400 mt-0.5">ترتيب حسب عدد الشحنات والإيرادات</p>
             </div>
@@ -231,7 +266,7 @@ export const ReportsDashboardPage: React.FC = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-slate-800">
+                    <tr className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-[#262E40]">
                       <th className="text-start px-6 py-3 font-semibold text-slate-500">#</th>
                       <th className="text-start px-4 py-3 font-semibold text-slate-500">المسار</th>
                       <th className="text-center px-4 py-3 font-semibold text-slate-500">عدد الشحنات</th>
@@ -243,13 +278,13 @@ export const ReportsDashboardPage: React.FC = () => {
                   <tbody>
                     {lanesData.map((lane: any, i: number) => {
                       const statusMap: Record<string, { label: string; cls: string }> = {
-                        high_demand: { label: 'طلب مرتفع', cls: 'bg-rose-100 text-rose-700' },
-                        fast_transit: { label: 'عبور سريع', cls: 'bg-sky-100 text-sky-700' },
-                        steady: { label: 'مستقر', cls: 'bg-emerald-100 text-emerald-700' },
+                        high_demand: { label: 'طلب مرتفع', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' },
+                        fast_transit: { label: 'عبور سريع', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' },
+                        steady: { label: 'مستقر', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
                       };
                       const st = statusMap[lane.status] || { label: lane.status, cls: 'bg-slate-100 text-slate-600' };
                       return (
-                        <tr key={i} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                        <tr key={i} className="border-b border-slate-100 dark:border-[#262E40] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                           <td className="px-6 py-4">
                             {i === 0 ? <span className="text-amber-500 font-bold">🥇</span> :
                               i === 1 ? <span className="text-slate-400 font-bold">🥈</span> :
@@ -284,15 +319,15 @@ export const ReportsDashboardPage: React.FC = () => {
       {/* ===== Clients Tab ===== */}
       {activeTab === 'clients' && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-[#181D2A] rounded-2xl border border-slate-200/80 dark:border-[#262E40] overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-[#262E40]">
               <h3 className="text-sm font-bold text-slate-800 dark:text-white">العملاء المسجلين</h3>
             </div>
             {clientsData.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-slate-800">
+                    <tr className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-[#262E40]">
                       <th className="text-start px-6 py-3 font-semibold text-slate-500">#</th>
                       <th className="text-start px-4 py-3 font-semibold text-slate-500">العميل</th>
                       <th className="text-center px-4 py-3 font-semibold text-slate-500">البريد الإلكتروني</th>
@@ -301,7 +336,7 @@ export const ReportsDashboardPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {clientsData.map((client: any, i: number) => (
-                      <tr key={client.id || i} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                      <tr key={client.id || i} className="border-b border-slate-100 dark:border-[#262E40] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                         <td className="px-6 py-4">
                           <span className="font-bold text-slate-400">{i + 1}</span>
                         </td>
@@ -311,8 +346,8 @@ export const ReportsDashboardPage: React.FC = () => {
                             <span className="font-semibold text-slate-800 dark:text-white">{client.name || client.companyName || '—'}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center text-slate-500">{client.email || '—'}</td>
-                        <td className="px-4 py-4 text-center text-slate-500">{client.phone || '—'}</td>
+                        <td className="px-4 py-4 text-center text-slate-500">{client.email || primaryContact(client)?.email || '—'}</td>
+                        <td className="px-4 py-4 text-center text-slate-500">{primaryContact(client)?.mobile || primaryContact(client)?.phone || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

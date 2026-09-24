@@ -126,6 +126,13 @@
     font-family: 'Thmanya Sans', 'Ghaith Sans', system-ui, sans-serif;
     letter-spacing: normal;
   }
+
+  /* Accessible focus ring for interactive elements (keyboard navigation) */
+  :focus-visible {
+    outline: 2px solid rgba(255, 94, 30, 0.7);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 /* Glassmorphism & Card Utilities */
@@ -227,4 +234,69 @@
 
 .animate-speech-pop {
   animation: speech-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Skeleton Shimmer (Loading Placeholders) ─── */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.55) 45%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.dark .animate-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(255, 255, 255, 0) 70%
+  );
+}
+
+/* ─── Page Transition on Route Change ─── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Accessibility: Respect Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-page-enter,
+  .animate-mascot-float,
+  .animate-mascot-wave,
+  .animate-radar-pulse,
+  .animate-speech-pop {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

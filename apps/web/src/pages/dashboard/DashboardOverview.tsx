@@ -33,22 +33,27 @@ import {
   Container,
   Receipt,
   FileText,
+  Inbox,
+  type LucideIcon,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { CreateShipmentModal } from '../shipments/CreateShipmentModal';
 import { CreateQuotationModal } from '../quotations/CreateQuotationModal';
 import { AnimatedCaptainRed } from '../../components/ui/AnimatedCaptainRed';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { SkeletonCard, SkeletonListItem, SkeletonTable } from '../../components/ui/Skeleton';
 
 /* ============================================================
    Interactive Route Map Component (Fleetly Design)
    ============================================================ */
-const RouteMapCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }) => {
+const RouteMapCard: React.FC<{ activeShipment?: any; loading?: boolean }> = ({ activeShipment, loading }) => {
   const [zoom, setZoom] = useState(1);
 
-  const origin = activeShipment?.polPort?.nameAr || activeShipment?.pol || 'ميناء نينغبو (الصين)';
-  const destination = activeShipment?.podPort?.nameAr || activeShipment?.pod || 'ميناء الإسكندرية (مصر)';
-  const jobNo = activeShipment?.jobFileNumber || 'RED-2026-003';
+  if (loading) return <SkeletonCard className="h-64" />;
+
+  const origin = activeShipment?.originPort?.nameAr || activeShipment?.originPort?.nameEn || '—';
+  const destination = activeShipment?.destinationPort?.nameAr || activeShipment?.destinationPort?.nameEn || '—';
+  const jobNo = activeShipment?.jobFileNumber || '—';
 
   return (
     <div className="relative rounded-2xl overflow-hidden bg-slate-100 dark:bg-[#131722] border border-slate-200 dark:border-[#262E40] h-64 flex flex-col justify-between p-4 shadow-sm group">
@@ -127,8 +132,14 @@ const RouteMapCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }) =>
           </span>
         </div>
 
-        <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 backdrop-blur-sm">
-          جاري الإبحار
+        <span
+          className={`px-2 py-1 rounded-lg text-[10px] font-bold border backdrop-blur-sm ${
+            activeShipment
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+              : 'bg-slate-200/60 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-slate-300/50 dark:border-[#262E40]'
+          }`}
+        >
+          {activeShipment ? 'جاري الإبحار' : 'لا مسار نشط'}
         </span>
       </div>
 
@@ -165,9 +176,29 @@ const RouteMapCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }) =>
    Monthly Revenue Wave Chart — computed from REAL /invoices data
    ============================================================ */
 const MONTH_NAMES_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const MONTH_NAMES_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const USD_TO_EGP = 51.5;
 
+/* Progress % per shipment stage (real stage → visual progress) */
+const STAGE_PROGRESS: Record<string, number> = {
+  booking_confirmed: 10,
+  cargo_received: 20,
+  customs_submitted: 30,
+  acid_issued: 40,
+  in_transit: 55,
+  arrived_destination: 70,
+  clearance_in_progress: 80,
+  release_issued: 90,
+  out_for_delivery: 95,
+  delivered: 100,
+  closed: 100,
+  cancelled: 0,
+};
+
 const GlowingEarningsChart: React.FC<{ invoices: any[] }> = ({ invoices }) => {
+  const { i18n } = useTranslation();
+  const isArabic = i18n.language === 'ar';
+
   // Aggregate real invoice totals per month of the current year (consolidated to EGP)
   const data = useMemo(() => {
     const year = new Date().getFullYear();
@@ -180,8 +211,9 @@ const GlowingEarningsChart: React.FC<{ invoices: any[] }> = ({ invoices }) => {
       const egp = inv.currency === 'EGP' ? total : total * (Number(inv.exchangeRate) > 1 ? Number(inv.exchangeRate) : USD_TO_EGP);
       monthly[d.getMonth()] += egp;
     });
-    return monthly.map((v, i) => ({ m: MONTH_NAMES_AR[i], v: Math.round(v) }));
-  }, [invoices]);
+    const monthNames = isArabic ? MONTH_NAMES_AR : MONTH_NAMES_EN;
+    return monthly.map((v, i) => ({ m: monthNames[i], v: Math.round(v) }));
+  }, [invoices, isArabic]);
 
   const yearTotal = data.reduce((s, d) => s + d.v, 0);
   const currentMonth = new Date().getMonth();
@@ -263,7 +295,7 @@ const GlowingEarningsChart: React.FC<{ invoices: any[] }> = ({ invoices }) => {
               setHoveredPoint({
                 x: p.x,
                 y: p.y,
-                val: `${p.v.toLocaleString('ar-EG')} ج.م`,
+                val: isArabic ? `${p.v.toLocaleString('ar-EG')} ج.م` : `EGP ${p.v.toLocaleString('en-US')}`,
                 month: p.m,
               })
             }
@@ -338,9 +370,22 @@ const VehicleFleetCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }
   const [vehicleType, setVehicleType] = useState<'vessel' | 'truck' | 'customs'>('vessel');
   const [angle, setAngle] = useState<'side' | 'bay' | 'hold'>('side');
 
-  const containerCount = activeShipment?.containers?.length || 4;
-  const blNumber = activeShipment?.blNumber || 'MEDUST892104';
-  const carrier = activeShipment?.shippingLine?.name || 'MSC Mediterranean Shipping';
+  const containers = activeShipment?.containers || [];
+  const containerCount = containers.length;
+  const blNumber = activeShipment?.blNumber || '—';
+  const carrier = activeShipment?.shippingLine?.name || '—';
+
+  // Real cargo weight from containers (fallback: shipment gross weight)
+  const totalWeightKg = Math.round(
+    containers.reduce((sum: number, c: any) => sum + (Number(c?.cargoWeightKg) || 0), 0) ||
+      Number(activeShipment?.grossWeightKg) ||
+      0,
+  );
+
+  // Real capacity: containers with assigned numbers vs booked slots
+  const assignedCount = containers.filter((c: any) => c?.containerNumber).length;
+  const capacityPct = containerCount > 0 ? Math.min(100, Math.round((assignedCount / containerCount) * 100)) : 0;
+  const filledSegments = Math.round((capacityPct / 100) * 32);
 
   return (
     <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm space-y-4">
@@ -477,8 +522,10 @@ const VehicleFleetCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }
             <span className="text-[10px] text-slate-400">| {carrier}</span>
           </div>
           <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
-            <span>{containerCount} حاويات نمطية</span>
-            <span className="font-bold text-[#FF5E1E]">92,400 كجم</span>
+            <span>{containerCount} حاوية</span>
+            {totalWeightKg > 0 && (
+              <span className="font-bold text-[#FF5E1E]">{totalWeightKg.toLocaleString('ar-EG')} كجم</span>
+            )}
           </div>
         </div>
 
@@ -486,11 +533,11 @@ const VehicleFleetCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }
         <div>
           <div className="flex items-center justify-between text-[11px] mb-1">
             <span className="text-slate-500 font-medium">سعة الحجز المحملة (FCL Capacity)</span>
-            <span className="font-bold text-slate-900 dark:text-white">82% من إجمالي السعة</span>
+            <span className="font-bold text-slate-900 dark:text-white">{capacityPct}% من إجمالي السعة</span>
           </div>
           <div className="flex items-center gap-1 h-3">
             {Array.from({ length: 32 }).map((_, i) => {
-              const filled = i < 26;
+              const filled = i < filledSegments;
               return (
                 <span
                   key={i}
@@ -514,19 +561,50 @@ const VehicleFleetCard: React.FC<{ activeShipment?: any }> = ({ activeShipment }
 /* ============================================================
    Cargo Types & Manifest Widget (Real App Freight Categories)
    ============================================================ */
-const AdditionalItemsCard: React.FC = () => {
-  const [items, setItems] = useState([
-    { id: 1, name: "حاويات 40' High Cube", count: 14, dims: '12.19 × 2.44 × 2.89 م', weight: '28,000 كجم', icon: Container },
-    { id: 2, name: "حاويات 20' Standard GP", count: 8, dims: '6.06 × 2.44 × 2.59 م', weight: '21,500 كجم', icon: Box },
-    { id: 3, name: "حاويات مبردة (Reefer 40')", count: 4, dims: 'تحكم حراري -18°C', weight: '18,200 كجم', icon: Droplet },
-    { id: 4, name: "شحنات مجزأة (LCL Consolidation)", count: 22, dims: 'طبالي وبضائع عامة', weight: '9,400 كجم', icon: Layers },
-  ]);
-
-  const updateCount = (id: number, delta: number) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, count: Math.max(0, it.count + delta) } : it))
-    );
-  };
+const AdditionalItemsCard: React.FC<{ shipments: any[] }> = ({ shipments }) => {
+  // Real per-type container aggregation from actual shipments
+  const items = useMemo(() => {
+    const TYPE_LABELS: Record<string, string> = {
+      GP_20: "حاويات 20' قياسية (GP)",
+      GP_40: "حاويات 40' قياسية (GP)",
+      HQ_40: "حاويات 40' High Cube",
+      HQ_45: "حاويات 45' High Cube",
+      RF_20: "حاويات مبردة 20' (Reefer)",
+      RF_40: "حاويات مبردة 40' (Reefer)",
+      FLAT_RACK: 'رفوف مفتوحة (Flat Rack)',
+      OPEN_TOP: 'سقف مفتوح (Open Top)',
+    };
+    const TYPE_ICONS: Record<string, LucideIcon> = {
+      GP_20: Box,
+      GP_40: Box,
+      HQ_40: Container,
+      HQ_45: Container,
+      RF_20: Droplet,
+      RF_40: Droplet,
+      FLAT_RACK: Layers,
+      OPEN_TOP: Layers,
+    };
+    const byType = new Map<string, { count: number; weight: number }>();
+    (shipments || []).forEach((s) => {
+      (s.containers || []).forEach((c: any) => {
+        const key = c.containerType || 'GP_40';
+        const cur = byType.get(key) || { count: 0, weight: 0 };
+        byType.set(key, {
+          count: cur.count + 1,
+          weight: cur.weight + (Number(c?.cargoWeightKg) || 0),
+        });
+      });
+    });
+    return Array.from(byType.entries())
+      .map(([type, agg]) => ({
+        type,
+        name: TYPE_LABELS[type] || type,
+        count: agg.count,
+        weight: agg.weight > 0 ? `${Math.round(agg.weight).toLocaleString('ar-EG')} كجم` : null,
+        icon: TYPE_ICONS[type] || Box,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [shipments]);
 
   return (
     <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm space-y-4">
@@ -544,11 +622,16 @@ const AdditionalItemsCard: React.FC = () => {
 
       {/* Items List */}
       <div className="space-y-2.5">
-        {items.map((item) => {
+        {items.length === 0 ? (
+          <div className="py-8 text-center border border-dashed border-slate-200 dark:border-[#262E40] rounded-xl">
+            <Inbox className="w-6 h-6 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs text-slate-400">لا توجد حاويات مسجلة بعد</p>
+          </div>
+        ) : items.map((item) => {
           const Icon = item.icon;
           return (
             <div
-              key={item.id}
+              key={item.type}
               className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/80 dark:border-[#262E40] hover:border-[#FF5E1E]/40 transition-colors"
             >
               <div className="flex items-center gap-3">
@@ -563,27 +646,9 @@ const AdditionalItemsCard: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-400 block mt-0.5">
-                    {item.dims} • {item.weight}
+                    {item.weight ? `${item.count} • ${item.weight}` : `${item.count} حاوية`}
                   </span>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => updateCount(item.id, -1)}
-                  className="w-6 h-6 rounded-md bg-white dark:bg-[#1F2536] border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#262E40]"
-                >
-                  -
-                </button>
-                <span className="text-xs font-bold w-5 text-center text-slate-800 dark:text-slate-200">
-                  {item.count}
-                </span>
-                <button
-                  onClick={() => updateCount(item.id, 1)}
-                  className="w-6 h-6 rounded-md bg-white dark:bg-[#1F2536] border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#262E40]"
-                >
-                  +
-                </button>
               </div>
             </div>
           );
@@ -612,8 +677,15 @@ const AdditionalItemsCard: React.FC = () => {
 /* ============================================================
    Real Operations Table (Actual App Shipments)
    ============================================================ */
-const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
+const RealOperationsTable: React.FC<{ shipments: any[]; loading?: boolean }> = ({ shipments, loading }) => {
   const [filter, setFilter] = useState<'all' | 'in_transit' | 'customs'>('all');
+
+  if (loading)
+    return (
+      <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm">
+        <SkeletonTable rows={5} cols={5} />
+      </div>
+    );
 
   // Filter live shipments against the API's ShipmentStage enum values
   const displayList = (shipments || []).filter((s) => {
@@ -740,21 +812,23 @@ const RealOperationsTable: React.FC<{ shipments: any[] }> = ({ shipments }) => {
    ============================================================ */
 const RealComplianceCard: React.FC = () => {
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [loadingAlerts, setLoadingAlerts] = useState(true);
 
   useEffect(() => {
     api.get('/notifications').then((res: any) => {
       const items = Array.isArray(res) ? res : (res?.data && Array.isArray(res.data) ? res.data : []);
       setAlerts(items.slice(0, 4).map((n: any) => ({
         title: n.title || n.message || 'تنبيه',
-        sub: n.body || n.description || '',
+        sub: n.message || n.body || '',
         time: n.createdAt ? new Date(n.createdAt).toLocaleDateString('ar-EG') : '',
-        alert: n.type === 'warning' ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' :
-               n.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' :
+        alert: n.severity === 'critical' ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' :
+               n.severity === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' :
+               n.severity === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' :
                'text-sky-500 bg-sky-500/10 border-sky-500/20',
         icon: AlertTriangle,
-        link: '/notifications',
+        link: n.link || '/notifications',
       })));
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setLoadingAlerts(false));
   }, []);
 
   return (
@@ -770,7 +844,18 @@ const RealComplianceCard: React.FC = () => {
       </div>
 
       <div className="space-y-2">
-        {alerts.map((a, i) => {
+        {loadingAlerts ? (
+          <>
+            <SkeletonListItem />
+            <SkeletonListItem />
+            <SkeletonListItem />
+          </>
+        ) : alerts.length === 0 ? (
+          <div className="py-6 text-center border border-dashed border-slate-200 dark:border-[#262E40] rounded-xl">
+            <Inbox className="w-6 h-6 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs text-slate-400">لا توجد تنبيهات حالياً</p>
+          </div>
+        ) : alerts.map((a, i) => {
           const Icon = a.icon;
           return (
             <Link
@@ -988,15 +1073,35 @@ export const DashboardOverview: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-[#181D2A] border border-slate-200/80 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200">
                 <Compass className="w-3.5 h-3.5 text-sky-500" />
-                <span>تتبع AIS الفضائي نشط</span>
+                <span>{stats.inTransit} شحنة في البحر الآن</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
+                  customsStats.total === 0
+                    ? 'bg-slate-50 dark:bg-[#181D2A] border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                    : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                }`}
+              >
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                <span>نافذة ACID: 100% امتثال</span>
+                <span>
+                  نافذة ACID:{' '}
+                  {customsStats.total === 0 ? 'لا ملفات بعد' : `${Math.round((customsStats.withAcid / customsStats.total) * 100)}% امتثال`}
+                </span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-bold text-amber-700 dark:text-amber-400">
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
+                  freeTimeRisk.atRisk > 0
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400'
+                    : 'bg-slate-50 dark:bg-[#181D2A] border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                }`}
+              >
                 <Clock className="w-3.5 h-3.5 text-amber-500" />
-                <span>درع غرامات التأخير: فعال</span>
+                <span>
+                  {freeTimeRisk.atRisk > 0
+                    ? `${freeTimeRisk.atRisk} حاوية قرب انتهاء السماح`
+                    : 'درع غرامات التأخير: لا مخاطر'
+                  }
+                </span>
               </div>
             </div>
           </div>
@@ -1031,6 +1136,13 @@ export const DashboardOverview: React.FC = () => {
       </div>
 
       {/* ── 4 Executive KPI Metric Cards (Modern, Sleek, WOW Aesthetics) ── */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {/* Card 1: أسطول الشحنات البحرية */}
         <div className="group relative rounded-3xl p-5 bg-white dark:bg-[#121620] border border-slate-200/80 dark:border-slate-800/80 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden">
@@ -1120,12 +1232,13 @@ export const DashboardOverview: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Main Fleet Grid Section (Direct Match to Fleetly & Fleeex Visuals) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left Column (Map & Active Shipment Capsule) - 4 Cols */}
         <div className="lg:col-span-4 space-y-5">
-          <RouteMapCard activeShipment={activeShipment} />
+          <RouteMapCard activeShipment={activeShipment} loading={loading} />
 
           {/* Active Job File Capsule */}
           <div className="rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] p-4 sm:p-5 shadow-sm space-y-3">
@@ -1135,7 +1248,7 @@ export const DashboardOverview: React.FC = () => {
                   أحدث شحنة قيد التشغيل (Active Shipment)
                 </h3>
                 <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  {activeShipment?.jobFileNumber || 'RED-2026-003'}
+                  {activeShipment?.jobFileNumber || '—'}
                 </span>
               </div>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -1146,16 +1259,20 @@ export const DashboardOverview: React.FC = () => {
               <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/80 dark:border-[#262E40] text-center">
                 <span className="text-[10px] text-slate-400 block">الحاويات</span>
                 <span className="text-xs font-bold text-slate-900 dark:text-white">
-                  {activeShipment?.containers?.length || 4} FCL
+                  {activeShipment?.containers?.length || 0} FCL
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/80 dark:border-[#262E40] text-center">
                 <span className="text-[10px] text-slate-400 block">فترة السماح</span>
-                <span className="text-xs font-bold text-slate-900 dark:text-white">14 يوم</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                  {activeShipment?.freeDaysAllowed ?? '—'} يوم
+                </span>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/80 dark:border-[#262E40] text-center">
                 <span className="text-[10px] text-slate-400 block">الإنجاز</span>
-                <span className="text-xs font-bold text-[#FF5E1E]">75%</span>
+                <span className="text-xs font-bold text-[#FF5E1E]">
+                  {activeShipment ? `${STAGE_PROGRESS[activeShipment.currentStage] ?? 0}%` : '—'}
+                </span>
               </div>
             </div>
 
@@ -1163,13 +1280,19 @@ export const DashboardOverview: React.FC = () => {
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-[#262E40]">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-[#FF5E1E] text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                  {activeShipment?.client?.name?.charAt(0) || 'ش'}
+                  {activeShipment?.client?.name?.charAt(0) || '—'}
                 </div>
                 <div className="max-w-[170px] truncate">
                   <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
                     {activeShipment?.client?.name || '—'}
                   </span>
-                  <span className="text-[10px] text-slate-400">+20 100 123 4567</span>
+                  <span className="text-[10px] text-slate-400">
+                    {(() => {
+                      const contacts = activeShipment?.client?.contacts || [];
+                      const primary = contacts.find((c: any) => c.isPrimary) || contacts[0];
+                      return primary?.mobile || primary?.phone || '';
+                    })()}
+                  </span>
                 </div>
               </div>
 
@@ -1220,7 +1343,7 @@ export const DashboardOverview: React.FC = () => {
 
         {/* Right Column (Additional Cargo Manifest & Demurrage Alert) - 3 Cols */}
         <div className="lg:col-span-3 space-y-5">
-          <AdditionalItemsCard />
+          <AdditionalItemsCard shipments={shipments} />
 
           {/* Real Demurrage Warning Card — computed from actual discharged containers */}
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 space-y-2">
@@ -1329,7 +1452,7 @@ export const DashboardOverview: React.FC = () => {
       {/* ── Today's Real Operations & Compliance Section (Direct Match to Fleeex Dark) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-8">
-          <RealOperationsTable shipments={shipments} />
+          <RealOperationsTable shipments={shipments} loading={loading} />
         </div>
         <div className="lg:col-span-4">
           <RealComplianceCard />

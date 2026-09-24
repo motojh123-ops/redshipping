@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
+import { api } from '../../services/api';
+import { cn } from '../../lib/utils';
 import {
   Sun,
   Moon,
@@ -18,6 +20,8 @@ import {
   TrendingUp,
   Compass,
   BarChart2,
+  Menu,
+  X,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -26,6 +30,24 @@ export const Navbar: React.FC = () => {
   const { i18n } = useTranslation();
   const { user, logout } = useAuthStore();
   const { isDark, toggleTheme } = useThemeStore();
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Real unread notification count from the API (no hardcoded badges)
+  useEffect(() => {
+    api
+      .get('/notifications/unread-count')
+      .then((res: any) => {
+        const count = typeof res === 'number' ? res : Number(res?.unreadCount ?? res?.data?.unreadCount ?? 0);
+        setUnreadCount(Number.isFinite(count) ? count : 0);
+      })
+      .catch(() => setUnreadCount(0));
+  }, []);
+
+  // Close the mobile nav whenever the route changes
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
 
   const toggleLanguage = () => {
     const nextLng = i18n.language === 'ar' ? 'en' : 'ar';
@@ -45,7 +67,7 @@ export const Navbar: React.FC = () => {
   ];
 
   return (
-    <header className="h-16 bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-[#262E40] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
+    <header className="relative h-16 bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-[#262E40] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
       {/* Left: Brand / Tenant Badge */}
       <div className="flex items-center gap-4">
         <Link to="/" className="flex items-center gap-2.5 group">
@@ -96,10 +118,21 @@ export const Navbar: React.FC = () => {
 
       {/* Right: Controls & User Profile */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile Navigation Toggle */}
+        <button
+          onClick={() => setIsMobileNavOpen((v) => !v)}
+          aria-expanded={isMobileNavOpen}
+          aria-label={isMobileNavOpen ? 'إغلاق قائمة التنقل' : 'فتح قائمة التنقل'}
+          className="xl:hidden p-2 rounded-full border border-slate-200 dark:border-[#262E40] bg-slate-50 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300 hover:text-[#FF5E1E] transition-colors"
+        >
+          {isMobileNavOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+        </button>
+
         {/* Dark / Light Mode Toggle */}
         <button
           onClick={toggleTheme}
           title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           className="relative p-2 rounded-full border border-slate-200 dark:border-[#262E40] bg-slate-50 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300 hover:text-[#FF5E1E] dark:hover:text-[#FF5E1E] hover:border-[#FF5E1E]/40 transition-all duration-200 shadow-sm"
         >
           {isDark ? (
@@ -122,12 +155,15 @@ export const Navbar: React.FC = () => {
         <button
           onClick={() => navigate('/notifications')}
           title="Notifications Center"
+          aria-label="مركز الإشعارات"
           className="relative p-2 rounded-full border border-slate-200 dark:border-[#262E40] bg-slate-50 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300 hover:text-[#FF5E1E] transition-colors"
         >
           <Bell className="w-4 h-4" />
-          <span className="absolute -top-0.5 -end-0.5 w-4 h-4 rounded-full bg-[#FF5E1E] text-white text-[10px] font-bold flex items-center justify-center shadow-md shadow-orange-500/50">
-            4
-          </span>
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -end-0.5 min-w-4 h-4 px-1 rounded-full bg-[#FF5E1E] text-white text-[10px] font-bold flex items-center justify-center shadow-md shadow-orange-500/50">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
 
         {/* Settings button */}
@@ -144,6 +180,7 @@ export const Navbar: React.FC = () => {
           <button
             onClick={() => navigate('/profile')}
             title="الملف الشخصي والحساب (User Profile)"
+            aria-label="الملف الشخصي"
             className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-[#181D2A] transition group text-start cursor-pointer"
           >
             <div className="relative">
@@ -167,12 +204,43 @@ export const Navbar: React.FC = () => {
           <button
             onClick={logout}
             title="تسجيل الخروج (Sign out)"
+            aria-label="تسجيل الخروج"
             className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>
+
+      {/* Mobile Navigation Panel (below header) */}
+      {isMobileNavOpen && (
+        <nav
+          aria-label="التنقل الرئيسي"
+          className="xl:hidden absolute top-full inset-x-3 mt-1 p-2 rounded-2xl bg-white/97 dark:bg-[#121620]/97 backdrop-blur-xl border border-slate-200 dark:border-[#262E40] shadow-xl shadow-slate-900/5 dark:shadow-black/40 animate-page-enter z-40"
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {navPills.map((pill) => {
+              const isActive = location.pathname === pill.path;
+              const Icon = pill.icon;
+              return (
+                <Link
+                  key={pill.path}
+                  to={pill.path}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all',
+                    isActive
+                      ? 'bg-gradient-to-r from-[#FF5E1E] to-[#EA580C] text-white shadow-md shadow-orange-500/25'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1E2638] hover:text-slate-900 dark:hover:text-white',
+                  )}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{pill.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </header>
   );
 };

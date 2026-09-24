@@ -5,12 +5,8 @@ import {
   Check,
   CheckCheck,
   Ship,
-  FileSpreadsheet,
   ShieldCheck,
   Receipt,
-  AlertTriangle,
-  Calendar,
-  Users,
   Settings,
   MessageSquare,
   Clock,
@@ -24,7 +20,7 @@ import { api } from '../../services/api';
 
 interface Notification {
   id: string;
-  type: 'shipment' | 'quotation' | 'customs' | 'invoice' | 'reminder' | 'system' | 'assignment' | 'alert';
+  type: 'shipment' | 'customs' | 'invoice' | 'demurrage' | 'system';
   title: string;
   body: string;
   link: string;
@@ -34,15 +30,26 @@ interface Notification {
   priority: 'low' | 'normal' | 'high' | 'critical';
 }
 
+/* Relative time in Arabic, computed client-side (API sends ISO createdAt only) */
+const formatTimeAgo = (iso: string): string => {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'الآن';
+  if (mins < 60) return `منذ ${mins} دقيقة`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `منذ ${hours} ساعة`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `منذ ${days} يوم`;
+  return new Date(iso).toLocaleDateString('ar-EG');
+};
+
 const typeIcon = (type: string) => {
   switch (type) {
     case 'shipment': return <Ship className="w-4 h-4" />;
-    case 'quotation': return <FileSpreadsheet className="w-4 h-4" />;
     case 'customs': return <ShieldCheck className="w-4 h-4" />;
     case 'invoice': return <Receipt className="w-4 h-4" />;
-    case 'reminder': return <Calendar className="w-4 h-4" />;
-    case 'assignment': return <Users className="w-4 h-4" />;
-    case 'alert': return <AlertTriangle className="w-4 h-4" />;
+    case 'demurrage': return <Clock className="w-4 h-4" />;
     case 'system': return <Settings className="w-4 h-4" />;
     default: return <Bell className="w-4 h-4" />;
   }
@@ -51,12 +58,9 @@ const typeIcon = (type: string) => {
 const typeColor = (type: string) => {
   switch (type) {
     case 'shipment': return 'text-sky-600 bg-sky-100 dark:text-sky-300 dark:bg-sky-900/50';
-    case 'quotation': return 'text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/50';
     case 'customs': return 'text-purple-600 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/50';
     case 'invoice': return 'text-emerald-600 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/50';
-    case 'reminder': return 'text-indigo-600 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/50';
-    case 'assignment': return 'text-brand-600 bg-brand-100 dark:text-brand-300 dark:bg-brand-900/50';
-    case 'alert': return 'text-red-600 bg-red-100 dark:text-red-300 dark:bg-red-900/50';
+    case 'demurrage': return 'text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/50';
     case 'system': return 'text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-800';
     default: return 'text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-800';
   }
@@ -93,7 +97,7 @@ export const NotificationsCenterPage: React.FC = () => {
           link: n.link || '/',
           isRead: !!n.isRead,
           createdAt: n.createdAt || '',
-          timeAgo: n.timeAgo || '',
+          timeAgo: formatTimeAgo(n.createdAt || ''),
           priority: n.severity === 'critical' ? 'critical' : n.severity === 'warning' ? 'high' : 'normal',
         })));
         setIsLiveConnected(true);
@@ -166,9 +170,8 @@ export const NotificationsCenterPage: React.FC = () => {
             { key: 'shipment', label: '🚢 شحنات' },
             { key: 'customs', label: '🛃 جمارك' },
             { key: 'invoice', label: '💰 فواتير' },
-            { key: 'quotation', label: '📋 عروض أسعار' },
-            { key: 'reminder', label: '📅 تذكيرات' },
-            { key: 'alert', label: '⚠️ تنبيهات' },
+            { key: 'demurrage', label: '⏰ غرامات التأخير' },
+            { key: 'system', label: '⚙️ النظام' },
           ].map((ft) => (
             <button key={ft.key} onClick={() => setFilterType(ft.key)} className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition ${filterType === ft.key ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
               {ft.label}
