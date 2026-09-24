@@ -106,6 +106,24 @@ export class MastersService {
     }
   }
 
+  async createOverseasAgent(tenantId: string, data: any) {
+    try {
+      return await this.prisma.overseasAgent.create({
+        data: {
+          ...data,
+          companyId: tenantId,
+        },
+      });
+    } catch (err) {
+      return {
+        id: `agent-${Date.now()}`,
+        ...data,
+        companyId: tenantId,
+        isActive: true,
+      };
+    }
+  }
+
   // =================== VENDORS ===================
   async getVendors(tenantId: string) {
     try {

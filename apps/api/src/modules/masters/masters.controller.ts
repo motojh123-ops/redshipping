@@ -28,6 +28,11 @@ export class MastersController {
     return this.mastersService.getOverseasAgents(tenantId);
   }
 
+  @Post('overseas-agents')
+  async createOverseasAgent(@TenantId() tenantId: string, @Body() data: any) {
+    return this.mastersService.createOverseasAgent(tenantId, data);
+  }
+
   @Get('vendors')
   async getVendors(@TenantId() tenantId: string) {
     return this.mastersService.getVendors(tenantId);

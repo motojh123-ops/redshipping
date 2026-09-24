@@ -1,119 +1,98 @@
 import React, { useState, useEffect } from 'react';
 import {
   Truck, Plus, Phone, Mail, Building2, ShieldCheck, Download,
-  Users, MessageSquare, MapPin, CreditCard, Search, Eye, Star, FileText, CheckCircle2, ArrowUpRight
+  Search, Eye, Loader2, AlertCircle, Warehouse, Anchor, Bug, ClipboardCheck
 } from 'lucide-react';
-import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Modal } from '../../components/ui/Modal';
 import { exportToCsv } from '../../utils/exportUtils';
 import { api } from '../../services/api';
 
-interface VendorContact {
-  id: string;
-  name: string;
-  title: string;
-  phone: string;
-  email: string;
-}
-
+/** Shape returned by GET/POST /masters/vendors (see Prisma Vendor model) */
 interface Vendor {
   id: string;
   name: string;
-  isTrucking: boolean;
-  isClearance: boolean;
-  otherType?: string;
-  phone: string;
-  email: string;
-  city: string;
-  address?: string;
-  taxId: string;
-  commercialRegister?: string;
+  vendorType: 'trucking' | 'clearance' | 'port_services' | 'warehousing' | 'fumigation' | 'inspection';
+  taxId?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
   isActive: boolean;
-  contacts: VendorContact[];
 }
+
+const VENDOR_TYPE_META: Record<Vendor['vendorType'], { label: string; icon: React.FC<any>; classes: string }> = {
+  trucking: { label: 'نقل بري', icon: Truck, classes: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 ring-1 ring-brand-200 dark:ring-brand-800' },
+  clearance: { label: 'تخليص جمركي', icon: ShieldCheck, classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800' },
+  port_services: { label: 'خدمات ميناء', icon: Anchor, classes: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-200 dark:ring-sky-800' },
+  warehousing: { label: 'تخزين', icon: Warehouse, classes: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800' },
+  fumigation: { label: 'تبخير', icon: Bug, classes: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-purple-800' },
+  inspection: { label: 'فحص', icon: ClipboardCheck, classes: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800' },
+};
+
+const TYPE_ICONS: Record<Vendor['vendorType'], string> = {
+  trucking: '🚚',
+  clearance: '🛃',
+  port_services: '⚓',
+  warehousing: '🏭',
+  fumigation: '🧪',
+  inspection: '🔍',
+};
 
 export const VendorsPage: React.FC = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'trucking' | 'clearance' | 'both'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | Vendor['vendorType']>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedVendorForContacts, setSelectedVendorForContacts] = useState<Vendor | null>(null);
-  const [selectedVendorForProfile, setSelectedVendorForProfile] = useState<Vendor | null>(null);
-  const [newContactForm, setNewContactForm] = useState({ name: '', title: '', phone: '', email: '' });
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+  const loadVendors = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res: any = await api.get('/masters/vendors');
+      const data = Array.isArray(res) ? res : res?.data;
+      setVendors(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setLoadError(err?.message || 'تعذر تحميل الموردين من الخادم');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api.get('/masters/vendors').then((res: any) => {
-      if (res && Array.isArray(res)) {
-        setVendors(res.map((v: any) => ({ ...v, contacts: v.contacts || [], isActive: v.isActive !== false })));
-        setIsLiveConnected(true);
-      }
-    }).catch(() => setIsLiveConnected(false));
+    loadVendors();
   }, []);
 
   const filtered = vendors.filter((v) => {
     const matchesSearch =
       !search ||
       v.name.toLowerCase().includes(search.toLowerCase()) ||
-      v.city.toLowerCase().includes(search.toLowerCase()) ||
-      v.contacts.some((c) => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
+      (v.taxId || '').toLowerCase().includes(search.toLowerCase()) ||
+      (v.contactName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (v.contactPhone || '').includes(search);
 
-    let matchesType = true;
-    if (typeFilter === 'trucking') matchesType = v.isTrucking && !v.isClearance;
-    else if (typeFilter === 'clearance') matchesType = v.isClearance && !v.isTrucking;
-    else if (typeFilter === 'both') matchesType = v.isTrucking && v.isClearance;
-
+    const matchesType = typeFilter === 'all' || v.vendorType === typeFilter;
     return matchesSearch && matchesType;
   });
 
   const handleExportVendors = () => {
-    exportToCsv('banna_vendors', filtered, [
-      { header: 'اسم المورد / الشركة', accessor: (v) => v.name },
-      { header: 'نقل بري', accessor: (v) => (v.isTrucking ? 'نعم' : 'لا') },
-      { header: 'تخليص جمركي', accessor: (v) => (v.isClearance ? 'نعم' : 'لا') },
-      { header: 'المدينة', accessor: (v) => v.city },
-      { header: 'الهاتف', accessor: (v) => v.phone },
-      { header: 'البريد الإلكتروني', accessor: (v) => v.email },
-      { header: 'الرقم الضريبي', accessor: (v) => v.taxId },
-      { header: 'عدد جهات الاتصال', accessor: (v) => v.contacts.length },
-      { header: 'الحالة', accessor: (v) => (v.isActive ? 'نشط' : 'معطّل') },
+    exportToCsv('red_shipping_vendors', filtered, [
+      { header: 'اسم المورد / الشركة', accessor: (v: Vendor) => v.name },
+      { header: 'نوع الخدمة', accessor: (v: Vendor) => VENDOR_TYPE_META[v.vendorType]?.label || v.vendorType },
+      { header: 'مسؤول الاتصال', accessor: (v: Vendor) => v.contactName || '—' },
+      { header: 'الهاتف', accessor: (v: Vendor) => v.contactPhone || '—' },
+      { header: 'البريد الإلكتروني', accessor: (v: Vendor) => v.contactEmail || '—' },
+      { header: 'الرقم الضريبي', accessor: (v: Vendor) => v.taxId || '—' },
+      { header: 'الحالة', accessor: (v: Vendor) => (v.isActive ? 'نشط' : 'معطّل') },
     ]);
-  };
-
-  const handleAddContact = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedVendorForContacts) return;
-
-    const newC: VendorContact = {
-      id: String(Date.now()),
-      name: newContactForm.name,
-      title: newContactForm.title,
-      phone: newContactForm.phone,
-      email: newContactForm.email,
-    };
-
-    const updated = vendors.map((v) =>
-      v.id === selectedVendorForContacts.id
-        ? { ...v, contacts: [...v.contacts, newC] }
-        : v,
-    );
-
-    setVendors(updated);
-    setSelectedVendorForContacts({
-      ...selectedVendorForContacts,
-      contacts: [...selectedVendorForContacts.contacts, newC],
-    });
-    setNewContactForm({ name: '', title: '', phone: '', email: '' });
   };
 
   return (
     <div className="space-y-7">
-      {/* ── 1. Executive Vendors Command Header ── */}
+      {/* ── Header ── */}
       <div className="relative rounded-3xl overflow-hidden bg-white/95 dark:bg-[#121620]/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-white p-6 sm:p-8 shadow-sm transition-all duration-300">
-        {/* Subtle Ambient Emerald/Brand Glow */}
         <div className="absolute top-0 end-0 w-96 h-96 bg-gradient-to-bl from-emerald-500/10 via-sky-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 start-0 w-80 h-80 bg-gradient-to-tr from-[#FF5E1E]/5 to-transparent rounded-full blur-2xl pointer-events-none" />
 
@@ -129,7 +108,7 @@ export const VendorsPage: React.FC = () => {
             </h1>
 
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-              دليل شركات النقل البري وتريلات الحاويات، مكاتب التخليص الجمركي بالموانئ، والشركات المزدوجة مع تقييم جودة الخدمة وأسعار الخدمات وأوامر الصرف.
+              دليل شركات النقل البري وتريلات الحاويات، مكاتب التخليص الجمركي بالموانئ، وخدمات المناولة والتخزين والتبخير والفحص.
             </p>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -137,7 +116,7 @@ export const VendorsPage: React.FC = () => {
                 {vendors.length} مورد معتمد
               </span>
               <span className="px-3 py-1 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
-                نقل بري وتخليص جمركي موثق
+                نقل بري وتخليص جمركي وخدمات مساندة
               </span>
             </div>
           </div>
@@ -145,7 +124,8 @@ export const VendorsPage: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={handleExportVendors}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer"
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer"
             >
               <Download className="w-4 h-4 text-emerald-600" />
               <span>تصدير Excel</span>
@@ -166,251 +146,149 @@ export const VendorsPage: React.FC = () => {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="بحث باسم المورد، المدينة، أو مسؤول التواصل..."
+          placeholder="بحث باسم المورد، الرقم الضريبي، أو مسؤول التواصل..."
           className="flex-1 w-full"
         />
 
-        {/* Classification Filter (Voice note requirement) */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold shrink-0">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold shrink-0 overflow-x-auto">
           <button
             onClick={() => setTypeFilter('all')}
-            className={`px-3 py-1.5 rounded-lg transition ${typeFilter === 'all' ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap ${typeFilter === 'all' ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
           >
             الكل ({vendors.length})
           </button>
-          <button
-            onClick={() => setTypeFilter('trucking')}
-            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${typeFilter === 'trucking' ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
-          >
-            <Truck className="w-3.5 h-3.5 text-brand-500" />
-            نقل بري فقط
-          </button>
-          <button
-            onClick={() => setTypeFilter('clearance')}
-            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${typeFilter === 'clearance' ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            تخليص جمركي فقط
-          </button>
-          <button
-            onClick={() => setTypeFilter('both')}
-            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${typeFilter === 'both' ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
-          >
-            <span className="w-2 h-2 rounded-full bg-purple-500" />
-            نقل وتخليص معاً (Dual)
-          </button>
+          {(Object.keys(VENDOR_TYPE_META) as Vendor['vendorType'][]).map((t) => {
+            const meta = VENDOR_TYPE_META[t];
+            const Icon = meta.icon;
+            const count = vendors.filter((v) => v.vendorType === t).length;
+            return (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(typeFilter === t ? 'all' : t)}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 whitespace-nowrap ${typeFilter === t ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-xs' : 'text-slate-600 dark:text-slate-400'}`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {meta.label}
+                {count > 0 && <span className="text-[10px] text-slate-400">({count})</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
-        <EmptyState icon={Truck} title="لا يوجد موردين" description="أضف الموردين والشركات الخدمية المتعامل معها" actionLabel="إضافة مورد" onAction={() => setIsCreateOpen(true)} />
+      {loading ? (
+        <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <Loader2 className="w-7 h-7 animate-spin" />
+          <span className="text-xs font-bold">جارٍ تحميل الموردين...</span>
+        </div>
+      ) : loadError ? (
+        <div className="p-5 rounded-3xl bg-red-500/5 border border-red-500/20 flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <div>
+            <h3 className="text-sm font-black text-red-600 dark:text-red-400 mb-1">تعذر تحميل البيانات</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{loadError}</p>
+            <button
+              onClick={loadVendors}
+              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Truck} title={search || typeFilter !== 'all' ? 'لا نتائج مطابقة' : 'لا يوجد موردين'} description={search || typeFilter !== 'all' ? 'جرب تغيير البحث أو الفلتر' : 'أضف الموردين والشركات الخدمية المتعامل معها'} actionLabel={search || typeFilter !== 'all' ? undefined : 'إضافة مورد'} onAction={search || typeFilter !== 'all' ? undefined : () => setIsCreateOpen(true)} />
       ) : (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-start">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="py-3.5 px-4 text-start">المورد والشركة</th>
-                  <th className="py-3.5 px-4 text-start">تصنيف الخدمات اللوجستية</th>
-                  <th className="py-3.5 px-4 text-start">فريق التواصل المباشر</th>
-                  <th className="py-3.5 px-4 text-start">المدينة والعنوان</th>
-                  <th className="py-3.5 px-4 text-start">الرقم الضريبي والسجل</th>
+                  <th className="py-3.5 px-4 text-start">المورد</th>
+                  <th className="py-3.5 px-4 text-start">نوع الخدمة</th>
+                  <th className="py-3.5 px-4 text-start">مسؤول الاتصال</th>
+                  <th className="py-3.5 px-4 text-start">الرقم الضريبي</th>
                   <th className="py-3.5 px-4 text-start">الحالة</th>
                   <th className="py-3.5 px-4 text-start">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {filtered.map((v) => (
-                  <tr key={v.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0 font-bold">
-                          {v.isTrucking && v.isClearance ? '🚚🛃' : v.isTrucking ? '🚚' : '🛃'}
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-900 dark:text-white block text-sm">{v.name}</span>
-                          <span className="text-[11px] text-slate-400 font-mono">{v.email}</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {v.isTrucking && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 ring-1 ring-brand-200 dark:ring-brand-800">
-                            <Truck className="w-3 h-3" />
-                            نقل بري
-                          </span>
-                        )}
-                        {v.isClearance && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
-                            <ShieldCheck className="w-3 h-3" />
-                            تخليص جمركي
-                          </span>
-                        )}
-                        {v.isTrucking && v.isClearance && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
-                            مزدوج (Dual)
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-4">
-                      <div className="space-y-1 text-xs">
-                        {v.contacts.slice(0, 2).map((c) => (
-                          <div key={c.id} className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">{c.name}</span>
-                            <span className="text-[11px] text-slate-400">({c.title})</span>
+                {filtered.map((v) => {
+                  const meta = VENDOR_TYPE_META[v.vendorType] || { label: v.vendorType, icon: Truck, classes: 'bg-slate-100 text-slate-600' };
+                  const Icon = meta.icon;
+                  return (
+                    <tr key={v.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg shrink-0">
+                            {TYPE_ICONS[v.vendorType] || '🏢'}
                           </div>
-                        ))}
-                        <button
-                          onClick={() => setSelectedVendorForContacts(v)}
-                          className="text-[11px] text-brand-600 hover:text-brand-700 font-bold block"
-                        >
-                          عرض الفريق ({v.contacts.length}) +
-                        </button>
-                      </div>
-                    </td>
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-white block text-sm">{v.name}</span>
+                            {v.contactEmail && <span className="text-[11px] text-slate-400 font-mono" dir="ltr">{v.contactEmail}</span>}
+                          </div>
+                        </div>
+                      </td>
 
-                    <td className="py-4 px-4 text-xs">
-                      <span className="font-semibold text-slate-900 dark:text-white block">{v.city}</span>
-                      <span className="text-slate-400 text-[11px]">{v.address || '—'}</span>
-                    </td>
+                      <td className="py-4 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${meta.classes}`}>
+                          <Icon className="w-3 h-3" />
+                          {meta.label}
+                        </span>
+                      </td>
 
-                    <td className="py-4 px-4 text-xs font-mono">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 block">{v.taxId}</span>
-                      <span className="text-slate-400 text-[11px]">{v.commercialRegister || '—'}</span>
-                    </td>
+                      <td className="py-4 px-4">
+                        {v.contactName ? (
+                          <div className="text-xs space-y-0.5">
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 block">{v.contactName}</span>
+                            {v.contactPhone && <span className="text-[11px] text-slate-400 font-mono" dir="ltr">{v.contactPhone}</span>}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
 
-                    <td className="py-4 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                        v.isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {v.isActive ? 'نشط ومفعل' : 'معطّل'}
-                      </span>
-                    </td>
+                      <td className="py-4 px-4 text-xs font-mono">
+                        {v.taxId ? <span className="font-semibold text-slate-800 dark:text-slate-200">{v.taxId}</span> : <span className="text-slate-400">—</span>}
+                      </td>
 
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setSelectedVendorForProfile(v)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-50 dark:hover:bg-orange-950/30 transition cursor-pointer"
-                          title="استعراض بروفايل وملف المورد الشامل"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setSelectedVendorForContacts(v)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                          title="إدارة مسؤولي الاتصال"
-                        >
-                          <Users className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="py-4 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          v.isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {v.isActive ? 'نشط' : 'معطّل'}
+                        </span>
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-1">
+                          {v.contactPhone && (
+                            <a
+                              href={`tel:${v.contactPhone}`}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition"
+                              title="اتصال مباشر"
+                            >
+                              <Phone className="w-4 h-4" />
+                            </a>
+                          )}
+                          {v.contactEmail && (
+                            <a
+                              href={`mailto:${v.contactEmail}`}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                              title="مراسلة"
+                            >
+                              <Mail className="w-4 h-4" />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-      )}
-
-      {/* Manage Contacts Modal */}
-      {selectedVendorForContacts && (
-        <Modal
-          isOpen={true}
-          onClose={() => setSelectedVendorForContacts(null)}
-          title={`مسؤولي الاتصال — ${selectedVendorForContacts.name}`}
-          maxWidth="lg"
-        >
-          <div className="space-y-4 text-xs">
-            <div className="space-y-2 max-h-60 overflow-y-auto pe-1">
-              {selectedVendorForContacts.contacts.map((c) => (
-                <div key={c.id} className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-900 dark:text-white text-sm block">{c.name}</span>
-                    <span className="text-slate-400 text-[11px]">{c.title}</span>
-                    <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500 font-mono">
-                      <span>{c.phone}</span>
-                      <span>• {c.email}</span>
-                    </div>
-                  </div>
-                  <a
-                    href={`https://wa.me/${c.phone.replace(/[^0-9]/g, '')}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition flex items-center gap-1"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    واتساب
-                  </a>
-                </div>
-              ))}
-            </div>
-
-            {/* Add Contact Form */}
-            <form onSubmit={handleAddContact} className="p-3.5 rounded-xl border border-dashed border-brand-300 dark:border-brand-800 bg-brand-50/30 dark:bg-brand-950/20 space-y-3">
-              <span className="font-bold text-slate-900 dark:text-white block">إضافة جهة اتصال جديدة للمورد:</span>
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  required
-                  placeholder="اسم الشخص المسؤول"
-                  value={newContactForm.name}
-                  onChange={(e) => setNewContactForm({ ...newContactForm, name: e.target.value })}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="المسمى الوظيفي (مدير حركة، مخلص جمركي...)"
-                  value={newContactForm.title}
-                  onChange={(e) => setNewContactForm({ ...newContactForm, title: e.target.value })}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  required
-                  dir="ltr"
-                  placeholder="رقم الهاتف والموبايل"
-                  value={newContactForm.phone}
-                  onChange={(e) => setNewContactForm({ ...newContactForm, phone: e.target.value })}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-                />
-                <input
-                  type="email"
-                  placeholder="البريد الإلكتروني"
-                  value={newContactForm.email}
-                  onChange={(e) => setNewContactForm({ ...newContactForm, email: e.target.value })}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-                />
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-sm"
-                >
-                  إضافة المسؤول
-                </button>
-              </div>
-            </form>
-
-            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setSelectedVendorForContacts(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold"
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       {/* Create Vendor Modal */}
@@ -418,149 +296,14 @@ export const VendorsPage: React.FC = () => {
         <CreateVendorModal
           isOpen={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
-          onSuccess={(newV) => setVendors([newV, ...vendors])}
+          onSuccess={(newV) => setVendors((prev) => [newV, ...prev])}
         />
-      )}
-
-      {/* Vendor Profile & Dossier Modal */}
-      {selectedVendorForProfile && (
-        <Modal
-          isOpen={!!selectedVendorForProfile}
-          onClose={() => setSelectedVendorForProfile(null)}
-          title={`بروفايل المورد اللوجستي • ${selectedVendorForProfile.name}`}
-          maxWidth="lg"
-        >
-          <div className="space-y-5">
-            {/* Header badges & rating */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-bold text-slate-900 dark:text-white">مورد معتمد بالمنظومة</span>
-                {selectedVendorForProfile.isTrucking && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/10 text-[#FF5E1E]">
-                    نقل بري
-                  </span>
-                )}
-                {selectedVendorForProfile.isClearance && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    تخليص جمركي
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1 text-xs font-bold text-amber-500">
-                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                <span>تقييم الأداء: 98.6%</span>
-              </div>
-            </div>
-
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold block">أذون الصرف المسددة</span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white font-mono mt-0.5 block">385K EGP</span>
-              </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold block">أوامر النقل المنفذة</span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white font-mono mt-0.5 block">64 رحلة</span>
-              </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold block">معدل دقة المواعيد</span>
-                <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5 block">99.1%</span>
-              </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold block">الشحنات الجارية</span>
-                <span className="text-sm font-extrabold text-[#FF5E1E] font-mono mt-0.5 block">3 شحنات</span>
-              </div>
-            </div>
-
-            {/* Legal & Bank Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2 text-xs">
-                <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-[#FF5E1E]" />
-                  <span>البيانات الرسمية والتراخيص</span>
-                </h4>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">الرقم الضريبي:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{selectedVendorForProfile.taxId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">السجل التجاري:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{selectedVendorForProfile.commercialRegister || 'CR-10492'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">نطاق التغطية:</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedVendorForProfile.city} • كافة الموانئ</span>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2 text-xs">
-                <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <CreditCard className="w-3.5 h-3.5 text-purple-600" />
-                  <span>الحساب البنكي المعتمد للصرف</span>
-                </h4>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">اسم البنك:</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">البنك التجاري الدولي (CIB)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">رقم الحساب:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">1000-2948-1829</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">الآيبان IBAN:</span>
-                  <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">EG3800100029481829000192</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Team Contacts */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">فريق التشغيل الميداني للمورد:</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {selectedVendorForProfile.contacts.map((ct: VendorContact) => (
-                  <div key={ct.id} className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-bold text-slate-800 dark:text-slate-200 block">{ct.name}</span>
-                      <span className="text-[11px] text-slate-400">{ct.title}</span>
-                    </div>
-                    <a
-                      href={`tel:${ct.phone}`}
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
-                      title="اتصال مباشر"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setSelectedVendorForProfile(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
-              >
-                إغلاق
-              </button>
-              <a
-                href="/disbursements"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/20 transition"
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>إصدار إذن صرف للمورد (Disbursement)</span>
-              </a>
-            </div>
-          </div>
-        </Modal>
       )}
     </div>
   );
 };
 
-/* ── Create Vendor Modal ──────────────────────────────── */
+/* ── Create Vendor Modal (posts to /masters/vendors) ─────────── */
 const CreateVendorModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -568,48 +311,46 @@ const CreateVendorModal: React.FC<{
 }> = ({ isOpen, onClose, onSuccess }) => {
   const [form, setForm] = useState({
     name: '',
-    isTrucking: true,
-    isClearance: false,
-    phone: '',
-    email: '',
-    city: 'القاهرة',
-    address: '',
+    vendorType: 'trucking' as Vendor['vendorType'],
     taxId: '',
-    commercialRegister: '',
     contactName: '',
-    contactTitle: '',
     contactPhone: '',
+    contactEmail: '',
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newVendor: Vendor = {
-      id: String(Date.now()),
-      name: form.name,
-      isTrucking: form.isTrucking,
-      isClearance: form.isClearance,
-      phone: form.phone,
-      email: form.email,
-      city: form.city,
-      address: form.address,
-      taxId: form.taxId || 'EG-TAX-PENDING',
-      commercialRegister: form.commercialRegister,
-      isActive: true,
-      contacts: form.contactName
-        ? [
-            {
-              id: String(Date.now() + 1),
-              name: form.contactName,
-              title: form.contactTitle || 'المسؤول المباشر',
-              phone: form.contactPhone || form.phone,
-              email: form.email,
-            },
-          ]
-        : [],
-    };
+    setError(null);
+    setSaving(true);
+    try {
+      const payload: Record<string, string> = {
+        name: form.name.trim(),
+        vendorType: form.vendorType,
+      };
+      if (form.taxId.trim()) payload.taxId = form.taxId.trim();
+      if (form.contactName.trim()) payload.contactName = form.contactName.trim();
+      if (form.contactPhone.trim()) payload.contactPhone = form.contactPhone.trim();
+      if (form.contactEmail.trim()) payload.contactEmail = form.contactEmail.trim();
 
-    onSuccess(newVendor);
-    onClose();
+      const created: any = await api.post('/masters/vendors', payload);
+      onSuccess({
+        id: created?.id || String(Date.now()),
+        name: created?.name ?? payload.name,
+        vendorType: created?.vendorType ?? payload.vendorType,
+        taxId: created?.taxId ?? payload.taxId ?? null,
+        contactName: created?.contactName ?? payload.contactName ?? null,
+        contactPhone: created?.contactPhone ?? payload.contactPhone ?? null,
+        contactEmail: created?.contactEmail ?? payload.contactEmail ?? null,
+        isActive: created?.isActive !== false,
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'تعذر حفظ المورد — حاول مجدداً');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -627,66 +368,42 @@ const CreateVendorModal: React.FC<{
           />
         </div>
 
-        {/* Dual Classification checkboxes (Voice note) */}
+        {/* Vendor type — single select from the real enum */}
         <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
-          <span className="font-bold text-slate-800 dark:text-slate-200 block">تصنيف الخدمات (يمكن اختيار كليهما):</span>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={form.isTrucking}
-                onChange={(e) => setForm({ ...form, isTrucking: e.target.checked })}
-                className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
-              />
-              <Truck className="w-4 h-4 text-brand-600" />
-              خدمات النقل البري (Trucking)
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={form.isClearance}
-                onChange={(e) => setForm({ ...form, isClearance: e.target.checked })}
-                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-              />
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              خدمات التخليص الجمركي (Clearance)
-            </label>
+          <span className="font-bold text-slate-800 dark:text-slate-200 block">نوع الخدمة *</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {(Object.keys(VENDOR_TYPE_META) as Vendor['vendorType'][]).map((t) => {
+              const meta = VENDOR_TYPE_META[t];
+              const Icon = meta.icon;
+              return (
+                <label
+                  key={t}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
+                    form.vendorType === t
+                      ? 'border-[#FF5E1E] bg-orange-500/10 text-[#FF5E1E]'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="vendorType"
+                    checked={form.vendorType === t}
+                    onChange={() => setForm({ ...form, vendorType: t })}
+                    className="sr-only"
+                  />
+                  <Icon className="w-4 h-4" />
+                  {meta.label}
+                </label>
+              );
+            })}
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">المدينة أو المنطقة *</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الرقم الضريبي</label>
             <input
               type="text"
-              required
-              placeholder="الإسكندرية، السخنة، العاشر..."
-              value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">رقم الهاتف الرئيسي *</label>
-            <input
-              type="text"
-              required
-              dir="ltr"
-              placeholder="+20 100 000 0000"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الرقم الضريبي *</label>
-            <input
-              type="text"
-              required
               placeholder="EG-TAX-000-000"
               value={form.taxId}
               onChange={(e) => setForm({ ...form, taxId: e.target.value })}
@@ -694,58 +411,63 @@ const CreateVendorModal: React.FC<{
             />
           </div>
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">السجل التجاري</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">مسؤول الاتصال</label>
             <input
               type="text"
-              placeholder="CR-00000"
-              value={form.commercialRegister}
-              onChange={(e) => setForm({ ...form, commercialRegister: e.target.value })}
+              placeholder="اسم الشخص المسؤول"
+              value={form.contactName}
+              onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">هاتف المسؤول</label>
+            <input
+              type="text"
+              dir="ltr"
+              placeholder="+20 100 000 0000"
+              value={form.contactPhone}
+              onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">البريد الإلكتروني</label>
+            <input
+              type="email"
+              placeholder="vendor@company.com"
+              value={form.contactEmail}
+              onChange={(e) => setForm({ ...form, contactEmail: e.target.value })}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
             />
           </div>
         </div>
 
-        <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 space-y-2">
-          <span className="font-bold text-slate-800 dark:text-slate-200 block">مسؤول الاتصال الرئيسي:</span>
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              type="text"
-              placeholder="اسم الشخص"
-              value={form.contactName}
-              onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-            />
-            <input
-              type="text"
-              placeholder="الوظيفة (حركة / تخليص)"
-              value={form.contactTitle}
-              onChange={(e) => setForm({ ...form, contactTitle: e.target.value })}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-            />
-            <input
-              type="text"
-              dir="ltr"
-              placeholder="الموبايل المباشر"
-              value={form.contactPhone}
-              onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-            />
+        {error && (
+          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
-        </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition"
+            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
           >
             إلغاء
           </button>
           <button
             type="submit"
-            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-md shadow-brand-600/20"
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
           >
-            حفظ المورد
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ المورد'}</span>
           </button>
         </div>
       </form>
