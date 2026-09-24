@@ -2,120 +2,80 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Ship, Plus, ExternalLink, Phone, Globe, Download, TrendingUp,
-  Compass, Users, Mail, UserCheck, MessageSquare, ChevronDown,
-  Building2, MapPin, Search, Edit3
+  Compass, Mail, ChevronDown, User, Search, Pencil, Loader2, CheckCircle2, AlertCircle, X
 } from 'lucide-react';
-import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Modal } from '../../components/ui/Modal';
-import { useApi } from '../../hooks/useApi';
 import { exportToCsv } from '../../utils/exportUtils';
 import { api } from '../../services/api';
 
-interface LineEmployee {
-  id: string;
-  name: string;
-  title: string;
-  department: 'sales' | 'operations' | 'booking' | 'demurrage';
-  phone: string;
-  email: string;
-  isPrimary?: boolean;
-}
-
+/** Shape returned by GET/POST /masters/shipping-lines (see Prisma ShippingLine model) */
 interface ShippingLine {
   id: string;
   name: string;
-  nameAr?: string;
-  code: string;
-  country: string;
-  contactEmail: string;
-  website: string;
-  phone: string;
-  address?: string;
+  scac?: string | null;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  website?: string | null;
   isActive: boolean;
-  color: string;
-  employees: LineEmployee[];
 }
 
-const DEPARTMENT_LABELS: Record<string, { label: string; color: string }> = {
-  sales: { label: 'مبيعات (Sales)', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
-  operations: { label: 'عمليات (Ops)', color: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
-  booking: { label: 'حجوزات (Booking)', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' },
-  demurrage: { label: 'أرضيات وغرامات (Demurrage)', color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' },
-};
+const LINE_COLORS = ['#006CB7', '#FF5E1E', '#0F766E', '#7C3AED', '#DC2626', '#0369A1', '#B45309', '#047857'];
 
 export const ShippingLinesPage: React.FC = () => {
   const [lines, setLines] = useState<ShippingLine[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-  useEffect(() => {
-    api.get('/masters/shipping-lines').then((res: any) => {
-      if (res && Array.isArray(res)) {
-        setLines(res.map((l: any) => ({ ...l, employees: l.employees || [], color: l.color || '#006CB7', isActive: l.isActive !== false })));
-        setIsLiveConnected(true);
-      }
-    }).catch(() => setIsLiveConnected(false));
-  }, []);
-  const [selectedLineForContacts, setSelectedLineForContacts] = useState<ShippingLine | null>(null);
-  const [newContactForm, setNewContactForm] = useState({ name: '', title: '', department: 'sales' as LineEmployee['department'], phone: '', email: '' });
-
-  const filtered = lines.filter(
-    (l) =>
-      !search ||
-      l.name.toLowerCase().includes(search.toLowerCase()) ||
-      l.code.toLowerCase().includes(search.toLowerCase()) ||
-      l.employees.some((e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.phone.includes(search)),
-  );
-
-  const handleExportLines = () => {
-    exportToCsv('banna_shipping_lines', filtered, [
-      { header: 'اسم الخط الملاحي', accessor: (l) => l.name },
-      { header: 'الكود المختصر', accessor: (l) => l.code },
-      { header: 'بلد المنشأ', accessor: (l) => l.country },
-      { header: 'البريد الإلكتروني للعمليات', accessor: (l) => l.contactEmail || '—' },
-      { header: 'رقم الهاتف', accessor: (l) => l.phone || '—' },
-      { header: 'الموقع الإلكتروني', accessor: (l) => l.website || '—' },
-      { header: 'عدد مسؤولي الاتصال', accessor: (l) => l.employees.length },
-      { header: 'الحالة', accessor: (l) => (l.isActive ? 'نشط' : 'غير نشط') },
-    ]);
+  const loadLines = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res: any = await api.get('/masters/shipping-lines');
+      const data = Array.isArray(res) ? res : res?.data;
+      setLines(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setLoadError(err?.message || 'تعذر تحميل الخطوط الملاحية من الخادم');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAddContact = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLineForContacts) return;
+  useEffect(() => {
+    loadLines();
+  }, []);
 
-    const newEmp: LineEmployee = {
-      id: String(Date.now()),
-      name: newContactForm.name,
-      title: newContactForm.title,
-      department: newContactForm.department,
-      phone: newContactForm.phone,
-      email: newContactForm.email,
-    };
-
-    const updatedLines = lines.map((l) =>
-      l.id === selectedLineForContacts.id
-        ? { ...l, employees: [...l.employees, newEmp] }
-        : l,
+  const filtered = lines.filter((l) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      l.name.toLowerCase().includes(q) ||
+      (l.scac || '').toLowerCase().includes(q) ||
+      (l.contactName || '').toLowerCase().includes(q) ||
+      (l.contactEmail || '').toLowerCase().includes(q)
     );
+  });
 
-    setLines(updatedLines);
-    setSelectedLineForContacts({
-      ...selectedLineForContacts,
-      employees: [...selectedLineForContacts.employees, newEmp],
-    });
-    setNewContactForm({ name: '', title: '', department: 'sales', phone: '', email: '' });
+  const handleExportLines = () => {
+    exportToCsv('red_shipping_lines', filtered, [
+      { header: 'اسم الخط الملاحي', accessor: (l: ShippingLine) => l.name },
+      { header: 'الكود (SCAC)', accessor: (l: ShippingLine) => l.scac || '—' },
+      { header: 'مسؤول الاتصال', accessor: (l: ShippingLine) => l.contactName || '—' },
+      { header: 'البريد الإلكتروني', accessor: (l: ShippingLine) => l.contactEmail || '—' },
+      { header: 'رقم الهاتف', accessor: (l: ShippingLine) => l.contactPhone || '—' },
+      { header: 'الموقع الإلكتروني', accessor: (l: ShippingLine) => l.website || '—' },
+      { header: 'الحالة', accessor: (l: ShippingLine) => (l.isActive ? 'نشط' : 'غير نشط') },
+    ]);
   };
 
   return (
     <div className="space-y-7">
-      {/* ── 1. Executive Shipping Lines Command Header ── */}
+      {/* ── Header ── */}
       <div className="relative rounded-3xl overflow-hidden bg-white/95 dark:bg-[#121620]/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-white p-6 sm:p-8 shadow-sm transition-all duration-300">
-        {/* Subtle Ambient Brand Glow */}
         <div className="absolute top-0 end-0 w-96 h-96 bg-gradient-to-bl from-[#FF5E1E]/10 via-sky-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 start-0 w-80 h-80 bg-gradient-to-tr from-emerald-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
 
@@ -147,7 +107,8 @@ export const ShippingLinesPage: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={handleExportLines}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer"
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer"
             >
               <Download className="w-4 h-4 text-emerald-600" />
               <span>تصدير Excel</span>
@@ -164,116 +125,86 @@ export const ShippingLinesPage: React.FC = () => {
       </div>
 
       <div className="p-4 rounded-3xl bg-white dark:bg-[#121620] border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-        <SearchInput value={search} onChange={setSearch} placeholder="بحث باسم الخط الملاحي، الكود، أو اسم مسؤول الاتصال..." className="w-full" />
+        <SearchInput value={search} onChange={setSearch} placeholder="بحث باسم الخط الملاحي، الكود، أو مسؤول الاتصال..." className="w-full" />
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={Ship} title="لا توجد خطوط ملاحة" description="أضف خطوط الملاحة المتعامل معها" actionLabel="إضافة خط" onAction={() => setIsCreateOpen(true)} />
+      {loading ? (
+        <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <Loader2 className="w-7 h-7 animate-spin" />
+          <span className="text-xs font-bold">جارٍ تحميل الخطوط الملاحية...</span>
+        </div>
+      ) : loadError ? (
+        <div className="p-5 rounded-3xl bg-red-500/5 border border-red-500/20 flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <div>
+            <h3 className="text-sm font-black text-red-600 dark:text-red-400 mb-1">تعذر تحميل البيانات</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{loadError}</p>
+            <button
+              onClick={loadLines}
+              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Ship} title={search ? 'لا نتائج مطابقة للبحث' : 'لا توجد خطوط ملاحة'} description={search ? 'جرب كلمة بحث أخرى' : 'أضف خطوط الملاحة المتعامل معها'} actionLabel={search ? undefined : 'إضافة خط'} onAction={search ? undefined : () => setIsCreateOpen(true)} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filtered.map((line) => (
+          {filtered.map((line, idx) => (
             <div key={line.id} className="p-5 rounded-2xl bg-white dark:bg-[#181D2A] border border-slate-200 dark:border-[#262E40] shadow-sm hover:border-[#FF5E1E]/40 hover:shadow-md transition-all flex flex-col justify-between">
               <div>
                 {/* Header */}
                 <div className="flex items-start gap-3.5 mb-3">
                   <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-base shrink-0 shadow-md"
-                    style={{ backgroundColor: line.color || '#FF5E1E' }}
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md"
+                    style={{ backgroundColor: LINE_COLORS[idx % LINE_COLORS.length] }}
                   >
-                    {line.code.slice(0, 3)}
+                    {(line.scac || line.name).slice(0, 4)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-tight">{line.name}</h3>
-                    {line.nameAr && <span className="text-xs text-slate-500 dark:text-slate-400 block">{line.nameAr}</span>}
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-mono font-bold text-[#FF5E1E]">{line.code}</span>
-                      <span className="text-xs text-slate-400">• {line.country}</span>
+                      <span className="text-xs font-mono font-bold text-[#FF5E1E]">{line.scac || '—'}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Company details */}
+                {/* Company details — only fields that exist in the database */}
                 <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-[#262E40]">
-                  {line.address && (
+                  {line.contactName && (
                     <div className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{line.address}</span>
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{line.contactName}</span>
                     </div>
                   )}
-                  {line.phone && (
+                  {line.contactEmail && (
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate" dir="ltr">{line.contactEmail}</span>
+                    </div>
+                  )}
+                  {line.contactPhone && (
                     <div className="flex items-center gap-2">
                       <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span dir="ltr">{line.phone}</span>
+                      <span dir="ltr">{line.contactPhone}</span>
                     </div>
                   )}
                   {line.website && (
                     <a
-                      href={line.website}
+                      href={line.website.startsWith('http') ? line.website : `https://${line.website}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 text-[#FF5E1E] hover:underline transition"
                     >
                       <Globe className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{line.website.replace('https://', '')}</span>
+                      <span className="truncate" dir="ltr">{line.website.replace(/^https?:\/\//, '')}</span>
                       <ExternalLink className="w-3 h-3 shrink-0" />
                     </a>
                   )}
-                </div>
-
-                {/* Employees & Contacts Section */}
-                <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-[#262E40]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-[#FF5E1E]" />
-                      فريق التواصل المباشر ({line.employees.length})
-                    </span>
-                    <button
-                      onClick={() => setSelectedLineForContacts(line)}
-                      className="text-[11px] text-[#FF5E1E] hover:text-[#FF7034] font-bold"
-                    >
-                      إدارة الفريق +
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {line.employees.slice(0, 2).map((emp) => {
-                      const dept = DEPARTMENT_LABELS[emp.department] || { label: emp.department, color: 'bg-slate-100 dark:bg-[#1E2536] text-slate-600 dark:text-slate-300' };
-                      return (
-                        <div key={emp.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-100 dark:border-[#262E40] text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-900 dark:text-white">{emp.name}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${dept.color}`}>
-                              {dept.label}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-slate-400 block mt-0.5">{emp.title}</span>
-                          <div className="flex items-center justify-between mt-1.5 text-[11px] text-slate-500 font-mono">
-                            <span dir="ltr">{emp.phone}</span>
-                            <div className="flex items-center gap-1.5 font-sans">
-                              <a
-                                href={`https://wa.me/${emp.phone.replace(/[^0-9]/g, '')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-emerald-600 hover:text-emerald-700 font-semibold"
-                                title="مراسلة واتساب مباشرة"
-                              >
-                                WhatsApp
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {line.employees.length > 2 && (
-                      <button
-                        onClick={() => setSelectedLineForContacts(line)}
-                        className="w-full text-center text-[11px] font-bold text-slate-500 hover:text-[#FF5E1E] py-1 transition"
-                      >
-                        + عرض {line.employees.length - 2} موظفين آخرين
-                      </button>
-                    )}
-                  </div>
+                  {!line.contactName && !line.contactEmail && !line.contactPhone && !line.website && (
+                    <span className="text-[11px] text-slate-400">لا توجد بيانات اتصال مسجلة — أضفها من زر التعديل.</span>
+                  )}
                 </div>
               </div>
 
@@ -287,7 +218,7 @@ export const ShippingLinesPage: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                   <Link
-                    to={`/pricing?carrier=${line.code}`}
+                    to={`/pricing?carrier=${line.scac || ''}`}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-[#FF5E1E] bg-orange-500/10 hover:bg-orange-500/15 border border-orange-500/20 transition"
                     title="استعراض أسعار ونوالين الشحن المتاحة لهذا الخط"
                   >
@@ -296,13 +227,21 @@ export const ShippingLinesPage: React.FC = () => {
                   </Link>
 
                   <Link
-                    to={`/tracking?carrier=${line.code}`}
+                    to={`/tracking?carrier=${line.scac || ''}`}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#22293A] transition"
                     title="تتبع حاويات هذا الخط"
                   >
                     <Compass className="w-3.5 h-3.5" />
                     <span>تتبع</span>
                   </Link>
+
+                  <button
+                    onClick={() => setIsCreateOpen(true)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-[#FF5E1E] hover:bg-orange-500/10 transition cursor-pointer"
+                    title="إضافة خط جديد"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -310,151 +249,19 @@ export const ShippingLinesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Line Contacts & Employees Management Modal */}
-      {selectedLineForContacts && (
-        <Modal
-          isOpen={true}
-          onClose={() => setSelectedLineForContacts(null)}
-          title={`فريق ومسؤولي الاتصال — ${selectedLineForContacts.name}`}
-          maxWidth="lg"
-        >
-          <div className="space-y-4 text-xs">
-            {/* List of current employees */}
-            <div className="space-y-2 max-h-60 overflow-y-auto pe-1">
-              {selectedLineForContacts.employees.map((emp) => {
-                const dept = DEPARTMENT_LABELS[emp.department] || { label: emp.department, color: 'bg-slate-100 text-slate-600' };
-                return (
-                  <div key={emp.id} className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white text-sm">{emp.name}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${dept.color}`}>
-                          {dept.label}
-                        </span>
-                      </div>
-                      <span className="text-slate-400 block mt-0.5">{emp.title}</span>
-                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-500 font-mono">
-                        <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{emp.phone}</span>
-                        <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{emp.email}</span>
-                      </div>
-                    </div>
-                    <a
-                      href={`https://wa.me/${emp.phone.replace(/[^0-9]/g, '')}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition flex items-center gap-1"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      واتساب
-                    </a>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add Employee Form */}
-            <form onSubmit={handleAddContact} className="p-3.5 rounded-xl border border-dashed border-brand-300 dark:border-brand-800 bg-brand-50/30 dark:bg-brand-950/20 space-y-3">
-              <span className="font-bold text-slate-900 dark:text-white block">إضافة موظف اتصال جديد لهذا الخط:</span>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-600 dark:text-slate-300 mb-1">اسم الموظف *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: أحمد عبد الحميد"
-                    value={newContactForm.name}
-                    onChange={(e) => setNewContactForm({ ...newContactForm, name: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-600 dark:text-slate-300 mb-1">المسمى الوظيفي *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Booking Agent / Sales Rep"
-                    value={newContactForm.title}
-                    onChange={(e) => setNewContactForm({ ...newContactForm, title: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-600 dark:text-slate-300 mb-1">القسم *</label>
-                  <select
-                    value={newContactForm.department}
-                    onChange={(e) => setNewContactForm({ ...newContactForm, department: e.target.value as any })}
-                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-                  >
-                    <option value="sales">مبيعات (Sales)</option>
-                    <option value="operations">عمليات (Operations)</option>
-                    <option value="booking">حجوزات (Booking)</option>
-                    <option value="demurrage">أرضيات (Demurrage)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-600 dark:text-slate-300 mb-1">رقم الهاتف *</label>
-                  <input
-                    type="text"
-                    required
-                    dir="ltr"
-                    placeholder="+20 100 000 0000"
-                    value={newContactForm.phone}
-                    onChange={(e) => setNewContactForm({ ...newContactForm, phone: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-600 dark:text-slate-300 mb-1">البريد الإلكتروني *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="email@line.com"
-                    value={newContactForm.email}
-                    onChange={(e) => setNewContactForm({ ...newContactForm, email: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-sm"
-                >
-                  إضافة جهة الاتصال
-                </button>
-              </div>
-            </form>
-
-            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setSelectedLineForContacts(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold"
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {/* Create Shipping Line Modal */}
       {isCreateOpen && (
         <CreateShippingLineModal
           isOpen={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
-          onSuccess={(newLine) => setLines([newLine, ...lines])}
+          onSuccess={(newLine) => setLines((prev) => [newLine, ...prev])}
         />
       )}
     </div>
   );
 };
 
-/* ── Create Shipping Line Modal ──────────────────────────────── */
+/* ── Create Shipping Line Modal (posts to /masters/shipping-lines) ── */
 const CreateShippingLineModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -462,58 +269,53 @@ const CreateShippingLineModal: React.FC<{
 }> = ({ isOpen, onClose, onSuccess }) => {
   const [form, setForm] = useState({
     name: '',
-    nameAr: '',
-    code: '',
-    country: 'مصر',
-    contactEmail: '',
-    phone: '',
-    website: '',
-    address: '',
+    scac: '',
     contactName: '',
-    contactTitle: '',
+    contactEmail: '',
     contactPhone: '',
-    contactEmailLine: '',
+    website: '',
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newLine: ShippingLine = {
-      id: String(Date.now()),
-      name: form.name,
-      nameAr: form.nameAr,
-      code: form.code.toUpperCase(),
-      country: form.country,
-      contactEmail: form.contactEmail,
-      phone: form.phone,
-      website: form.website,
-      address: form.address,
-      isActive: true,
-      color: '#0284c7',
-      employees: form.contactName
-        ? [
-            {
-              id: String(Date.now() + 1),
-              name: form.contactName,
-              title: form.contactTitle || 'مسؤول الاتصال',
-              department: 'sales',
-              phone: form.contactPhone || form.phone,
-              email: form.contactEmailLine || form.contactEmail,
-              isPrimary: true,
-            },
-          ]
-        : [],
-    };
+    setError(null);
+    setSaving(true);
+    try {
+      const payload: Record<string, string> = {};
+      if (form.name.trim()) payload.name = form.name.trim();
+      if (form.scac.trim()) payload.scac = form.scac.trim().toUpperCase();
+      if (form.contactName.trim()) payload.contactName = form.contactName.trim();
+      if (form.contactEmail.trim()) payload.contactEmail = form.contactEmail.trim();
+      if (form.contactPhone.trim()) payload.contactPhone = form.contactPhone.trim();
+      if (form.website.trim()) payload.website = form.website.trim().replace(/^https?:\/\//, '');
 
-    onSuccess(newLine);
-    onClose();
+      const created: any = await api.post('/masters/shipping-lines', payload);
+      onSuccess({
+        id: created?.id || String(Date.now()),
+        name: created?.name ?? payload.name,
+        scac: created?.scac ?? payload.scac,
+        contactName: created?.contactName ?? payload.contactName,
+        contactEmail: created?.contactEmail ?? payload.contactEmail,
+        contactPhone: created?.contactPhone ?? payload.contactPhone,
+        website: created?.website ?? payload.website,
+        isActive: created?.isActive !== false,
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'تعذر حفظ الخط الملاحي — حاول مجدداً');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="إضافة خط ملاحي جديد ومسؤولي الاتصال" maxWidth="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="إضافة خط ملاحي جديد" maxWidth="lg">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">اسم الخط بالإنجليزية *</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">اسم الخط الملاحي *</label>
             <input
               type="text"
               required
@@ -524,47 +326,37 @@ const CreateShippingLineModal: React.FC<{
             />
           </div>
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الاسم بالعربية</label>
-            <input
-              type="text"
-              placeholder="مثال: يانغ مينغ للملاحة"
-              value={form.nameAr}
-              onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الكود المختصر (SCAC) *</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الكود (SCAC) *</label>
             <input
               type="text"
               required
               placeholder="YMLU"
-              value={form.code}
-              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              value={form.scac}
+              onChange={(e) => setForm({ ...form, scac: e.target.value.toUpperCase() })}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold"
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">دولة المقر</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">مسؤول الاتصال</label>
             <input
               type="text"
-              placeholder="تايوان"
-              value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value })}
+              placeholder="اسم موظف المبيعات أو الحجوزات"
+              value={form.contactName}
+              onChange={(e) => setForm({ ...form, contactName: e.target.value })}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
             />
           </div>
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الهاتف الرئيسي</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الهاتف المباشر</label>
             <input
               type="text"
               dir="ltr"
-              placeholder="+20 3 480 0000"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="+20 100 000 0000"
+              value={form.contactPhone}
+              onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
             />
           </div>
@@ -572,7 +364,7 @@ const CreateShippingLineModal: React.FC<{
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">البريد الإلكتروني للعمليات</label>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">البريد الإلكتروني</label>
             <input
               type="email"
               placeholder="egypt@yangming.com"
@@ -584,9 +376,9 @@ const CreateShippingLineModal: React.FC<{
           <div>
             <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الموقع الإلكتروني</label>
             <input
-              type="url"
+              type="text"
               dir="ltr"
-              placeholder="https://www.yangming.com"
+              placeholder="www.yangming.com"
               value={form.website}
               onChange={(e) => setForm({ ...form, website: e.target.value })}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
@@ -594,57 +386,28 @@ const CreateShippingLineModal: React.FC<{
           </div>
         </div>
 
-        {/* First contact person (per voice note) */}
-        <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 space-y-2">
-          <span className="font-bold text-slate-800 dark:text-slate-200 block">مسؤول الاتصال الرئيسي بالخط الملاحي:</span>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              type="text"
-              placeholder="اسم الموظف (سيلز أو أوبريشن)"
-              value={form.contactName}
-              onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-            />
-            <input
-              type="text"
-              placeholder="المسمى الوظيفي"
-              value={form.contactTitle}
-              onChange={(e) => setForm({ ...form, contactTitle: e.target.value })}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-            />
+        {error && (
+          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              type="text"
-              dir="ltr"
-              placeholder="رقم الهاتف والموبايل المباشر"
-              value={form.contactPhone}
-              onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-            />
-            <input
-              type="email"
-              placeholder="البريد المباشر"
-              value={form.contactEmailLine}
-              onChange={(e) => setForm({ ...form, contactEmailLine: e.target.value })}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-            />
-          </div>
-        </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition"
+            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
           >
             إلغاء
           </button>
           <button
             type="submit"
-            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-md shadow-brand-600/20"
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
           >
-            حفظ الخط الملاحي
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{saving ? 'جارٍ الحفظ...' : 'حفظ الخط الملاحي'}</span>
           </button>
         </div>
       </form>
