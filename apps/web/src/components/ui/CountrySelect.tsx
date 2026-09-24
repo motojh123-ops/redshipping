@@ -37,9 +37,9 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       try {
         setLoading(true);
         const res: any = await api.get('/maritime/countries');
-        if (res?.data) {
-          setCountries(res.data);
-        }
+        // api interceptor already unwraps { success, data } — accept both shapes
+        const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+        setCountries(list);
       } catch (err) {
         console.error('Failed to load countries list', err);
       } finally {

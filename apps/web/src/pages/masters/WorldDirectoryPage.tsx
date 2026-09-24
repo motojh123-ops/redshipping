@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { api } from '../../services/api';
+import { Loader2 } from 'lucide-react';
 import { PortDefinition, TradeCorridor, CountryDefinition } from '@banna/shared-types';
 
 export const WorldDirectoryPage: React.FC = () => {
@@ -58,9 +59,11 @@ export const WorldDirectoryPage: React.FC = () => {
           api.get('/maritime/land-corridors'),
         ]);
 
-        if (countriesRes?.data) setCountries(countriesRes.data);
-        if (portsRes?.data) setPorts(portsRes.data);
-        if (corridorsRes?.data) setCorridors(corridorsRes.data);
+        // api interceptor already unwraps { success, count, data } to the array
+        const arr = (r: any) => (Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : []);
+        setCountries(arr(countriesRes));
+        setPorts(arr(portsRes));
+        setCorridors(arr(corridorsRes));
       } catch (err) {
         console.error('Failed to load world directory data', err);
       } finally {
@@ -164,6 +167,16 @@ export const WorldDirectoryPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] shadow-sm">
+          <Loader2 className="w-5 h-5 text-[#FF5E1E] animate-spin" />
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            جارٍ تحميل بيانات الأطلس الجغرافي...
+          </span>
+        </div>
+      )}
 
       {/* Main Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-[#1E2638] pb-3">
@@ -292,7 +305,7 @@ export const WorldDirectoryPage: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span>العملة:</span>
                     <span className="font-mono font-semibold text-[#FF5E1E]">
-                      {country.currencies.join(', ') || 'N/A'}
+                      {country.currencies?.join(', ') || 'N/A'}
                     </span>
                   </div>
                   {country.callingCode && (
@@ -415,7 +428,9 @@ export const WorldDirectoryPage: React.FC = () => {
                   <div className="flex items-center justify-between text-slate-500">
                     <span>الإحداثيات:</span>
                     <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                      {port.coordinates.lat.toFixed(3)}°N, {port.coordinates.lng.toFixed(3)}°E
+                      {port.coordinates
+                        ? `${port.coordinates.lat.toFixed(3)}°N, ${port.coordinates.lng.toFixed(3)}°E`
+                        : '—'}
                     </span>
                   </div>
 
