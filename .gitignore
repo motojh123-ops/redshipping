@@ -52,5 +52,13 @@ Thumbs.db
 /apps/api/prisma/*.db
 /apps/api/prisma/*.db-journal
 
+# Litmus tooling (self-hosted third-party clones with their own git history,
+# local credentials in app.env / .env.local, venv and node_modules)
+/tools/
+
+# Test outputs (Playwright traces / Litmus reports)
+/traces/
+/reports/
+
 .forge-permissions.json
 .freebuff/
