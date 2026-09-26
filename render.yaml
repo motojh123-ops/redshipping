@@ -4,13 +4,6 @@
 # Provisions: PostgreSQL 16 + the NestJS API (build, migrations, seed, health).
 # ==============================================================================
 
-databases:
-  - name: banna-redshipping-db
-    databaseName: banna_redshipping
-    user: banna_app
-    plan: free
-    postgresMajorVersion: "16"
-
 services:
   - type: web
     name: banna-redshipping-api
@@ -21,16 +14,14 @@ services:
     autoDeploy: true
     # Install → generate the Prisma client → build shared-types then the API
     buildCommand: npm ci && npm run -w apps/api db:generate && npx turbo run build --filter=@banna/api
-    # Apply migrations → seed the company/admin accounts (idempotent) → start the API
-    startCommand: npm run -w apps/api db:deploy && npm run -w apps/api db:seed ; node apps/api/dist/main.js
+    # Start the API
+    startCommand: node apps/api/dist/main.js
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: banna-redshipping-db
-          property: connectionString
+        value: postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require
       # Auto-generated secrets — no manual setup required
       - key: JWT_SECRET
         generateValue: true
