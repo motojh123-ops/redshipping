@@ -4,25 +4,28 @@
 
 | الطبقة | المنصة | الملف | النتيجة |
 |---|---|---|---|
-| الفرونت إند (React/Vite) | **Vercel** | `apps/web/vercel.json` | موقع ثابت + بروكسي `/api` للباك إند |
-| الباك إند (NestJS) + PostgreSQL | **Render** | `render.yaml` | API + قاعدة بيانات + migrations + seed تلقائي |
+| الفرونت إند (React/Vite) | **Vercel** | `vercel.json` (الجذر) | موقع ثابت + بروكسي `/api` للباك إند |
+| قاعدة البيانات (PostgreSQL) | **Neon** — مجانية **للأبد** | (بلا ملفات — رابط واحد) | بلا انتهاء وبلا بطاقة، استيقاظ تلقائي |
+| الباك إند (NestJS) | **Render** (أو بديل مجاني — أدناه) | `render.yaml` | API بلا انتهاء + migrations + seed تلقائي |
 | بديل Docker (أي مستضيف) | أي Docker Host | `apps/api/Dockerfile` | صورة إنتاج جاهزة للباك إند |
+
+> **لماذا Neon بدلاً من قاعدة بيانات Render؟** قاعدة Postgres المجانية في Render **تُحذف بعد 30 يوماً** — بينما خطة Neon المجانية **بلا حدود زمنية إطلاقاً** (0.5GB، بلا بطاقة ائتمان)، وينام الخادم بعد 5 دقائق خمول ويستيقظ تلقائياً خلال ~ثانية عند أول استعلام.
 
 ---
 
-## الخطوة 1 — نشر الباك إند على Render (ضغطة واحدة)
+## الخطوة 1 — نشر الباك إند على Render (مع Neon)
 
-1. ادخل إلى [dashboard.render.com](https://dashboard.render.com)
-2. اضغط **New → Blueprint** واختر مستودع GitHub الخاص بالمشروع
-3. سيتعرف Render تلقائياً على ملف `render.yaml` — اضغط **Apply** فقط
-4. سيتم إنشاء وتهيئة كل شيء تلقائياً:
-   - قاعدة بيانات **PostgreSQL 16** (`banna-redshipping-db`)
-   - خدمة الـ API (`banna-redshipping-api`) مع البناء: `npm ci → prisma generate → nest build`
-   - تشغيل **migrations** تلقائياً عند كل إقلاع (`prisma migrate deploy`)
-   - تشغيل **الـ seed** تلقائياً (يُتجاهَل إن كان موجوداً — آمن للتكرار)
-   - توليد أسرار JWT تلقائياً — **لا تحتاج ضبط أي متغير يدوياً**
-   - فحص صحة دوري على `/api/v1/health`
-5. بعد اكتمال النشر انسخ رابط الـ API من صفحة الخدمة، مثال:
+> ⚠️ **أمان أولاً:** كلمة سر Neon نُشرت سابقاً في ملف على GitHub. اذهب فوراً إلى لوحة [neon.com](https://neon.com) → مشروعك → **Reset password**، ثم استخدم الرابط الجديد في الخطوات أدناه. (الرابط القديم في `render.yaml` أُزيل وصار يُطلب منك عند النشر — `sync: false`).
+
+1. انسخ رابطين من لوحة Neon (Dashboard → Project → **Connection string**):
+   - **Pooled** (المضيف يحتوي `-pooler`) → سيكون `DATABASE_URL` للتشغيل
+   - **Direct** (نفس الرابط بدون `-pooler`) → سيكون `DIRECT_DATABASE_URL` للـ migrations/seed
+2. ادخل إلى [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint** → اختر المستودع → **Apply**
+3. سيسألك معالج Blueprint مرة واحدة عن المتغيرين (`DATABASE_URL` و`DIRECT_DATABASE_URL`) — الصق الرابطين. كل الباقي تلقائي:
+   - البناء: `npm ci → prisma generate → turbo build`
+   - عند الإقلاع: **migrations** ثم **seed** (متطابقان/آمنان للتكرار) ثم تشغيل الـ API
+   - توليد أسرار JWT تلقائياً + فحص صحة دوري على `/api/v1/health`
+4. انسخ رابط الـ API من صفحة الخدمة، مثال:
    ```
    https://banna-redshipping-api.onrender.com
    ```
@@ -36,7 +39,7 @@
 | عمليات/تخليص | `ops@banna-logistics.com` | `password123` | ops_officer |
 | حسابات | `accountant@banna-logistics.com` | `password123` | accountant |
 
-> **ملاحظات الخطة المجانية:** الخدمة "تنام" بعد 15 دقيقة من عدم الاستخدام (أول طلب بعدها يستغرق ~50 ثانية)، وقاعدة البيانات المجانية تُحذف بعد 30 يوماً — للإنتاج الجاد رقِّ الخطة إلى `starter` من لوحة Render (غيّر `plan: free` إلى `plan: starter` في `render.yaml`).
+> **ملاحظات الخطة المجانية:** الخدمة على Render "تنام" بعد 15 دقيقة من عدم الاستخدام (أول طلب بعدها يستغرق ~50 ثانية) — تُحل بـ keep-alive أدناه. قاعدة Neon **لا تُحذف أبداً** (تستيقظ خلال ~ثانية). للإنتاج الجاد رقِّ خطة Render إلى `starter` (غيّر `plan: free` إلى `plan: starter`).
 
 ---
 
@@ -63,6 +66,54 @@
 
 ---
 
+## بدائل مجانية لاستضافة الباك إند (محدّث 2026)
+
+فحصنا العروض فعلياً — الواقع الحالي للخطط المجانية:
+
+| المنصة | مجاني للأبد؟ | السبات | ملاحظات |
+|---|---|---|---|
+| **Render** (خدمة الويب فقط) | ✅ نعم | بعد 15 دقيقة | لا ينتهي — مع Neon للـ DB هو الخيار الموصى به أعلاه |
+| **Neon** (قاعدة البيانات) | ✅ نعم، بلا بطاقة | 5 دقائق (استيقاظ ~ثانية) | الأفضل للـ DB — مستخدم فعلاً في هذا المشروع |
+| **Hugging Face Spaces** (Docker) | ✅ نعم | بعد فترة خمول طويلة | **16GB RAM / 2 vCPU** مجاناً! أقوى خيار بديل — أدناه |
+| **Back4App Containers** | ✅ نعم | نعم | 256MB فقط — ضيّقة لـ Prisma |
+| Koyeb | ❌ صار Pro $29/شهر | — | لم يعد مجانياً |
+| Fly.io / Railway | ❌ يتطلبان بطاقة/دفع | — | لا free tier دائم |
+
+### البديل الموصى به عن Render: Hugging Face Spaces (مجاني 100% — 16GB RAM!)
+
+المشروع جاهز له بالكامل: workflow النشر موجود في `.github/workflows/deploy-api-hf-space.yml` ويبني `apps/api/Dockerfile` ويدفعه تلقائياً عند كل push إلى main.
+
+**الإعداد مرة واحدة (~5 دقائق):**
+1. أنشئ Space جديداً في [huggingface.co/spaces](https://huggingface.co/spaces) → **Create new Space** → SDK: **Docker** → الاسم: `red-shipping-api`
+2. في **إعدادات الـ Space → Variables and secrets** أضف:
+   - `PORT=7860` ← إلزامي في HF Spaces
+   - `NODE_ENV=production`
+   - `DATABASE_URL` = رابط Neon **المُجمَّع** لكن **بالمنفذ 443** (HF يحجب المنافذ الصادرة عدا 80/443/8080 — وNeon يدعم الاتصال عبر 443): غيّر في الرابط `neon.tech:5432` إلى `neon.tech:443` مع إبقاء `?sslmode=require`
+   - `DIRECT_DATABASE_URL` = رابط Neon المباشر (بدون `-pooler`) — للـ migrations عند الإقلاع
+   - `JWT_SECRET` و`JWT_REFRESH_SECRET` = قيم عشوائية طويلة (32+ حرفاً)
+   - `SEED_DB=true`
+3. أنشئ توكن كتابة: [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → **role: write**
+4. في GitHub → Settings → Secrets and variables → Actions أضف ثلاثة:
+   - `HF_TOKEN` = التوكن
+   - `HF_USERNAME` = اسم مستخدم HF
+   - `HF_SPACE` = `<username>/red-shipping-api`
+5. push أي تعديل على `apps/api/**` (أو شغّل الـ workflow يدوياً) — الصورة تُبنى وتُدفع والـ Space **يعيد تشغيل نفسه تلقائياً** بالصورة الجديدة
+
+رابط الـ API سيصبح: `https://<username>-red-shipping-api.hf.space` → **حدّث `API_URL` في Vercel بهذا الرابط**.
+
+> ملاحظات HF: الصورة تعمل migrations + seed عند الإقلاع تلقائياً ✓ — وHF يشغّل الحاوية بمستخدم uid 1000 (تطبيقنا لا يكتب ملفات على القرص فلا مشكلة).
+
+### منع السبات نهائياً — Keep-alive مجاني (لـ Render وHF معاً)
+
+1. سجّل في [cron-job.org](https://cron-job.org) (مجاني)
+2. أنشئ مهمة: **GET** `https://<رابط-ال-api>/api/v1/health` كل **14 دقيقة**
+3. النتيجة: الخدمة لا تنام أبداً — استجابة فورية دائماً
+
+### للمحترفين: Oracle Cloud Always Free + Coolify
+أقوى خيار مجاني دائم على الإطلاق: VM بـ **4 أنوية ARM + 24GB RAM** (Always Free، لا سبات ولا انتهاء — مع استخدام دوري). ثبّت [Coolify](https://coolify.io) بسكربت واحد فتحصل على لوحة نشر بـ Git Deploy مثل Render تماماً وتشغّل صورة `apps/api/Dockerfile`. يحتاج ~30 دقيقة إعداد يدوي — كخطة نمو طويلة المدى.
+
+---
+
 ## بديل Docker — صورة الباك إند لأي مستضيف
 
 ```bash
@@ -74,6 +125,13 @@ docker run -p 4000:4000 \
   -e DATABASE_URL="postgresql://user:pass@host:5432/banna_redshipping" \
   -e JWT_SECRET="change_me_min_32_chars_production!!" \
   -e JWT_REFRESH_SECRET="change_me_too_min_32_chars!!!!!!" \
+  banna-api
+
+# مع Neon (موصى به): أضف الرابط المباشر حتى تعمل migrations عبره
+docker run -p 4000:4000 \
+  -e DATABASE_URL="postgresql://...neon.tech:443/db?sslmode=require" \
+  -e DIRECT_DATABASE_URL="postgresql://...neon.tech:5432/db?sslmode=require" \
+  -e JWT_SECRET="..." -e JWT_REFRESH_SECRET="..." \
   banna-api
 ```
 

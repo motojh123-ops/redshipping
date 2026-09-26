@@ -1,0 +1,48 @@
+# ==============================================================================
+# Deploy the NestJS API to a Hugging Face Space (Docker) ? a 100% FREE host
+# with 2 vCPU / 16 GB RAM. See DEPLOYMENT.md ? "????? ??????" for the full guide.
+#
+# One-time setup (GitHub ? Settings ? Secrets and variables ? Actions):
+#   HF_TOKEN     ? Hugging Face access token with WRITE permission
+#                  (huggingface.co/settings/tokens ? New token ? role: write)
+#   HF_USERNAME  ? your Hugging Face username
+#   HF_SPACE     ? <username>/<space-name>  e.g. jklk9579-cyber/red-shipping-api
+#
+# First create the Space once at huggingface.co/spaces:
+#   Create new Space ? SDK: Docker ? name: red-shipping-api ? Create.
+# Then add the Space runtime variables (Settings ? Variables and secrets):
+#   PORT=7860, NODE_ENV=production, DATABASE_URL (Neon pooled URL with port 443!)
+#   DIRECT_DATABASE_URL (Neon direct URL with port 5432), JWT_SECRET,
+#   JWT_REFRESH_SECRET, SEED_DB=true
+#
+# The workflow silently SKIPS until the secrets above are configured.
+# ==============================================================================
+
+name: Deploy API to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/shared-types/**"
+      - ".github/workflows/deploy-api-hf-space.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Skip cleanly (green "skipped") until HF secrets are configured
+    if: ${{ secrets.HF_TOKEN != '' && secrets.HF_SPACE != '' }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Hugging Face container registry
+        run: echo "${{ secrets.HF_TOKEN }}" | docker login registry.hf.space -u "${{ secrets.HF_USERNAME }}" --password-stdin
+
+      - name: Build the production API image (monorepo context)
+        run: docker build -f apps/api/Dockerfile -t "registry.hf.space/${{ secrets.HF_SPACE }}:latest" .
+
+      - name: Push image (the Space restarts automatically with it)
+        run: docker push "registry.hf.space/${{ secrets.HF_SPACE }}:latest"

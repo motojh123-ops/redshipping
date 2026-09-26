@@ -1,7 +1,15 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Render Blueprint — RED SHIPPING / Banna ERP Backend
-# One-click deployment: Render Dashboard → New → Blueprint → select this repo.
-# Provisions: PostgreSQL 16 + the NestJS API (build, migrations, seed, health).
+# Architecture: Render free web service (API) + Neon free PostgreSQL —
+# BOTH never expire, unlike Render's own free Postgres (deleted after 30 days).
+#
+# One-click deploy: Render Dashboard → New → Blueprint → select this repo → Apply.
+# You will be prompted ONCE for the two Neon connection strings (sync: false
+# keeps the credentials out of this public repository).
+#
+# ⚠ SECURITY: a Neon password was previously committed in git history —
+# reset it in the Neon dashboard (Project → Reset password) BEFORE deploying,
+# then paste the fresh connection strings in the Blueprint wizard.
 # ==============================================================================
 
 services:
@@ -10,18 +18,25 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    # Follows the repository's default branch (main) automatically
+    # Follows the repository default branch (main) automatically
     autoDeploy: true
     # Install → generate the Prisma client → build shared-types then the API
     buildCommand: npm ci && npm run -w apps/api db:generate && npx turbo run build --filter=@banna/api
-    # Start the API
-    startCommand: node apps/api/dist/main.js
+    # Migrations + seed run against the DIRECT (non-pooled) Neon URL — Prisma
+    # must not run migrations through a PgBouncer pooled connection.
+    startCommand: DATABASE_URL="$DIRECT_DATABASE_URL" npm run -w apps/api db:deploy && DATABASE_URL="$DIRECT_DATABASE_URL" npm run -w apps/api db:seed ; node apps/api/dist/main.js
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_ENV
         value: production
+      # ── Neon PostgreSQL (free forever, no credit card, autosuspends & wakes automatically) ──
+      # POOLED connection string (host contains "-pooler") — used by the running API.
       - key: DATABASE_URL
-        value: postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require
+        sync: false
+      # DIRECT connection string (same URL WITHOUT "-pooler" in the host) —
+      # used by `prisma migrate deploy` and the seed at boot.
+      - key: DIRECT_DATABASE_URL
+        sync: false
       # Auto-generated secrets — no manual setup required
       - key: JWT_SECRET
         generateValue: true
@@ -32,8 +47,8 @@ services:
       - key: JWT_REFRESH_EXPIRES_IN
         value: 7d
       # Optional: enable reminder/ACID queues (BullMQ). Uncomment this block AND
-      # the keyvalue instance below to activate. Without it the API runs in
-      # disabled-queue mode and every other feature keeps working.
+      # a keyvalue instance to activate. Without it the API runs in disabled-queue
+      # mode and every other feature keeps working.
       # - key: REDIS_URL
       #   fromService:
       #     type: keyvalue
@@ -50,11 +65,3 @@ services:
       # https://redshipping.com,https://www.redshipping.com
       # - key: ALLOWED_ORIGINS
       #   sync: false
-
-# Optional managed Redis for the reminder queues — uncomment together with the
-# REDIS_URL env var above to enable BullMQ (ACID expiry / demurrage alerts).
-#  - type: keyvalue
-#    name: banna-redshipping-redis
-#    plan: free
-#    ipAllowList: []
-#    # internal only — the API reaches it over the private network
