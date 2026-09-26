@@ -22,7 +22,7 @@ name: Deploy API to Hugging Face Space
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - "apps/api/**"
       - "packages/shared-types/**"
