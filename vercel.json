@@ -1,11 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx prisma generate --schema=apps/api/prisma/schema.prisma && npx turbo run build",
+  "buildCommand": "npx turbo run build --filter=@banna/web",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "https://redshipping-api.omarabdelfattah460.workers.dev/api/$1"
     },
     {
       "source": "/(.*)",
