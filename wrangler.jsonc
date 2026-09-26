@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "redshipping-api",
+  "main": "api/index.ts",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
+  ],
+  "alias": {
+    "iconv-lite": "./scripts/empty.js",
+    "@mapbox/node-pre-gyp": "./scripts/empty.js",
+    "mock-aws-s3": "./scripts/empty.js",
+    "aws-sdk": "./scripts/empty.js",
+    "nock": "./scripts/empty.js",
+    "@nestjs/websockets/socket-module": "./scripts/empty.js",
+    "@nestjs/microservices/microservices-module": "./scripts/empty.js",
+    "@nestjs/microservices": "./scripts/empty.js",
+    "class-transformer/storage": "./scripts/empty.js"
+  },
+  "vars": {
+    "NODE_ENV": "production",
+    "DATABASE_URL": "postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require",
+    "DIRECT_DATABASE_URL": "postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require",
+    "JWT_SECRET": "super-secure-production-jwt-secret-redshipping-banna-2026-xyz",
+    "JWT_REFRESH_SECRET": "super-secure-production-jwt-refresh-secret-redshipping-banna-2026-xyz"
+  }
+}
