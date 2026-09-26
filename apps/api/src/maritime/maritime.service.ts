@@ -1096,8 +1096,8 @@ export class MaritimeService {
      5. PORTS SERVICE & SEARCH
      ==================================================================== */
   getAllPorts(query?: string, countryCode?: string, portType?: string): PortDefinition[] {
-    const allPortsMap = { ...GLOBAL_PORTS_MAP, ...this.ports };
-    let result = Object.values(allPortsMap);
+    const allPortsMap: Record<string, PortDefinition> = { ...GLOBAL_PORTS_MAP, ...this.ports };
+    let result: PortDefinition[] = Object.values(allPortsMap);
 
     if (countryCode && countryCode !== 'all') {
       result = result.filter((p) => p.countryCode.toUpperCase() === countryCode.toUpperCase());

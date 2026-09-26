@@ -286,7 +286,7 @@ export class ReportsService {
           ? 'مسار غير محدد (لم تُحدد الموانئ)'
           : `${s.originPort?.nameAr || s.originPort?.nameEn || pol} ← ${s.destinationPort?.nameAr || s.destinationPort?.nameEn || pod}`;
       const cur =
-        laneAgg.get(key) || { pol, pod, label, count: 0, transitDays: [], margins: [] };
+        laneAgg.get(key) || { pol, pod, label, count: 0, transitDays: [] as number[], margins: [] as number[] };
       cur.count += 1;
       if (s.etd && s.eta) {
         const days = Math.round(
