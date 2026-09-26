@@ -17,7 +17,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: master
+    # Follows the repository's default branch (main) automatically
     autoDeploy: true
     # Install → generate the Prisma client → build shared-types then the API
     buildCommand: npm ci && npm run -w apps/api db:generate && npx turbo run build --filter=@banna/api

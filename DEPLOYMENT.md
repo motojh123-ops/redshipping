@@ -43,13 +43,14 @@
 ## الخطوة 2 — نشر الفرونت إند على Vercel
 
 1. ادخل إلى [vercel.com](https://vercel.com) → **Add New → Project** → اختر نفس المستودع
-2. في خطوة الإعداد اختر:
-   - **Framework Preset:** Vite (يُكتشف تلقائياً)
-   - **Root Directory:** `apps/web`
-3. **قبل الضغط Deploy** — أضف متغير بيئة واحداً في *Environment Variables*:
+2. اضغط **Deploy** — لا تحتاج أي إعداد آخر، ويوجد ملفان جاهزان يغطيان طريقتي الإعداد:
+   - **جذر المستودع (الافتراضي والأسهل):** `vercel.json` في الجذر يتولى كل شيء — يبني الويب فقط عبر Turbo (`--filter=@banna/web`) ويستخرج الناتج من `apps/web/dist`
+   - **Root Directory = `apps/web`:** في هذه الحالة يستخدم Vercel ملف `apps/web/vercel.json` بنفس الإعدادات
+3. **بعد أول نشر** — أضف متغير بيئة واحداً من *Settings → Environment Variables*:
    - **Name:** `API_URL`
    - **Value:** رابط الـ API من الخطوة 1 (مثال: `https://banna-redshipping-api.onrender.com` — **بدون** `/` في النهاية)
-4. اضغط **Deploy** — سيقوم `apps/web/vercel.json` تلقائياً بـ:
+   - ثم أعد النشر (Redeploy)
+4. يقوم `vercel.json` تلقائياً بـ:
    - بناء الويب عبر Turbo (يشمل `@banna/shared-types`)
    - توجيه كل الطلبات من `/api/*` إلى الباك إند على Render (بروكسي مخفي — لا CORS ولا تعديلات)
    - إرجاع `index.html` لأي مسار آخر (SPA routing)
