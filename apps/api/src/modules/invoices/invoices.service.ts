@@ -70,8 +70,14 @@ export class InvoicesService {
       };
     });
 
-    const taxRate = Number(data.taxRate || 0.14);
-    const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
+    const taxRate = Number(data.taxRate ?? 0.14);
+    // Per-line taxability (e.g. 0% international freight vs 14% local services)
+    // is resolved by the caller and sent as an explicit taxAmount; otherwise
+    // the flat taxRate applies.
+    const taxAmount =
+      data.taxAmount != null && Number.isFinite(Number(data.taxAmount))
+        ? Math.round(Number(data.taxAmount) * 100) / 100
+        : Math.round(subtotal * taxRate * 100) / 100;
     const total = subtotal + taxAmount;
 
     let resolvedShipmentId = data.shipmentId;

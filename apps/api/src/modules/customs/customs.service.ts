@@ -23,6 +23,8 @@ export class CustomsService {
             jobFileNumber: true,
             blNumber: true,
             client: { select: { id: true, name: true } },
+            originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+            destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
           },
         },
         customsBroker: { select: { id: true, name: true } },

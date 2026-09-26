@@ -11,25 +11,57 @@ import { StatCard } from '../../components/ui/StatCard';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: client, loading } = useApi<any>(`/clients/${id}`);
+  const { user: authUser } = useAuthStore();
   const [c, setC] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
 
   React.useEffect(() => {
     if (client) {
+      // Map the real CRM activities persisted on the client into the tab views
+      const acts: any[] = client.crmActivities || [];
       setC({
         ...client,
         contacts: client.contacts || [],
         shipments: client.shipments || [],
         invoices: client.invoices || [],
         offers: client.quotations || client.offers || [],
-        calls: client.calls || [],
-        meetings: client.meetings || [],
-        reminders: client.reminders || [],
+        calls: acts
+          .filter((a) => a.activityType === 'call')
+          .map((a) => ({
+            id: a.id,
+            date: String(a.completedAt || a.createdAt || '').replace('T', ' ').slice(0, 16),
+            contact: a.subject || '—',
+            duration: '—',
+            user: a.user?.name || '—',
+            summary: a.body || '',
+          })),
+        meetings: acts
+          .filter((a) => a.activityType === 'meeting')
+          .map((a) => ({
+            id: a.id,
+            date: String(a.completedAt || a.scheduledAt || a.createdAt || '').slice(0, 10),
+            location: a.subject || '—',
+            attendees: a.body || '—',
+            user: a.user?.name || '—',
+            notes: a.body || '',
+          })),
+        reminders: acts
+          .filter((a) => a.activityType === 'note' && !a.completedAt)
+          .map((a) => ({
+            id: a.id,
+            dueDate: String(a.scheduledAt || a.createdAt || '').slice(0, 10),
+            title: a.subject || a.body || 'متابعة',
+            priority: 'medium',
+            completed: false,
+            assignedTo: a.user?.name || '—',
+          })),
         attachments: client.attachments || [],
       });
     }
@@ -67,41 +99,83 @@ export const ClientDetails: React.FC = () => {
     { key: 'attachments', label: `الوثائق والتراخيص (${c.attachments?.length || 0})`, icon: FileText },
   ];
 
-  const handleSaveLog = (e: React.FormEvent) => {
+  const [savingLog, setSavingLog] = useState(false);
+
+  const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (logType === 'call') {
-      const newCall = {
-        id: String(Date.now()),
-        date: logForm.date || new Date().toISOString().replace('T', ' ').slice(0, 16),
-        contact: logForm.contact || c.contacts[0]?.name || 'المسؤول',
-        duration: '10 دقائق',
-        user: 'عمر السيد',
-        summary: logForm.notes,
-      };
-      setC({ ...c, calls: [newCall, ...(c.calls || [])] });
-    } else if (logType === 'meeting') {
-      const newMeeting = {
-        id: String(Date.now()),
-        date: logForm.date || new Date().toISOString().split('T')[0],
-        location: logForm.title || 'مقر العميل',
-        attendees: logForm.contact || 'فريق الإدارة',
-        user: 'عمر السيد',
-        notes: logForm.notes,
-      };
-      setC({ ...c, meetings: [newMeeting, ...(c.meetings || [])] });
-    } else if (logType === 'reminder') {
-      const newReminder = {
-        id: String(Date.now()),
-        dueDate: logForm.date || new Date().toISOString().split('T')[0],
-        title: logForm.title || logForm.notes,
-        priority: logForm.priority,
-        completed: false,
-        assignedTo: 'عمر السيد',
-      };
-      setC({ ...c, reminders: [newReminder, ...(c.reminders || [])] });
+    if (savingLog) return;
+
+    const when = logForm.date ? new Date(logForm.date) : new Date();
+    const whenIso = when.toISOString();
+
+    setSavingLog(true);
+    try {
+      // Persist the activity on the client through the real API (CrmActivity row)
+      const created: any = await api.post(`/clients/${id}/activities`, {
+        activityType: logType === 'reminder' ? 'note' : logType,
+        subject:
+          logType === 'reminder'
+            ? logForm.title || logForm.notes || 'متابعة'
+            : logForm.contact || logForm.title || '—',
+        body: logForm.notes,
+        scheduledAt: whenIso,
+        completedAt: logType === 'reminder' ? null : whenIso,
+      });
+
+      const userName = created?.user?.name || authUser?.name || '—';
+      if (logType === 'call') {
+        setC((prev: any) => ({
+          ...prev,
+          calls: [
+            {
+              id: created.id,
+              date: whenIso.replace('T', ' ').slice(0, 16),
+              contact: logForm.contact || prev?.contacts?.[0]?.name || '—',
+              duration: '—',
+              user: userName,
+              summary: logForm.notes,
+            },
+            ...(prev?.calls || []),
+          ],
+        }));
+      } else if (logType === 'meeting') {
+        setC((prev: any) => ({
+          ...prev,
+          meetings: [
+            {
+              id: created.id,
+              date: whenIso.slice(0, 10),
+              location: logForm.title || '—',
+              attendees: logForm.contact || '—',
+              user: userName,
+              notes: logForm.notes,
+            },
+            ...(prev?.meetings || []),
+          ],
+        }));
+      } else {
+        setC((prev: any) => ({
+          ...prev,
+          reminders: [
+            {
+              id: created.id,
+              dueDate: whenIso.slice(0, 10),
+              title: logForm.title || logForm.notes || 'متابعة',
+              priority: logForm.priority,
+              completed: false,
+              assignedTo: userName,
+            },
+            ...(prev?.reminders || []),
+          ],
+        }));
+      }
+      setShowLogModal(false);
+      setLogForm({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
+    } catch (err: any) {
+      alert(err?.message || 'تعذر حفظ النشاط على الخادم — حاول مجدداً');
+    } finally {
+      setSavingLog(false);
     }
-    setShowLogModal(false);
-    setLogForm({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
   };
 
   const toggleReminder = (rId: string) => {

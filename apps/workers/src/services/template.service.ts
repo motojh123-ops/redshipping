@@ -1,4 +1,4 @@
-import { PdfJobData } from '../queues/queue.types.js';
+import { PdfJobData } from '../queues/queue.types';
 
 export class TemplateService {
   public static render(job: PdfJobData): string {

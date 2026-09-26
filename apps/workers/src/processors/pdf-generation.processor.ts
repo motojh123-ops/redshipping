@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { Job } from 'bullmq';
-import { PdfJobData, PdfJobResult } from '../queues/queue.types.js';
-import { TemplateService } from '../services/template.service.js';
-import { GotenbergService } from '../services/gotenberg.service.js';
+import { PdfJobData, PdfJobResult } from '../queues/queue.types';
+import { TemplateService } from '../services/template.service';
+import { GotenbergService } from '../services/gotenberg.service';
 
 export async function processPdfJob(job: Job<PdfJobData, PdfJobResult>): Promise<PdfJobResult> {
   const jobData = job.data;

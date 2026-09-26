@@ -134,7 +134,7 @@ export const SettingsPage: React.FC = () => {
   const [selectedUserForPerms, setSelectedUserForPerms] = useState<UserItem | null>(null);
   const [userPerms, setUserPerms] = useState<any>(DEFAULT_PERMISSIONS);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', role: 'sales', department: 'المبيعات' });
+  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', role: 'sales', department: 'المبيعات', password: '' });
   const [toastMsg, setToastMsg] = useState('');
 
   const showToast = (msg: string) => {
@@ -165,7 +165,7 @@ export const SettingsPage: React.FC = () => {
     if (!selectedUserForPerms) return;
     setUsers(users.map((u) => u.id === selectedUserForPerms.id ? { ...u, permissions: userPerms } : u));
     setSelectedUserForPerms(null);
-    showToast(`تم تحديث صلاحيات المستخدم "${selectedUserForPerms.name}" بنجاح!`);
+    showToast(`تم تحديث صلاحيات "${selectedUserForPerms.name}" لهذه الجلسة فقط`);
   };
 
   const handleResetData = async () => {
@@ -191,21 +191,48 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const [addingUser, setAddingUser] = useState(false);
+
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser: UserItem = {
-      id: String(Date.now()),
-      name: newUserForm.name,
-      email: newUserForm.email,
-      role: newUserForm.role,
-      department: newUserForm.department,
-      isActive: true,
-      permissions: DEFAULT_PERMISSIONS,
-    };
-    setUsers([...users, newUser]);
-    setShowAddUserModal(false);
-    setNewUserForm({ name: '', email: '', role: 'sales', department: 'المبيعات' });
-    showToast(`تمت إضافة المستخدم "${newUser.name}" بنجاح!`);
+    if (addingUser) return;
+
+    if ((newUserForm.password || '').length < 8) {
+      showToast('كلمة المرور المؤقتة يجب أن تكون 8 أحرف على الأقل');
+      return;
+    }
+
+    setAddingUser(true);
+    try {
+      // Persist the user through the real API (bcrypt-hashed password, DB record)
+      const created: any = await api.post('/users', {
+        name: newUserForm.name,
+        email: newUserForm.email,
+        password: newUserForm.password,
+        role: newUserForm.role,
+        department: newUserForm.department,
+      });
+
+      setUsers((prev) => [
+        {
+          id: created.id,
+          name: created.name,
+          email: created.email,
+          role: created.role || newUserForm.role,
+          isActive: created.isActive ?? true,
+          department: newUserForm.department,
+          permissions: DEFAULT_PERMISSIONS,
+        },
+        ...prev,
+      ]);
+      setShowAddUserModal(false);
+      setNewUserForm({ name: '', email: '', role: 'sales', department: 'المبيعات', password: '' });
+      showToast(`تم إنشاء حساب المستخدم "${created.name}" في قاعدة البيانات بنجاح`);
+    } catch (err: any) {
+      showToast(err?.message || 'تعذر إنشاء المستخدم — تحقق من البيانات وحاول مجدداً');
+    } finally {
+      setAddingUser(false);
+    }
   };
 
   const togglePermission = (moduleKey: string, field: 'view' | 'create' | 'edit' | 'delete') => {
@@ -1161,8 +1188,22 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
+            <div>
+              <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">كلمة مرور مؤقتة (8 أحرف على الأقل) *</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={newUserForm.password}
+                onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+
             <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed">
-              💡 سيتم إرسال رابط تفعيل الحساب وتعيين كلمة المرور تلقائياً إلى البريد الإلكتروني للمستخدم مع تطبيق صلاحيات الدور الافتراضية.
+              💡 يتم إنشاء الحساب فعلياً في قاعدة البيانات بهذه البيانات، ويستطيع الموظف تسجيل الدخول فوراً بكلمة المرور المؤقتة وتغييرها من صفحة الملف الشخصي.
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">

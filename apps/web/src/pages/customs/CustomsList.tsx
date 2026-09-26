@@ -57,7 +57,35 @@ export const CustomsList: React.FC = () => {
     try {
       const data = await customsService.fetchCustoms();
       if (Array.isArray(data)) {
-        setDossiers(data as any);
+        const mapped: CustomsDossierItem[] = data.map((item: any) => {
+          const expiryDate = item.acidExpiryDate ? new Date(item.acidExpiryDate) : null;
+          const daysLeft = expiryDate && !isNaN(expiryDate.getTime())
+            ? Math.max(0, Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+            : 0;
+
+          let status: 'acid_issued' | 'inspected' | 'release_issued' = 'acid_issued';
+          if (item.status === 'release_issued' || item.status === 'released' || item.releaseDate) {
+            status = 'release_issued';
+          } else if (item.status === 'inspected' || item.inspectionDate) {
+            status = 'inspected';
+          }
+
+          return {
+            id: item.id,
+            acidNumber: item.acidNumber || '—',
+            daysLeft,
+            certNumber: item.customsCertificateNumber || item.certNumber || '—',
+            shipmentFile: item.shipment?.jobFileNumber || item.shipmentFile || '—',
+            blNumber: item.shipment?.blNumber || item.blNumber || '—',
+            client: item.shipment?.client?.name || item.client || '—',
+            status,
+            duties: item.dutiesPaid != null ? `${Number(item.dutiesPaid).toLocaleString()} ج.م` : (item.duties || '—'),
+            vat: item.vatPaid != null ? `${Number(item.vatPaid).toLocaleString()} ج.م` : (item.vat || '—'),
+            inspectionDate: item.inspectionDate ? String(item.inspectionDate).slice(0, 10) : '—',
+            port: item.shipment?.destinationPort?.name || item.shipment?.originPort?.name || item.port || 'ميناء الإسكندرية',
+          };
+        });
+        setDossiers(mapped);
         setIsLiveConnected(true);
       }
     } catch (err) {
@@ -77,11 +105,11 @@ export const CustomsList: React.FC = () => {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
-        d.acidNumber.includes(q) ||
-        d.shipmentFile.toLowerCase().includes(q) ||
-        d.client.toLowerCase().includes(q) ||
-        d.certNumber.includes(q) ||
-        d.blNumber.toLowerCase().includes(q);
+        (d.acidNumber && d.acidNumber.toLowerCase().includes(q)) ||
+        (d.shipmentFile && d.shipmentFile.toLowerCase().includes(q)) ||
+        (d.client && d.client.toLowerCase().includes(q)) ||
+        (d.certNumber && d.certNumber.toLowerCase().includes(q)) ||
+        (d.blNumber && d.blNumber.toLowerCase().includes(q));
 
       const matchesStatus = statusFilter === 'all' || d.status === statusFilter;
       return matchesSearch && matchesStatus;
@@ -363,7 +391,7 @@ export const CustomsList: React.FC = () => {
             </div>
           ) : (
             filteredDossiers.map((d) => {
-            const isCertNumeric = d.certNumber.includes('/') || !isNaN(Number(d.certNumber));
+            const isCertNumeric = d.certNumber ? (d.certNumber.includes('/') || !isNaN(Number(d.certNumber))) : false;
             const isCritical = d.daysLeft <= 20;
 
             return (
@@ -540,7 +568,7 @@ export const CustomsList: React.FC = () => {
                         ))}
                       </div>
                       <span className="text-[9px] font-mono tracking-widest text-slate-500 dark:text-slate-400 font-bold mt-1">
-                        * ACID-{d.acidNumber.slice(0, 9)} *
+                        * ACID-{(d.acidNumber || '000000000').slice(0, 9)} *
                       </span>
                     </div>
 

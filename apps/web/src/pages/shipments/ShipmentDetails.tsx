@@ -39,10 +39,12 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 import { validateContainerIso6346, getCarrierTrackingUrl, calculateDemurrageDetention, calculatePortTerminalStorage } from '../../utils/maritime';
+import { useAuthStore } from '../../store/authStore';
 
 export const ShipmentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [shipment, setShipment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'containers' | 'financials' | 'customs' | 'events' | 'documents'>('containers');
@@ -64,8 +66,8 @@ export const ShipmentDetails: React.FC = () => {
 
   // Proof of Delivery (POD) & E-Signature state
   const [isPodModalOpen, setIsPodModalOpen] = useState(false);
-  const [receiverName, setReceiverName] = useState('أحمد محمد الشريف');
-  const [receiverPhone, setReceiverPhone] = useState('+20 100 871 2291');
+  const [receiverName, setReceiverName] = useState('');
+  const [receiverPhone, setReceiverPhone] = useState('');
   const [signedPodDataUrl, setSignedPodDataUrl] = useState<string | null>(null);
   const sigCanvasRef = useRef<any>(null);
 
@@ -75,58 +77,7 @@ export const ShipmentDetails: React.FC = () => {
   const [doExpiryDate, setDoExpiryDate] = useState('');
 
   // Documents Dossier state
-  const [documents, setDocuments] = useState([
-    {
-      id: 'doc-1',
-      name: 'Bill of Lading Draft (B/L #MSCU8812903).pdf',
-      category: 'BL',
-      categoryLabel: 'بوليصة شحن بحري (B/L)',
-      fileSize: '1.4 MB',
-      uploadedAt: '2026-09-02 11:30',
-      uploadedBy: 'أحمد مصطفى',
-      isVerified: true,
-    },
-    {
-      id: 'doc-2',
-      name: 'Commercial Invoice #INV-2026-881.pdf',
-      category: 'INVOICE',
-      categoryLabel: 'فاتورة تجارية معتمدة',
-      fileSize: '840 KB',
-      uploadedAt: '2026-08-28 14:15',
-      uploadedBy: 'سارة حسين',
-      isVerified: true,
-    },
-    {
-      id: 'doc-3',
-      name: 'Packing List & Container Tare.xlsx',
-      category: 'PACKING_LIST',
-      categoryLabel: 'بيان العبوة والأوزان',
-      fileSize: '512 KB',
-      uploadedAt: '2026-08-28 14:20',
-      uploadedBy: 'سارة حسين',
-      isVerified: true,
-    },
-    {
-      id: 'doc-4',
-      name: 'Certificate of Origin (EUR.1).pdf',
-      category: 'CERT_ORIGIN',
-      categoryLabel: 'شهادة المنشأ الرسمية',
-      fileSize: '1.1 MB',
-      uploadedAt: '2026-08-29 09:45',
-      uploadedBy: 'أحمد مصطفى',
-      isVerified: true,
-    },
-    {
-      id: 'doc-5',
-      name: 'NAFEZA ACID Certificate #4829104829.pdf',
-      category: 'FORM_46',
-      categoryLabel: 'إشعار تسجيل القيد المسبق (ACID)',
-      fileSize: '620 KB',
-      uploadedAt: '2026-08-30 16:00',
-      uploadedBy: 'سارة حسين',
-      isVerified: true,
-    },
-  ]);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [newDocName, setNewDocName] = useState('');
   const [newDocCategory, setNewDocCategory] = useState('BL');
@@ -669,30 +620,38 @@ export const ShipmentDetails: React.FC = () => {
                   containersWithDD.map((c: any) => (
                     <tr key={c.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                       <td className="py-3.5 px-4">
-                        <span className="font-mono font-bold text-brand-600 block">{c.containerNumber || 'MSCU8912801'}</span>
-                        <a
-                          href={getCarrierTrackingUrl(shipment?.shippingLine?.name || '', c.containerNumber || '')}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] text-[#FF5E1E] hover:underline font-bold mt-0.5"
-                          title="استعلام مباشر لدى الخط الملاحي"
-                        >
-                          <span>تتبع الخط المباشر</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+                        <span className="font-mono font-bold text-brand-600 block">{c.containerNumber || '—'}</span>
+                        {c.containerNumber && (
+                          <a
+                            href={getCarrierTrackingUrl(shipment?.shippingLine?.name || '', c.containerNumber)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-[#FF5E1E] hover:underline font-bold mt-0.5"
+                            title="استعلام مباشر لدى الخط الملاحي"
+                          >
+                            <span>تتبع الخط المباشر</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100">{c.containerType}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-500 text-xs">{c.sealNumber || 'SL-88129'}</td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100">{c.containerType || '—'}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-500 text-xs">{c.sealNumber || '—'}</td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-1.5">
                           <Scale className="w-3.5 h-3.5 text-slate-400" />
                           <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
-                            {c.vgmWeightKg ? `${c.vgmWeightKg.toLocaleString()} كجم` : `${((c.cargoWeightKg || 20500) + (c.tareWeightKg || 3800)).toLocaleString()} كجم`}
+                            {c.vgmWeightKg
+                              ? `${c.vgmWeightKg.toLocaleString()} كجم`
+                              : (c.cargoWeightKg || c.tareWeightKg)
+                                ? `${((c.cargoWeightKg || 0) + (c.tareWeightKg || 0)).toLocaleString()} كجم`
+                                : '—'}
                           </span>
                         </div>
-                        <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
-                          VGM SOLAS معتمد ✓
-                        </span>
+                        {c.vgmWeightKg && (
+                          <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
+                            VGM SOLAS معتمد ✓
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
@@ -755,14 +714,14 @@ export const ShipmentDetails: React.FC = () => {
               <span className="text-xs text-slate-400 block">إجمالي المفوتر للعميل (Revenue)</span>
               <div className="mt-1">
                 <span className="text-lg font-bold font-mono text-slate-900 dark:text-white block">
-                  ${shipment.financialSummary?.invoicedUsd?.toLocaleString() || '2,800'} USD
+                  ${(shipment.financialSummary?.invoicedUsd ?? 0).toLocaleString()} USD
                 </span>
                 <span className="text-xs font-mono text-slate-500">
-                  + {shipment.financialSummary?.invoicedEgp?.toLocaleString() || '19,500'} EGP
+                  + {(shipment.financialSummary?.invoicedEgp ?? 0).toLocaleString()} EGP
                 </span>
               </div>
               <span className="text-[10px] text-brand-600 dark:text-brand-400 block mt-1">
-                إجمالي موحد: ~${shipment.financialSummary?.consolidatedRevUsd?.toLocaleString() || '3,178'} USD
+                إجمالي موحد: ~${(shipment.financialSummary?.consolidatedRevUsd ?? 0).toLocaleString()} USD
               </span>
             </div>
 
@@ -770,10 +729,10 @@ export const ShipmentDetails: React.FC = () => {
               <span className="text-xs text-slate-400 block">التكاليف والمصروفات الفعلية (Costs)</span>
               <div className="mt-1">
                 <span className="text-lg font-bold font-mono text-rose-600 block">
-                  ${shipment.financialSummary?.actualCostUsd?.toLocaleString() || '1,850'} USD
+                  ${(shipment.financialSummary?.actualCostUsd ?? 0).toLocaleString()} USD
                 </span>
                 <span className="text-xs font-mono text-slate-500">
-                  + {shipment.financialSummary?.actualCostEgp?.toLocaleString() || '13,000'} EGP
+                  + {(shipment.financialSummary?.actualCostEgp ?? 0).toLocaleString()} EGP
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 block mt-1">
@@ -784,22 +743,22 @@ export const ShipmentDetails: React.FC = () => {
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm text-start">
               <span className="text-xs text-slate-400 block">صافي أرباح العملية (Net Profit)</span>
               <div className="mt-1">
-                <span className="text-lg font-black font-mono text-emerald-600 block">
-                  +${shipment.financialSummary?.netProfitUsd?.toLocaleString() || '1,076.21'} USD
+                <span className={`text-lg font-black font-mono block ${(shipment.financialSummary?.netProfitUsd ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {(shipment.financialSummary?.netProfitUsd ?? 0) >= 0 ? '+' : ''}${(shipment.financialSummary?.netProfitUsd ?? 0).toLocaleString()} USD
                 </span>
-                <span className="text-xs font-mono text-emerald-600 font-bold">
-                  ~+{shipment.financialSummary?.netProfitEgp?.toLocaleString() || '55,425'} EGP
+                <span className={`text-xs font-mono font-bold ${(shipment.financialSummary?.netProfitEgp ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  ~{(shipment.financialSummary?.netProfitEgp ?? 0) >= 0 ? '+' : ''}{(shipment.financialSummary?.netProfitEgp ?? 0).toLocaleString()} EGP
                 </span>
               </div>
               <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                شحنة رابحة ومحققة المستهدف ✓
+                {(shipment.financialSummary?.netProfitUsd ?? 0) >= 0 ? 'شحنة رابحة ✓' : 'تكلفة تتجاوز الإيراد'}
               </span>
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm text-start">
               <span className="text-xs text-slate-400 block">هامش الربحية الصافي (Margin)</span>
               <span className="text-2xl font-black font-mono text-brand-600 mt-1 block">
-                {shipment.financialSummary?.profitMarginPercent || 33.9}%
+                {shipment.financialSummary?.profitMarginPercent ?? 0}%
               </span>
               <span className="text-[10px] text-slate-400 block mt-1">
                 بسعر صرف البنك المركزي (51.50 ج.م)
@@ -869,11 +828,11 @@ export const ShipmentDetails: React.FC = () => {
             <div>
               <span className="text-xs text-slate-400 block font-bold uppercase">رقم القيد المسبق للشحنة (ACID)</span>
               <span className="text-xl font-extrabold text-brand-600 font-mono">
-                {shipment.customsDossier?.acidNumber || '2026-9281-0049-881'}
+                {shipment.customsDossier?.acidNumber || '— غير مسجل —'}
               </span>
             </div>
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
-              {shipment.customsDossier?.status || 'acid_issued'}
+              {shipment.customsDossier?.status || 'لم يبدأ'}
             </span>
           </div>
 
@@ -881,19 +840,19 @@ export const ShipmentDetails: React.FC = () => {
             <div>
               <span className="text-xs text-slate-400 block">رقم الشهادة الجمركية 46</span>
               <span className="font-mono font-bold text-slate-900 dark:text-white mt-1 block">
-                {shipment.customsDossier?.customsCertificateNumber || '46/2026/8912'}
+                {shipment.customsDossier?.customsCertificateNumber || '—'}
               </span>
             </div>
             <div>
               <span className="text-xs text-slate-400 block">الرسوم الجمركية المسددة</span>
               <span className="font-mono font-bold text-slate-900 dark:text-white mt-1 block">
-                {shipment.customsDossier?.dutiesPaid ? `EGP ${Number(shipment.customsDossier.dutiesPaid).toLocaleString()}` : 'EGP 145,200'}
+                {shipment.customsDossier?.dutiesPaid ? `EGP ${Number(shipment.customsDossier.dutiesPaid).toLocaleString()}` : '—'}
               </span>
             </div>
             <div>
               <span className="text-xs text-slate-400 block">ضريبة القيمة المضافة (14%)</span>
               <span className="font-mono font-bold text-slate-900 dark:text-white mt-1 block">
-                {shipment.customsDossier?.vatPaid ? `EGP ${Number(shipment.customsDossier.vatPaid).toLocaleString()}` : 'EGP 82,400'}
+                {shipment.customsDossier?.vatPaid ? `EGP ${Number(shipment.customsDossier.vatPaid).toLocaleString()}` : '—'}
               </span>
             </div>
           </div>
@@ -956,71 +915,79 @@ export const ShipmentDetails: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 transition flex flex-col justify-between shadow-sm"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-500/20">
-                      {doc.categoryLabel}
-                    </span>
-                    {doc.isVerified && (
-                      <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                        <CheckCircle2 className="w-3 h-3" />
-                        مطابق ومعتمد
+          {documents.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 transition flex flex-col justify-between shadow-sm"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-500/20">
+                        {doc.categoryLabel}
                       </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-start gap-2.5 mt-2">
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4" />
+                      {doc.isVerified && (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                          <CheckCircle2 className="w-3 h-3" />
+                          مطابق ومعتمد
+                        </span>
+                      )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate" title={doc.name}>
-                        {doc.name}
-                      </p>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                        <span>{doc.fileSize}</span>
-                        <span>•</span>
-                        <span>{doc.uploadedAt}</span>
+
+                    <div className="flex items-start gap-2.5 mt-2">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate" title={doc.name}>
+                          {doc.name}
+                        </p>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                          <span>{doc.fileSize}</span>
+                          <span>•</span>
+                          <span>{doc.uploadedAt}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between pt-3 mt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
-                  <span className="text-[10px] text-slate-500">بواسطة: {doc.uploadedBy}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPreviewDoc(doc)}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
-                      title="معاينة المستند"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => alert(`جاري تحميل ملف ${doc.name}`)}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
-                      title="تحميل"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setDocuments(documents.filter((d) => d.id !== doc.id))}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition cursor-pointer"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="flex items-center justify-between pt-3 mt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
+                    <span className="text-[10px] text-slate-500">بواسطة: {doc.uploadedBy}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPreviewDoc(doc)}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
+                        title="معاينة المستند"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => alert(`جاري تحميل ملف ${doc.name}`)}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
+                        title="تحميل"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDocuments(documents.filter((d) => d.id !== doc.id))}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition cursor-pointer"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+              <FileText className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">لا توجد مستندات مرفوعة بعد</h4>
+              <p className="text-xs text-slate-400 mt-1">يمكنك رفع البوالص الملاحية، الفواتير التجارية، وشهادات المنشأ للأرشيف الرقمي</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1051,7 +1018,7 @@ export const ShipmentDetails: React.FC = () => {
                 categoryLabel: categoryMap[newDocCategory] || 'مستند رسمي',
                 fileSize: '1.2 MB',
                 uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-                uploadedBy: 'عمر البنا',
+                uploadedBy: user?.name || 'مستخدم النظام',
                 isVerified: true,
               };
               setDocuments([createdDoc, ...documents]);

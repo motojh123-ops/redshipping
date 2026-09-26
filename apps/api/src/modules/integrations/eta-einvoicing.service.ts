@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException, ServiceUnavailableException, BadGatewayException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InvoiceStatus } from '@banna/shared-types';
+import { PrismaService } from '../../database/prisma.service';
 
 export interface EtaDocumentLine {
   description: string;
@@ -83,8 +85,17 @@ export class EtaEinvoicingService {
   private readonly clientId: string;
   private readonly clientSecret: string;
 
-  constructor(private config: ConfigService) {
-    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+  constructor(
+    private config: ConfigService,
+    private prisma: PrismaService,
+  ) {
+    // ETA_ENV selects the pre-production (SIT) or production endpoints.
+    const env = (
+      this.config.get<string>('ETA_ENV') ||
+      this.config.get<string>('NODE_ENV') ||
+      'sit'
+    ).toLowerCase();
+    const isProd = env === 'production';
     this.idBaseUrl = isProd
       ? 'https://id.invoicing.eta.gov.eg'
       : 'https://id.sit.invoicing.eta.gov.eg';
@@ -92,8 +103,17 @@ export class EtaEinvoicingService {
       ? 'https://api.invoicing.eta.gov.eg'
       : 'https://api.sit.invoicing.eta.gov.eg';
 
-    this.clientId = this.config.get<string>('ETA_CLIENT_ID') || 'test-client-id';
-    this.clientSecret = this.config.get<string>('ETA_CLIENT_SECRET') || 'test-client-secret';
+    this.clientId = this.config.get<string>('ETA_CLIENT_ID') || '';
+    this.clientSecret = this.config.get<string>('ETA_CLIENT_SECRET') || '';
+  }
+
+  /** Fail fast with an honest error when the integration is not configured. */
+  private ensureConfigured(): void {
+    if (!this.clientId || !this.clientSecret) {
+      throw new ServiceUnavailableException(
+        'ETA e-Invoicing is not configured on this server. Set ETA_ENV, ETA_CLIENT_ID and ETA_CLIENT_SECRET to enable live submission to the Egyptian Tax Authority.',
+      );
+    }
   }
 
   /**
@@ -104,29 +124,48 @@ export class EtaEinvoicingService {
       return this.accessToken;
     }
 
+    this.ensureConfigured();
+
     try {
       this.logger.log(`Requesting ETA auth token from ${this.idBaseUrl}/connect/token`);
-      
-      // In production, execute actual fetch/axios call:
-      // const res = await fetch(`${this.idBaseUrl}/connect/token`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      //   body: new URLSearchParams({
-      //     grant_type: 'client_credentials',
-      //     client_id: this.clientId,
-      //     client_secret: this.clientSecret,
-      //   }),
-      // });
-      // const json = await res.json();
-      
-      // Simulated valid token response with 1-hour expiration
-      this.accessToken = `eta_token_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      this.tokenExpiresAt = Date.now() + 3600 * 1000;
 
+      const form = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        scope: 'invoicing.api',
+      });
+
+      const res = await fetch(`${this.idBaseUrl}/connect/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new BadGatewayException(
+          `ETA identity server returned HTTP ${res.status}: ${errText.slice(0, 300)}`,
+        );
+      }
+
+      const json = (await res.json()) as { access_token?: string; expires_in?: number };
+      if (!json?.access_token) {
+        throw new BadGatewayException('ETA identity server response did not contain an access_token');
+      }
+
+      this.accessToken = json.access_token;
+      this.tokenExpiresAt = Date.now() + (Number(json.expires_in) || 3600) * 1000;
       return this.accessToken;
     } catch (error: any) {
+      this.accessToken = null;
+      this.tokenExpiresAt = 0;
+      if (error instanceof HttpException) throw error;
       this.logger.error(`Failed to obtain ETA token: ${error.message}`);
-      throw error;
+      throw new ServiceUnavailableException(
+        `Could not reach the ETA identity server: ${error.message}`,
+      );
     }
   }
 
@@ -135,35 +174,55 @@ export class EtaEinvoicingService {
    */
   async submitDocuments(documents: EtaDocument[]) {
     const token = await this.getAuthToken();
-    this.logger.log(`Submitting ${documents.length} document(s) to ETA (${this.apiBaseUrl}/api/v1.0/documentsubmissions)`);
 
-    const submissionPayload = {
-      documents: documents.map((doc) => ({
-        ...doc,
-        signatures: doc.signatures || [
-          {
-            signatureType: 'I',
-            value: 'MEYCIQDx...[PKCS#7 eToken Digital Signature]...==',
-          },
-        ],
-      })),
-    };
+    try {
+      this.logger.log(
+        `Submitting ${documents.length} document(s) to ETA (${this.apiBaseUrl}/api/v1.0/documentsubmissions)`,
+      );
 
-    // Return structured submission response matching ETA API spec
-    const submissionId = `SUB-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const acceptedDocuments = documents.map((doc) => ({
-      internalId: doc.internalID,
-      uuid: `ETA-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-      status: 'Valid',
-      submissionDate: new Date().toISOString(),
-    }));
+      const res = await fetch(`${this.apiBaseUrl}/api/v1.0/documentsubmissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ documents }),
+        signal: AbortSignal.timeout(30000),
+      });
 
-    return {
-      submissionId,
-      acceptedDocuments,
-      rejectedDocuments: [],
-      rawPayloadSize: JSON.stringify(submissionPayload).length,
-    };
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!res.ok) {
+        throw new BadGatewayException({
+          statusCode: 502,
+          message: `ETA submission endpoint returned HTTP ${res.status}`,
+          etaResponse: parsed ?? raw.slice(0, 1000),
+        });
+      }
+      if (!parsed) {
+        throw new BadGatewayException('ETA submission endpoint returned a non-JSON response');
+      }
+
+      // Return the live ETA response together with a normalized summary.
+      return {
+        submissionId: parsed.submissionUUID ?? null,
+        acceptedDocuments: parsed.acceptedDocuments ?? [],
+        rejectedDocuments: parsed.rejectedDocuments ?? [],
+        rawResponse: parsed,
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`ETA submission failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        `Could not reach the ETA invoicing API: ${error.message}`,
+      );
+    }
   }
 
   /**
@@ -173,26 +232,195 @@ export class EtaEinvoicingService {
     const token = await this.getAuthToken();
     this.logger.log(`Fetching ETA document ${uuid}`);
 
+    try {
+      const res = await fetch(
+        `${this.apiBaseUrl}/api/v1.0/documents/${encodeURIComponent(uuid)}/details`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!res.ok) {
+        throw new BadGatewayException(
+          `ETA document API returned HTTP ${res.status}${parsed ? `: ${JSON.stringify(parsed).slice(0, 300)}` : ''}`,
+        );
+      }
+      if (!parsed) {
+        throw new BadGatewayException('ETA document API returned a non-JSON response');
+      }
+      return parsed;
+    } catch (error: any) {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException(
+        `Could not reach the ETA document API: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Submit a persisted ERP invoice to the ETA e-Invoicing API.
+   * The document is built from real database rows (invoice + client + company)
+   * and the live ETA outcome is persisted back onto the invoice.
+   */
+  async submitInvoiceDocument(tenantId: string, invoiceId: string) {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id: invoiceId, companyId: tenantId },
+      include: { client: true, items: true },
+    });
+    if (!invoice) {
+      throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
+    }
+
+    const company = await this.prisma.company.findUnique({ where: { id: tenantId } });
+    if (!company?.taxNumber) {
+      throw new BadRequestException(
+        'Company tax number (issuer) is missing. Maintain the company tax registration in settings before submitting to ETA.',
+      );
+    }
+    if (!invoice.client?.taxNumber) {
+      throw new BadRequestException(
+        `Client "${invoice.client?.name ?? invoice.clientId}" has no tax number (receiver ID). Add the client tax registration before submitting to ETA.`,
+      );
+    }
+
+    const doc = this.buildDocumentFromInvoice(invoice, invoice.client, company);
+    const result = await this.submitDocuments([doc]);
+
+    const accepted: any =
+      result.acceptedDocuments?.find((d: any) => d.internalId === invoice.invoiceNumber) ??
+      result.acceptedDocuments?.[0] ??
+      null;
+    const acceptedUuid = accepted?.uuid ?? accepted?.longId ?? null;
+
+    // Persist the real ETA outcome on the invoice (no invented identifiers).
+    if (result.submissionId || acceptedUuid) {
+      const etaTrail = [
+        result.submissionId ? `etaSubmissionUUID:${result.submissionId}` : '',
+        acceptedUuid ? `etaUUID:${acceptedUuid}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: InvoiceStatus.ISSUED,
+          notes: `${invoice.notes ? `${invoice.notes} | ` : ''}${etaTrail}`.slice(0, 4000),
+        },
+      });
+    }
+
     return {
-      uuid,
-      submissionUUID: `SUB-2026-99124`,
-      status: 'Valid',
-      dateTimeIssued: new Date().toISOString(),
-      dateTimeReceived: new Date().toISOString(),
-      totalSales: 162700,
-      totalDiscount: 0,
-      netAmount: 162700,
-      totalTax: 2730,
-      totalAmount: 165430,
-      validationResults: {
-        status: 'Valid',
-        validationSteps: [
-          { name: 'SyntaxValidation', status: 'Passed' },
-          { name: 'SignatureValidation', status: 'Passed' },
-          { name: 'IssuerValidation', status: 'Passed' },
-          { name: 'ReceiverValidation', status: 'Passed' },
-        ],
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      etaSubmission: result,
+    };
+  }
+
+  /**
+   * Map a real ERP invoice (with client + company rows) to the ETA document format.
+   * Every value is derived from database records — nothing is simulated.
+   */
+  private buildDocumentFromInvoice(invoice: any, client: any, company: any): EtaDocument {
+    const rate = Number(invoice.exchangeRate) || 1;
+    const toEgp = (v: any) => {
+      const n = Number(v) || 0;
+      return Math.round((invoice.currency === 'EGP' ? n : n * rate) * 100) / 100;
+    };
+
+    const subtotal = toEgp(invoice.subtotal);
+    const taxAmount = toEgp(invoice.taxAmount);
+    const total = toEgp(invoice.total);
+    // Effective VAT ratio across the invoice (0% international freight vs 14% local services)
+    const taxRatio = subtotal > 0 ? taxAmount / subtotal : 0;
+
+    const lines = (invoice.items || []).map((it: any) => {
+      const lineTotal = toEgp(it.totalPrice);
+      return {
+        description: it.description,
+        itemType: 'EGS' as const,
+        itemCode: it.chargeItemId || 'EGS-UNSPECIFIED',
+        unitType: 'EA',
+        quantity: Number(it.quantity) || 1,
+        unitValue: {
+          currencySold: invoice.currency,
+          amountEGP: toEgp(it.unitPrice),
+          amountSold: Number(it.unitPrice) || 0,
+          currencyExchangeRate: invoice.currency === 'EGP' ? undefined : rate,
+        },
+        salesTotal: lineTotal,
+        total: lineTotal,
+        valueDifference: 0,
+        totalTaxableFees: 0,
+        netTotal: lineTotal,
+        itemsDiscount: 0,
+        taxableItems:
+          taxRatio > 0
+            ? [
+                {
+                  taxType: 'T1',
+                  amount: Math.round(lineTotal * taxRatio * 100) / 100,
+                  subType: 'V009',
+                  rate: 14,
+                },
+              ]
+            : [],
+      };
+    });
+
+    const addressParts = (company.address || '').split(',').map((p: string) => p.trim());
+    const clientAddressParts = (client.address || client.city || '')
+      .split(',')
+      .map((p: string) => p.trim());
+
+    return {
+      issuer: {
+        address: {
+          branchID: '0',
+          country: 'EG',
+          governate: addressParts[1] || addressParts[0] || 'N/A',
+          regionCity: addressParts[0] || 'N/A',
+          streetName: addressParts[2] || 'N/A',
+          buildingNumber: addressParts[3] || 'N/A',
+        },
+        type: 'B',
+        id: company.taxNumber,
+        name: company.name,
       },
+      receiver: {
+        address: {
+          country: client.country || 'EG',
+          governate: clientAddressParts[1] || clientAddressParts[0] || 'N/A',
+          regionCity: clientAddressParts[0] || 'N/A',
+          streetName: clientAddressParts[2] || 'N/A',
+          buildingNumber: clientAddressParts[3] || 'N/A',
+        },
+        type: 'B',
+        id: client.taxNumber,
+        name: client.name,
+      },
+      documentType: 'I',
+      documentTypeVersion: '1.0',
+      dateTimeIssued: new Date(invoice.issueDate ?? invoice.createdAt).toISOString(),
+      // Configure with the company's registered activity code on the ETA portal.
+      taxpayerActivityCode: this.config.get<string>('ETA_ACTIVITY_CODE') || '46102',
+      internalID: invoice.invoiceNumber,
+      invoiceLines: lines,
+      totalSalesAmount: subtotal,
+      totalDiscountAmount: 0,
+      netAmount: subtotal,
+      taxTotals: taxRatio > 0 ? [{ taxType: 'T1', amount: taxAmount }] : [],
+      totalAmount: total,
+      extraDiscountAmount: 0,
+      totalItemsDiscountAmount: 0,
     };
   }
 

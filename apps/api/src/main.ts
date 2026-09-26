@@ -28,7 +28,12 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow non-browser requests (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || (!isProd && origin.startsWith('http://localhost:'))) {
+      // The Vercel-hosted frontend (production & preview deployments) is always allowed,
+      // so the vercel.json /api rewrite proxy works with zero manual configuration.
+      const isVercelFrontend =
+        /^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i.test(origin) ||
+        /^https:\/\/([a-z0-9-]+\.)*vercel\.build$/i.test(origin);
+      if (allowedOrigins.includes(origin) || isVercelFrontend || (!isProd && origin.startsWith('http://localhost:'))) {
         return callback(null, true);
       }
       callback(new Error(`Origin ${origin} is not allowed by CORS`));

@@ -1,7 +1,17 @@
 import axios from 'axios';
 
+/**
+ * API base URL:
+ *  - Default "/api/v1"  → same-origin; on Vercel the vercel.json rewrite proxies
+ *                          /api/* to the Render backend (no CORS involved).
+ *  - VITE_API_URL       → direct mode: point the web app straight at the API host
+ *                          (requires ALLOWED_ORIGINS on the API to include this domain).
+ */
+const API_BASE_URL: string =
+  ((import.meta as any).env?.VITE_API_URL as string) || '/api/v1';
+
 export const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',

@@ -18,7 +18,7 @@ export class CustomsController {
     return this.customsService.findOne(tenantId, id);
   }
 
-  @Post(':shipmentId')
+  @Post([':shipmentId', 'shipments/:shipmentId'])
   async createOrUpdate(
     @TenantId() tenantId: string,
     @Param('shipmentId') shipmentId: string,

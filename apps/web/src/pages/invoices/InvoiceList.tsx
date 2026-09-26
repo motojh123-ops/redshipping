@@ -62,7 +62,7 @@ export const InvoiceList: React.FC = () => {
           total: inv.total || 0,
           currency: inv.currency || 'EGP',
           status: (inv.status || 'draft').toLowerCase() as any,
-          etaUuid: inv.etaUuid,
+          etaUuid: inv.etaUuid || (inv.notes?.match(/etaUUID:([A-Za-z0-9-]+)/)?.[1] ?? undefined),
           issueDate: inv.issueDate ? new Date(inv.issueDate).toISOString().split('T')[0] : '',
           dueDate: inv.dueDate ? new Date(inv.dueDate).toISOString().split('T')[0] : '',
         })));

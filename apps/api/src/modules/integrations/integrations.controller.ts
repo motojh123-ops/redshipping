@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/current-user.decorator';
@@ -21,9 +21,22 @@ export class IntegrationsController {
 
   // ── Egyptian Tax Authority (ETA) eInvoicing ──
   @Post('eta/submit')
-  @ApiOperation({ summary: 'Submit invoices to Egyptian Tax Authority (ETA) eInvoicing API v1.0' })
+  @ApiOperation({ summary: 'Submit invoice documents to the live Egyptian Tax Authority (ETA) eInvoicing API v1.0' })
   async submitToEta(@Body() body: { documents: EtaDocument[] }) {
+    if (!Array.isArray(body?.documents) || body.documents.length === 0) {
+      throw new BadRequestException('A non-empty "documents" array is required');
+    }
     return this.etaService.submitDocuments(body.documents);
+  }
+
+  @Post('eta/invoices/:invoiceId')
+  @ApiOperation({
+    summary: 'Submit a persisted ERP invoice to the live ETA eInvoicing API',
+    description:
+      'Builds the ETA document from the real invoice, client and company records and submits it to ETA. Requires ETA_CLIENT_ID/ETA_CLIENT_SECRET configuration.',
+  })
+  async submitInvoiceToEta(@TenantId() tenantId: string, @Param('invoiceId') invoiceId: string) {
+    return this.etaService.submitInvoiceDocument(tenantId, invoiceId);
   }
 
   @Get('eta/documents/:uuid')
@@ -78,12 +91,15 @@ export class IntegrationsController {
 
   // ── DCSA Track & Trace & Demurrage ──
   @Get('dcsa/track')
-  @ApiOperation({ summary: 'Track ocean container timeline using DCSA Track & Trace standard' })
+  @ApiOperation({ summary: 'Track ocean container timeline using DCSA Track & Trace standard (reads real shipment events from the DB)' })
   async trackContainer(
-    @Query('carrier') carrier: string = 'MSC',
+    @Query('carrier') carrier: string,
     @Query('container') container: string
   ) {
-    return this.dcsaService.getEventsByContainer(carrier, container || 'MSCU7821902');
+    if (!container || !container.trim()) {
+      throw new BadRequestException('The "container" query parameter is required');
+    }
+    return this.dcsaService.getEventsByContainer(carrier || '', container);
   }
 
   @Get('dcsa/demurrage')
@@ -91,25 +107,36 @@ export class IntegrationsController {
   async calculateDemurrage(
     @Query('container') container: string,
     @Query('dischargeDate') dischargeDate: string,
+    @Query('gateOutDate') gateOutDate?: string,
     @Query('freeDays') freeDays?: number
   ) {
-    const dDate = dischargeDate ? new Date(dischargeDate) : new Date(Date.now() - 10 * 86400000);
+    if (!container || !container.trim()) {
+      throw new BadRequestException('The "container" query parameter is required');
+    }
+    if (!dischargeDate) {
+      throw new BadRequestException('The "dischargeDate" query parameter is required (ISO date)');
+    }
+    const dDate = new Date(dischargeDate);
+    if (isNaN(dDate.getTime())) {
+      throw new BadRequestException('dischargeDate must be a valid ISO date');
+    }
     return this.dcsaService.calculateDemurrage(
-      container || 'MSCU7821902',
+      container,
       dDate,
-      freeDays ? Number(freeDays) : 14
+      freeDays ? Number(freeDays) : 14,
+      gateOutDate ? new Date(gateOutDate) : undefined
     );
   }
 
   // ── Customer Communications (WhatsApp & Email) ──
   @Post('notify/whatsapp')
-  @ApiOperation({ summary: 'Dispatch formatted WhatsApp milestone/acid notification' })
+  @ApiOperation({ summary: 'Dispatch a WhatsApp notification via the Meta Cloud API (requires WHATSAPP_API_TOKEN configuration)' })
   async sendWhatsApp(@Body() payload: WhatsAppNotificationPayload) {
     return this.communicationService.sendWhatsAppNotification(payload);
   }
 
   @Post('notify/email')
-  @ApiOperation({ summary: 'Dispatch logistics email alert via SMTP gateway' })
+  @ApiOperation({ summary: 'Dispatch a logistics email alert (fails honestly while no SMTP provider is configured)' })
   async sendEmail(@Body() payload: EmailNotificationPayload) {
     return this.communicationService.sendEmailNotification(payload);
   }

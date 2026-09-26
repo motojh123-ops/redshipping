@@ -1,0 +1,24 @@
+# Keep the Docker build context small — only what the API image build needs
+.git
+.github
+.claude
+.freebuff
+.turbo
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+apps/web
+apps/workers
+e2e
+docs
+reports
+traces
+data
+tools
+scripts
+docker
+.env
+.env.local
+*.log
+uploads

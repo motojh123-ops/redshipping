@@ -215,7 +215,7 @@ export const ShipmentList: React.FC = () => {
                     <tr key={s.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-4 px-4 font-bold text-brand-600">
                         <div>{s.jobFileNumber}</div>
-                        <div className="text-[11px] font-normal text-slate-400">B/L: {s.blNumber || 'MEDU189281'}</div>
+                        <div className="text-[11px] font-normal text-slate-400">B/L: {s.blNumber || '—'}</div>
                         {s.deliveryOrderNumber && (
                           <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
                             <FileBadge className="w-3 h-3" />
@@ -229,10 +229,10 @@ export const ShipmentList: React.FC = () => {
                       <td className="py-4 px-4 text-slate-600 dark:text-slate-300">
                         <div className="flex items-center gap-1.5 text-xs">
                           <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{s.originPort?.nameEn || 'Shanghai (CNSHA)'}</span>
+                          <span>{s.originPort?.nameEn || s.originPort?.code || '—'}</span>
                         </div>
                         <div className="text-[11px] text-slate-400 ps-5">
-                          إلى: {s.destinationPort?.nameEn || 'Alexandria (EGALY)'}
+                          إلى: {s.destinationPort?.nameEn || s.destinationPort?.code || '—'}
                         </div>
                       </td>
                       <td className="py-4 px-4">

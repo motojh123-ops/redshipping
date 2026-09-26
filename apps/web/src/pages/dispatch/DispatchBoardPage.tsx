@@ -196,15 +196,16 @@ export const DispatchBoardPage: React.FC = () => {
 
   const handleOpenEirModal = (trip: DispatchTrip) => {
     setSelectedOrderForEir(trip);
-    const linePrefix = (trip.containerNumber || 'XXXX').slice(0, 4);
     setEirForm({
-      eirNumber: `EIR-${linePrefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      // The EIR number & yard are real-world references issued by the depot —
+      // the operator records the actual values from the returned document.
+      eirNumber: '',
       emptyReturnDate: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      emptyReturnYard: 'المستودع المصري لتخزين الحاويات - العامرية',
+      emptyReturnYard: '',
       eirStatus: 'CLEAN',
       eirSurveyorName: '',
       eirDamagesFeeEgp: 0,
-      eirNotes: 'تم فحص الحاوية بالكامل وخلتها من التلفيات (Clean & Sound).',
+      eirNotes: '',
     });
     setIsEirModalOpen(true);
   };
@@ -212,6 +213,14 @@ export const DispatchBoardPage: React.FC = () => {
   const handleConfirmEirReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrderForEir) return;
+    if (!eirForm.eirNumber.trim()) {
+      alert('أدخل رقم إيصال الإرجاع الفعلي (EIR) الصادر من الساحة');
+      return;
+    }
+    if (!eirForm.emptyReturnYard.trim()) {
+      alert('أدخل اسم ساحة إرجاع الحاوية الفارغة الفعلية');
+      return;
+    }
 
     const composedNotes = [
       `EIR: ${eirForm.eirNumber} (${eirForm.eirStatus})`,

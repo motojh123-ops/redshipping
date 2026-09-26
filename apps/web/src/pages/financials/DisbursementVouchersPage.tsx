@@ -29,6 +29,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
 import { Modal } from '../../components/ui/Modal';
 import { exportToCsv } from '../../utils/exportUtils';
+import { toast } from 'sonner';
 
 interface DisbursementVoucher {
   id: string;
@@ -81,8 +82,27 @@ export const DisbursementVouchersPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<DisbursementVoucher | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadVouchers = async () => {
+    setIsLoading(true);
+    try {
+      const data: any = await api.get('/disbursements');
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      setVouchers(list);
+      setIsLiveConnected(true);
+    } catch (err) {
+      console.warn('Failed to load disbursement vouchers from API', err);
+      setIsLiveConnected(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
+    loadVouchers();
+
     Promise.allSettled([
       api.get('/masters/vendors'),
       api.get('/shipments'),
@@ -90,7 +110,6 @@ export const DisbursementVouchersPage: React.FC = () => {
       if (vRes.status === 'fulfilled' && vRes.value) {
         const vList = Array.isArray(vRes.value) ? vRes.value : (vRes.value as any)?.data || [];
         setLiveVendors(vList);
-        setIsLiveConnected(true);
       }
       if (sRes.status === 'fulfilled') {
         const val: any = sRes.value;
@@ -100,7 +119,7 @@ export const DisbursementVouchersPage: React.FC = () => {
           setFormData((prev) => ({ ...prev, shipmentNumber: list[0].jobFileNumber }));
         }
       }
-    }).catch(() => setIsLiveConnected(false));
+    });
   }, []);
 
   // New Voucher Form state
@@ -144,59 +163,61 @@ export const DisbursementVouchersPage: React.FC = () => {
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const handleCreateVoucher = (e: React.FormEvent) => {
+  const handleCreateVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(formData.amount) || 0;
     const rateNum = parseFloat(formData.exchangeRate) || 1;
-    const amountEgp = formData.currency === 'EGP' ? amountNum : amountNum * rateNum;
+    const matchedShipment = liveShipments.find((s) => s.jobFileNumber === formData.shipmentNumber);
 
-    const newV: DisbursementVoucher = {
-      id: String(Date.now()),
-      voucherNumber: `PV-2026-0${109 + vouchers.length}`,
-      shipmentId: '1',
-      shipmentNumber: formData.shipmentNumber,
-      vendorName: formData.vendorName || 'المورد المختار',
-      vendorCategory: formData.vendorCategory,
-      chargeItem: formData.chargeItem,
-      amount: amountNum,
-      currency: formData.currency,
-      exchangeRate: rateNum,
-      amountEgp,
-      paymentMethod: formData.paymentMethod,
-      treasury: formData.treasury,
-      requestedBy: 'عمر السيد (أدمن)',
-      status: 'pending_approval',
-      requestDate: new Date().toISOString().split('T')[0],
-      notes: formData.notes,
-    };
-
-    setVouchers([newV, ...vouchers]);
-    setShowCreateModal(false);
+    setIsSubmitting(true);
+    try {
+      await api.post('/disbursements', {
+        shipmentId: matchedShipment?.id || null,
+        shipmentNumber: formData.shipmentNumber,
+        vendorName: formData.vendorName || 'المورد المختار',
+        vendorCategory: formData.vendorCategory,
+        chargeItem: formData.chargeItem,
+        amount: amountNum,
+        currency: formData.currency,
+        exchangeRate: rateNum,
+        paymentMethod: formData.paymentMethod,
+        treasury: formData.treasury,
+        notes: [formData.notes, `method:${formData.paymentMethod}`, `treasury:${formData.treasury}`]
+          .filter(Boolean)
+          .join(' | '),
+      });
+      await loadVouchers();
+      setShowCreateModal(false);
+      setFormData((prev) => ({ ...prev, amount: '', notes: '' }));
+      toast.success('تم إنشاء إذن الصرف بنجاح');
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر حفظ إذن الصرف في الخادم');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleApprove = (id: string) => {
-    setVouchers((prev) =>
-      prev.map((v) =>
-        v.id === id
-          ? { ...v, status: 'approved', approvedBy: 'سامي كمال (المدير المالي)' }
-          : v,
-      ),
-    );
+  const handleApprove = async (id: string) => {
+    try {
+      await api.patch(`/disbursements/${id}/approve`);
+      await loadVouchers();
+      toast.success('تم اعتماد إذن الصرف بنجاح');
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر اعتماد إذن الصرف');
+    }
   };
 
-  const handleMarkPaid = (id: string) => {
-    setVouchers((prev) =>
-      prev.map((v) =>
-        v.id === id
-          ? {
-              ...v,
-              status: 'paid',
-              paymentDate: new Date().toISOString().split('T')[0],
-              receiptNumber: `RCP-${Math.floor(100000 + Math.random() * 900000)}`,
-            }
-          : v,
-      ),
-    );
+  const handleMarkPaid = async (id: string) => {
+    try {
+      // The server records the payment date and generates the official receipt number
+      await api.patch(`/disbursements/${id}/pay`, {
+        paymentDate: new Date().toISOString().split('T')[0],
+      });
+      await loadVouchers();
+      toast.success('تم تسجيل الصرف والتسوية من الخزينة');
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر تأكيد سداد إذن الصرف');
+    }
   };
 
   const handleExport = () => {
@@ -414,7 +435,14 @@ export const DisbursementVouchersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredVouchers.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">جارٍ تحميل أذون الصرف من الخادم...</p>
+                  </td>
+                </tr>
+              ) : filteredVouchers.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#FF5E1E]" />
@@ -838,9 +866,10 @@ export const DisbursementVouchersPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-600/20 transition"
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-600/20 transition disabled:opacity-50 cursor-pointer"
               >
-                إرسال للاعتماد المالي
+                {isSubmitting ? 'جارٍ الإرسال...' : 'إرسال للاعتماد المالي'}
               </button>
             </div>
           </form>

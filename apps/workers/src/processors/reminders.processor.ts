@@ -1,5 +1,5 @@
 import { Job } from 'bullmq';
-import { ReminderJobData, ReminderJobResult } from '../queues/queue.types.js';
+import { ReminderJobData, ReminderJobResult } from '../queues/queue.types';
 
 export async function processReminderJob(job: Job<ReminderJobData, ReminderJobResult>): Promise<ReminderJobResult> {
   const data = job.data;

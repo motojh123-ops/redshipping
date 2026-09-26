@@ -196,7 +196,7 @@ export const QuotationDetails: React.FC = () => {
 🛳 خط السير: ${q.originPort?.nameEn || 'N/A'} (${q.originPort?.code || q.originPort?.unlocode || ''}) ➔ ${q.destinationPort?.nameEn || 'N/A'} (${q.destinationPort?.code || q.destinationPort?.unlocode || ''})
 📦 مشمول البضاعة: ${q.commodity || q.cargoDescription || 'General Cargo'}
 🔲 الحاويات: ${containerCount}x ${q.containerType || '40HQ'}
-⚓ الخط الملاحي: ${q.shippingLine || 'MSC'}
+⚓ الخط الملاحي: ${q.shippingLine || '—'}
 ⏱ مدة الإبحار والترانزيت: ${q.transitTime || (q.estimatedTransitDays ? q.estimatedTransitDays + ' يوم تقريباً' : 'حسب جدول إبحار السفينة')}
 ⏳ فترة السماح الممنوحة: 14 يوم سماح بميناء الوصول (Free Time)
 ━━━━━━━━━━━━━━━━━━━━
@@ -500,7 +500,7 @@ ${totalSellingEGP > 0 ? `💷 المصاريف المحلية والنقل ال�
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
                 <DetailRow label="نوع الحاوية" value={q.containerType || '40HQ'} />
                 <DetailRow label="عدد الحاويات" value={`${containerCount}`} />
-                <DetailRow label="الخط الملاحي" value={q.shippingLine || 'MSC'} />
+                <DetailRow label="الخط الملاحي" value={q.shippingLine || '—'} />
                 <DetailRow label="مدة الترانزيت" value={q.transitTime || `${q.estimatedTransitDays || 22} يوم`} />
               </div>
             </div>

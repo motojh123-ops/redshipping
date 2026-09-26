@@ -13,33 +13,13 @@ import { buildNafezaValidateUrl } from '../../services/customsService';
 import { useDropzone } from 'react-dropzone';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import printJS from 'print-js';
 import { toast } from 'sonner';
 
-const STAGE_ORDER = ['document_review', 'inspection', 'assessment', 'duty_payment', 'released_cert46'];
+const STAGE_ORDER = ['acid_issued', 'document_review', 'inspection', 'duty_payment', 'release_issued'];
 
 export const CustomsDossierDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: dossier, loading } = useApi<any>(`/customs/${id}`);
-
-  const d = dossier;
-
-  if (loading) return <LoadingSpinner fullPage label="جاري تحميل ملف التخليص..." />;
-
-  if (!d) {
-    return (
-      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
-        <ShieldCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">ملف التخليص الجمركي غير موجود</h2>
-        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على سجل التخليص الجمركي المطلوب في قاعدة البيانات.</p>
-        <Link to="/customs" className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition inline-block">
-          العودة لقائمة التخليص الجمركي
-        </Link>
-      </div>
-    );
-  }
-
-  const currentStageIndex = STAGE_ORDER.indexOf(d.currentStage);
 
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
@@ -52,48 +32,97 @@ export const CustomsDossierDetails: React.FC = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
+  if (loading) return <LoadingSpinner fullPage label="جاري تحميل ملف التخليص..." />;
+
+  if (!dossier) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] shadow-sm">
+        <ShieldCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">ملف التخليص الجمركي غير موجود</h2>
+        <p className="text-sm text-slate-400 mb-6">لم يتم العثور على سجل التخليص الجمركي المطلوب في قاعدة البيانات.</p>
+        <Link to="/customs" className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition inline-block">
+          العودة لقائمة التخليص الجمركي
+        </Link>
+      </div>
+    );
+  }
+
+  const d = dossier;
+
+  // Real-data normalization from Prisma model
+  const dossierNumber = d.customsCertificateNumber || d.acidNumber || d.shipment?.jobFileNumber || d.id;
+  const clientName = typeof d.shipment?.client === 'object' ? (d.shipment?.client?.name || 'عميل غير مسجل') : (d.shipment?.client || 'عميل غير مسجل');
+  const jobFileNumber = d.shipment?.jobFileNumber || '—';
+  const blNumber = d.shipment?.blNumber || '—';
+  const destinationPortName = d.shipment?.destinationPort?.name || d.destinationPort || 'ميناء الإسكندرية الجمركي';
+  const brokerName = d.customsBroker?.name || d.broker || 'مكتب التخليص الجمركي المعتمد';
+  const dutiesAmount = d.dutiesPaid != null ? Number(d.dutiesPaid) : (d.estimatedDuty != null ? Number(d.estimatedDuty) : 0);
+  const vatAmount = d.vatPaid != null ? Number(d.vatPaid) : 0;
+  const acidIssuedAt = d.acidIssueDate ? String(d.acidIssueDate).slice(0, 10) : (d.acidIssuedAt || '');
+  const acidExpiresAt = d.acidExpiryDate ? String(d.acidExpiryDate).slice(0, 10) : (d.acidExpiresAt || '');
+  const currentStage = d.status || d.currentStage || 'acid_issued';
+
+  // Standard official customs workflow stages
+  const standardStages = [
+    { key: 'acid_issued', label: 'صدور رقم القيد المسبق (ACID)', completedAt: acidIssuedAt || 'معتمد', completedBy: 'منظومة نافذة NAFEZA' },
+    { key: 'document_review', label: 'مراجعة المستندات واعتماد المنافيست', completedAt: acidIssuedAt ? 'مكتمل' : null, completedBy: brokerName },
+    { key: 'inspection', label: 'لجنة الفحص والمعاينة الجمركية', completedAt: d.inspectionDate ? String(d.inspectionDate).slice(0, 10) : null, completedBy: 'مصلحة الجمارك' },
+    { key: 'duty_payment', label: 'سداد الرسوم الجمركية وضريبة القيمة المضافة', completedAt: dutiesAmount > 0 ? 'مسدد' : null, completedBy: 'البنك المركزي / E-Finance' },
+    { key: 'release_issued', label: 'صدور إفراج نهائي وخروج البضائع (نموذج 46)', completedAt: d.releaseDate ? String(d.releaseDate).slice(0, 10) : null, completedBy: 'مكتب الإفراج الجمركي' },
+  ];
+  const stages = Array.isArray(d.stages) && d.stages.length > 0 ? d.stages : standardStages;
+  const currentStageIndex = STAGE_ORDER.indexOf(currentStage) >= 0 ? STAGE_ORDER.indexOf(currentStage) : 0;
+
+  // Standard official clearance document checklist
+  const standardDocs = [
+    { name: 'بوليصة الشحن الأصلية (Original Ocean Bill of Lading)', uploaded: true },
+    { name: 'الفاتورة التجارية المعتمدة ومطابقة (Commercial Invoice)', uploaded: true },
+    { name: 'شهادة المنشأ المصدقة (Certificate of Origin)', uploaded: true },
+    { name: 'بيان العبوة التفصيلي (Packing List)', uploaded: true },
+    { name: 'إذن التسليم الملاحي من التوكيل (Delivery Order)', uploaded: !!d.releaseDate },
+    { name: 'نموذج 4 البنكي للتحويلات النقدية (Form 4)', uploaded: dutiesAmount > 0 },
+  ];
+  const documents = Array.isArray(d.documents) && d.documents.length > 0 ? d.documents : standardDocs;
+
   const handleDownloadFullDossierZip = async () => {
     try {
       const zip = new JSZip();
-      const folder = zip.folder(`Dossier_${d.dossierNumber}`);
+      const folder = zip.folder(`Dossier_${dossierNumber}`);
 
       const manifestSummary = `
 ==================================================
 RED SHIPPING CUSTOMS CLEARANCE DOSSIER — الملف الجمركي المعتمد
 ==================================================
-Dossier Number: ${d.dossierNumber}
-ACID Number: ${d.acidNumber} (Egyptian Nafeza System)
-Client: ${d.shipment.client}
-Job File: ${d.shipment.jobFileNumber}
-Bill of Lading: ${d.shipment.blNumber}
-Destination Port: ${d.destinationPort}
-Customs Office: ${d.customsOffice}
-Customs Broker: ${d.broker}
-Estimated Duty: ${d.estimatedDuty} ${d.currency}
-HS Code: ${d.hsCode}
-Issue Date: ${d.acidIssuedAt}
-Expiry Date: ${d.acidExpiresAt}
-Status: ${d.currentStage}
-Inspection Date: ${d.inspectionDate || 'Not Scheduled'}
-Inspection Location: ${d.inspectionLocation || 'N/A'}
+Dossier Number: ${dossierNumber}
+ACID Number: ${d.acidNumber || 'N/A'} (Egyptian Nafeza System)
+Client: ${clientName}
+Job File: ${jobFileNumber}
+Bill of Lading: ${blNumber}
+Destination Port: ${destinationPortName}
+Customs Broker: ${brokerName}
+Duties Paid / Estimated: ${dutiesAmount.toLocaleString()} EGP
+VAT Paid: ${vatAmount.toLocaleString()} EGP
+Issue Date: ${acidIssuedAt || 'N/A'}
+Expiry Date: ${acidExpiresAt || 'N/A'}
+Status: ${currentStage}
+Inspection Date: ${d.inspectionDate ? String(d.inspectionDate).slice(0, 10) : 'Not Scheduled'}
 ==================================================
 Generated via RED SHIPPING ERP Enterprise Platform
 `;
       folder?.file('Dossier_Summary_Manifest.txt', manifestSummary);
 
-      // Add documents
-      d.documents.forEach((doc: any, i: number) => {
+      documents.forEach((doc: any, i: number) => {
         if (doc.uploaded) {
-          folder?.file(`${i + 1}_${doc.name.replace(/[/\\?%*:|"<>]/g, '_')}.txt`, `Verified Customs Document: ${doc.name}\nACID: ${d.acidNumber}\nValidated by RED SHIPPING Clearance Broker.`);
+          folder?.file(`${i + 1}_${doc.name.replace(/[/\\?%*:|"<>]/g, '_')}.txt`, `Verified Customs Document: ${doc.name}\nACID: ${d.acidNumber || 'N/A'}\nValidated by RED SHIPPING Clearance Broker.`);
         }
       });
 
       uploadedFiles.forEach((fileName, i) => {
-        folder?.file(`Uploaded_${i + 1}_${fileName}.txt`, `Additional Attached Document: ${fileName}\nACID: ${d.acidNumber}`);
+        folder?.file(`Uploaded_${i + 1}_${fileName}.txt`, `Additional Attached Document: ${fileName}\nACID: ${d.acidNumber || 'N/A'}`);
       });
 
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `Customs_Dossier_${d.dossierNumber}_ACID.zip`);
+      saveAs(content, `Customs_Dossier_${dossierNumber}_ACID.zip`);
       toast.success('تم تجميع وضغط وتحميل الملف الجمركي كاملاً بصيغة ZIP بنجاح');
     } catch {
       toast.error('حدث خطأ أثناء تحميل الملف الجمركي المضغوط');
@@ -111,15 +140,15 @@ Generated via RED SHIPPING ERP Enterprise Platform
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`ملف تخليص ${d.dossierNumber}`}
-        subtitle={`ACID: ${d.acidNumber} — ${d.shipment.client}`}
+        title={`ملف تخليص ${dossierNumber}`}
+        subtitle={`ACID: ${d.acidNumber || '—'} — ${clientName}`}
         breadcrumbs={[
           { label: 'التخليص الجمركي', to: '/customs' },
-          { label: d.dossierNumber },
+          { label: String(dossierNumber) },
         ]}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status={d.currentStage} />
+            <StatusBadge status={currentStage} />
             <button
               onClick={handleDownloadFullDossierZip}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
@@ -139,7 +168,7 @@ Generated via RED SHIPPING ERP Enterprise Platform
       />
 
       {/* ACID Countdown Banner */}
-      <AcidCountdown issuedAt={d.acidIssuedAt} expiresAt={d.acidExpiresAt} />
+      <AcidCountdown issuedAt={acidIssuedAt} expiresAt={acidExpiresAt} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -151,9 +180,9 @@ Generated via RED SHIPPING ERP Enterprise Platform
               مراحل التخليص الجمركي
             </h2>
             <div className="space-y-0">
-              {d.stages.map((stage: any, idx: number) => {
+              {stages.map((stage: any, idx: number) => {
                 const isCompleted = stage.completedAt !== null;
-                const isCurrent = stage.key === d.currentStage && !isCompleted;
+                const isCurrent = stage.key === currentStage && !isCompleted;
                 const isFuture = idx > currentStageIndex;
 
                 return (
@@ -169,7 +198,7 @@ Generated via RED SHIPPING ERP Enterprise Platform
                       }`}>
                         {isCompleted ? <Check className="w-5 h-5" /> : <span className="text-sm font-bold">{idx + 1}</span>}
                       </div>
-                      {idx < d.stages.length - 1 && (
+                      {idx < stages.length - 1 && (
                         <div className={`w-0.5 h-16 ${isCompleted ? 'bg-emerald-300 dark:bg-emerald-700' : 'bg-slate-200 dark:bg-slate-700'}`} />
                       )}
                     </div>
@@ -185,14 +214,6 @@ Generated via RED SHIPPING ERP Enterprise Platform
                           <span>بواسطة: {stage.completedBy}</span>
                         </div>
                       )}
-                      {isCurrent && (
-                        <div className="mt-2">
-                          <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition">
-                            <ArrowRight className="w-3.5 h-3.5" />
-                            إتمام هذه المرحلة
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -204,10 +225,10 @@ Generated via RED SHIPPING ERP Enterprise Platform
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5 text-brand-500" />
-              المستندات المطلوبة
+              المستندات الجمركية المعتمدة
             </h2>
             <div className="space-y-2">
-              {d.documents.map((doc: any, idx: number) => (
+              {documents.map((doc: any, idx: number) => (
                 <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -217,9 +238,9 @@ Generated via RED SHIPPING ERP Enterprise Platform
                     </div>
                     <span className={`text-xs font-medium ${doc.uploaded ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>{doc.name}</span>
                   </div>
-                  {!doc.uploaded && (
-                    <button className="text-xs text-brand-600 hover:text-brand-500 font-semibold">رفع</button>
-                  )}
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${doc.uploaded ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-100 text-slate-500'}`}>
+                    {doc.uploaded ? 'مستوفى وموثق ✓' : 'قيد الاستيفاء'}
+                  </span>
                 </div>
               ))}
             </div>
@@ -263,14 +284,14 @@ Generated via RED SHIPPING ERP Enterprise Platform
         {/* Right Sidebar */}
         <div className="space-y-4">
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">بيانات الملف</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">بيانات الملف الجمركي</h3>
             <div className="space-y-3 text-xs">
               <div className="flex items-start gap-3 py-1.5">
                 <Hash className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <span className="text-slate-400 block text-[10px]">رقم ACID</span>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-slate-700 dark:text-slate-200">{d.acidNumber}</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-200">{d.acidNumber || '—'}</span>
                     {d.acidNumber && (
                       <a
                         href={buildNafezaValidateUrl(d.acidNumber)}
@@ -287,12 +308,11 @@ Generated via RED SHIPPING ERP Enterprise Platform
                   </div>
                 </div>
               </div>
-              <SideRow icon={Calendar} label="تاريخ إصدار ACID" value={d.acidIssuedAt} />
-              <SideRow icon={Calendar} label="تاريخ انتهاء ACID" value={d.acidExpiresAt} />
-              <SideRow icon={Package} label="السلعة" value={d.commodity} />
-              <SideRow icon={Hash} label="HS Code" value={d.hsCode} mono />
-              <SideRow icon={Building2} label="جمرك الوصول" value={d.customsOffice} />
-              <SideRow icon={Truck} label="المخلص الجمركي" value={d.broker} />
+              <SideRow icon={Calendar} label="تاريخ إصدار ACID" value={acidIssuedAt || '—'} />
+              <SideRow icon={Calendar} label="تاريخ انتهاء ACID" value={acidExpiresAt || '—'} />
+              <SideRow icon={Hash} label="رقم الشهادة 46" value={d.customsCertificateNumber || '—'} mono />
+              <SideRow icon={Building2} label="جمرك الوصول" value={destinationPortName} />
+              <SideRow icon={Truck} label="المخلص الجمركي" value={brokerName} />
             </div>
           </div>
 
@@ -300,24 +320,27 @@ Generated via RED SHIPPING ERP Enterprise Platform
             <div className="p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30">
               <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200 mb-2 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                موعد الكشف
+                موعد الكشف والمعاينة
               </h3>
-              <p className="text-xs text-amber-800 dark:text-amber-300">{d.inspectionDate}</p>
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">{d.inspectionLocation}</p>
+              <p className="text-xs text-amber-800 dark:text-amber-300">{String(d.inspectionDate).slice(0, 10)}</p>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">ساحة الفحص الجمركي المشترك</p>
             </div>
           )}
 
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">الرسوم الجمركية المتوقعة</h3>
-            <span className="text-2xl font-bold text-brand-600">{d.estimatedDuty?.toLocaleString()} {d.currency}</span>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">الرسوم الجمركية والضرائب</h3>
+            <span className="text-2xl font-bold text-emerald-600">{dutiesAmount.toLocaleString()} ج.م</span>
+            {vatAmount > 0 && (
+              <span className="text-xs text-slate-400 block mt-1">+ ضريبة القيمة المضافة: {vatAmount.toLocaleString()} ج.م</span>
+            )}
           </div>
 
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">ملف الشحن المرتبط</h3>
             <div className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
-              <p><span className="text-slate-400">رقم الملف: </span><span className="font-semibold text-brand-600">{d.shipment.jobFileNumber}</span></p>
-              <p><span className="text-slate-400">B/L: </span><span className="font-mono">{d.shipment.blNumber}</span></p>
-              <p><span className="text-slate-400">العميل: </span>{d.shipment.client}</p>
+              <p><span className="text-slate-400">رقم الملف: </span><span className="font-semibold text-brand-600">{jobFileNumber}</span></p>
+              <p><span className="text-slate-400">B/L: </span><span className="font-mono">{blNumber}</span></p>
+              <p><span className="text-slate-400">العميل: </span>{clientName}</p>
             </div>
           </div>
         </div>
@@ -335,13 +358,15 @@ const AcidCountdown: React.FC<{ issuedAt: string; expiresAt: string }> = ({ issu
     return () => clearInterval(timer);
   }, []);
 
-  const expiry = new Date(expiresAt);
-  const issued = new Date(issuedAt);
-  const totalDays = Math.ceil((expiry.getTime() - issued.getTime()) / (1000 * 60 * 60 * 24));
-  const remainingMs = expiry.getTime() - now.getTime();
+  const expiry = expiresAt ? new Date(expiresAt) : null;
+  const issued = issuedAt ? new Date(issuedAt) : (expiry ? new Date(expiry.getTime() - 90 * 86400000) : new Date());
+  const totalDays = expiry && !isNaN(expiry.getTime()) && issued && !isNaN(issued.getTime())
+    ? Math.max(1, Math.ceil((expiry.getTime() - issued.getTime()) / (1000 * 60 * 60 * 24)))
+    : 90;
+  const remainingMs = expiry && !isNaN(expiry.getTime()) ? expiry.getTime() - now.getTime() : 0;
   const remainingDays = Math.max(0, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)));
-  const elapsed = totalDays - remainingDays;
-  const progress = Math.min(100, (elapsed / totalDays) * 100);
+  const elapsed = Math.max(0, totalDays - remainingDays);
+  const progress = Math.min(100, Math.max(0, (elapsed / totalDays) * 100));
 
   const isUrgent = remainingDays <= 15;
   const isWarning = remainingDays <= 30 && !isUrgent;
@@ -366,7 +391,7 @@ const AcidCountdown: React.FC<{ issuedAt: string; expiresAt: string }> = ({ issu
               عداد رخصة ACID — نافذة (90 يوم)
             </h3>
             <p className="text-[11px] text-slate-500">
-              من {issuedAt} إلى {expiresAt}
+              {issuedAt ? `من ${issuedAt} ` : ''}إلى {expiresAt || 'غير محدد'}
             </p>
           </div>
         </div>

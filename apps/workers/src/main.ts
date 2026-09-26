@@ -1,9 +1,9 @@
 import { Worker, JobsOptions, type Job } from 'bullmq';
 import pino from 'pino';
-import { config } from './config/index.js';
-import { processReminderJob } from './processors/reminders.processor.js';
-import { processPdfJob } from './processors/pdf-generation.processor.js';
-import type { ReminderJobData, ReminderJobResult, PdfJobData, PdfJobResult } from './queues/queue.types.js';
+import { config } from './config/index';
+import { processReminderJob } from './processors/reminders.processor';
+import { processPdfJob } from './processors/pdf-generation.processor';
+import type { ReminderJobData, ReminderJobResult, PdfJobData, PdfJobResult } from './queues/queue.types';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -38,6 +38,10 @@ function startWorker<TData, TResult>(
 
   worker.on('failed', (job, err) => {
     logger.error({ queue: name, jobId: job?.id, err: err.message }, 'Job failed');
+  });
+
+  worker.on('error', (err) => {
+    logger.warn({ queue: name, err: err.message }, 'Queue worker Redis connection deferred');
   });
 
   return worker;

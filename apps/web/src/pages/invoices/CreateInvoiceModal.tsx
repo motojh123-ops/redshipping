@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Calculator, Receipt, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
 import { Modal } from '../../components/ui/Modal';
 import { api } from '../../services/api';
 
@@ -34,6 +35,8 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
     new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
   );
   const [etaSubmission, setEtaSubmission] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -122,27 +125,88 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
   const whtAmountEGP = taxableAmountEGP * 0.01; // 1% Withholding Tax
   const totalEGP = subtotalEGP + vatAmountEGP - whtAmountEGP;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+
     const selectedClient = clients.find((c) => c.id === clientId);
-    const newInvoice = {
-      id: String(Date.now()),
-      invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      clientId,
-      clientName: selectedClient?.name || 'عميل نقدي / جهة خارجية',
-      shipmentFile: shipmentId || 'SHP-GENERAL',
-      invoiceType,
-      subtotal: subtotalEGP,
-      taxAmount: vatAmountEGP,
-      total: totalEGP,
-      status: etaSubmission ? 'submitted_eta' : 'draft',
-      etaUuid: etaSubmission ? `ETA-${Math.random().toString(36).substring(2, 10).toUpperCase()}` : null,
-      issueDate,
-      dueDate,
-      items,
-    };
-    onSuccess(newInvoice);
-    onClose();
+    if (!selectedClient) {
+      setFormError('اختر عميلاً مسجلاً قبل إصدار الفاتورة');
+      return;
+    }
+
+    setSaving(true);
+    setFormError(null);
+    try {
+      // 1. Persist the invoice through the real API (server-side INV-YYYY-#### numbering)
+      const created: any = await api.post('/invoices', {
+        clientId,
+        shipmentId: shipmentId || undefined,
+        invoiceType: invoiceType === 'client_clearance' ? 'client_clearance' : 'client_freight',
+        currency: 'EGP',
+        exchangeRate: 1,
+        issueDate,
+        dueDate,
+        // Per-line taxability (0% international freight vs 14% local services)
+        taxAmount: Math.round(vatAmountEGP * 100) / 100,
+        items: items.map((it) => {
+          const egpRate = it.currency === 'EGP' ? 1 : it.exchangeRate || 1;
+          return {
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: Math.round(it.unitPrice * egpRate * 100) / 100,
+            currency: 'EGP',
+          };
+        }),
+      });
+
+      // 2. Optional live ETA submission through the real integration endpoint
+      let etaUuid: string | null = null;
+      if (etaSubmission) {
+        try {
+          const etaRes: any = await api.post(`/integrations/eta/invoices/${created.id}`);
+          const accepted =
+            etaRes?.etaSubmission?.acceptedDocuments?.find(
+              (d: any) => d.internalId === created.invoiceNumber,
+            ) ?? etaRes?.etaSubmission?.acceptedDocuments?.[0];
+          etaUuid = accepted?.uuid ?? accepted?.longId ?? null;
+          toast.success(
+            `تم إصدار الفاتورة ${created.invoiceNumber} وإرسالها لمنظومة الفاتورة الإلكترونية (ETA)${
+              etaRes?.etaSubmission?.submissionId ? ` — Submission: ${etaRes.etaSubmission.submissionId}` : ''
+            }`,
+          );
+        } catch (etaErr: any) {
+          toast.warning(
+            `تم حفظ الفاتورة ${created.invoiceNumber} كمسودة، لكن تعذر الإرسال لمنظومة ETA: ${
+              etaErr?.message || 'تحقق من إعدادات التكامل (ETA_CLIENT_ID / ETA_CLIENT_SECRET)'
+            }`,
+          );
+        }
+      }
+
+      onSuccess({
+        id: created.id,
+        invoiceNumber: created.invoiceNumber,
+        clientId,
+        clientName: selectedClient.name,
+        shipmentFile: created.shipment?.jobFileNumber || shipmentId || '—',
+        invoiceType: created.invoiceType || invoiceType,
+        subtotal: Number(created.subtotal) || subtotalEGP,
+        taxAmount: Number(created.taxAmount) || vatAmountEGP,
+        total: Number(created.total) || totalEGP,
+        currency: 'EGP',
+        status: etaSubmission && etaUuid ? 'submitted_eta' : 'draft',
+        etaUuid: etaUuid ?? undefined,
+        issueDate,
+        dueDate,
+        items,
+      });
+      onClose();
+    } catch (err: any) {
+      setFormError(err?.message || err?.response?.data?.message || 'تعذر حفظ الفاتورة — حاول مجدداً');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -193,9 +257,8 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
               onChange={(e) => setInvoiceType(e.target.value)}
               className="w-full border border-slate-200 dark:border-slate-700 rounded-xl py-2 px-3 text-sm bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
             >
-              <option value="client_freight">فاتورة شحن وتخليص (Freight & Clearance)</option>
-              <option value="demurrage">غرامات تأخير وأرضيات (Demurrage & Storage)</option>
-              <option value="reimbursement">مطالبة مصروفات ونثريات (Reimbursement)</option>
+              <option value="client_freight">فاتورة نولون وشحن دولي (Client Freight)</option>
+              <option value="client_clearance">فاتورة أتعاب تخليص وخدمات محلية (Client Clearance)</option>
             </select>
           </div>
 
@@ -385,6 +448,12 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
           </div>
         </div>
 
+        {formError && (
+          <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs font-semibold text-red-700 dark:text-red-300">
+            {formError}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
           <button
@@ -396,7 +465,8 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
           </button>
           <button
             type="submit"
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold shadow-md shadow-brand-500/20 transition"
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold shadow-md shadow-brand-500/20 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Receipt className="w-4 h-4" />
             <span>حفظ وإصدار الفاتورة</span>

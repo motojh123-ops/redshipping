@@ -761,9 +761,12 @@ const RealOperationsTable: React.FC<{ shipments: any[]; loading?: boolean }> = (
               </tr>
             ) : (
               displayList.map((s) => {
-              const clientName = s.client?.name || s.clientName || 'عميل محلي';
-              const lineName = s.shippingLine?.name || s.carrier || 'MSC';
-              const route = `${s.polPort?.nameEn || s.pol || 'CNSHA'} ← ${s.podPort?.nameEn || s.pod || 'EGALY'}`;
+              const clientName = s.client?.name || s.clientName || '—';
+              const lineName = s.shippingLine?.name || s.carrier || '—';
+              const polName = s.polPort?.nameEn || s.pol;
+              const podName = s.podPort?.nameEn || s.pod;
+              const route = polName && podName ? `${polName} ← ${podName}` : (polName || podName || '—');
+              const containerCount = s.containersCount ?? s.containers?.length ?? 0;
 
               return (
                 <tr
@@ -783,7 +786,7 @@ const RealOperationsTable: React.FC<{ shipments: any[]; loading?: boolean }> = (
                     <span className="text-[10px] text-slate-400">{route}</span>
                   </td>
                   <td className="py-3 text-slate-700 dark:text-slate-300 font-bold">
-                    {s.containersCount || s.containers?.length || 2} FCL
+                    {containerCount > 0 ? `${containerCount} FCL` : '—'}
                   </td>
                   <td className="py-3">
                     <StatusBadge status={s.currentStage} />

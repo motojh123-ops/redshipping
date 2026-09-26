@@ -44,6 +44,6 @@ export const customsService = {
   },
 
   async saveCustomsDossier(shipmentId: string, data: Partial<CustomsDossierRecord>): Promise<CustomsDossierRecord> {
-    return await api.post(`/customs/shipments/${shipmentId}`, data);
+    return await api.post(`/customs/${shipmentId}`, data);
   },
 };

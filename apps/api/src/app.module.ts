@@ -22,6 +22,7 @@ import { MaritimeModule } from './maritime/maritime.module';
 import { DisbursementsModule } from './modules/disbursements/disbursements.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { SystemModule } from './modules/system/system.module';
+import { UsersModule } from './modules/users/users.module';
 
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -54,6 +55,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     DisbursementsModule,
     CrmModule,
     SystemModule,
+    UsersModule,
   ],
   providers: [
     {
