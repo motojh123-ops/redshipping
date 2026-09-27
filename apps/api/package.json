@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@banna/shared-types": "*",
+    "@neondatabase/serverless": "^0.10.4",
     "@nestjs/common": "^10.3.8",
     "@nestjs/config": "^3.2.2",
     "@nestjs/core": "^10.3.8",
@@ -27,6 +28,7 @@
     "@nestjs/platform-express": "^10.3.8",
     "@nestjs/swagger": "^7.3.1",
     "@nestjs/throttler": "^6.7.0",
+    "@prisma/adapter-neon": "^5.22.0",
     "@prisma/client": "^5.14.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.3",
@@ -48,7 +50,8 @@
     "pino-http": "^10.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "world-countries": "^5.1.0"
+    "world-countries": "^5.1.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.2",

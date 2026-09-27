@@ -1,9 +1,34 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import { PrismaNeon } from '@prisma/adapter-neon';
+
+function getPrismaOptions() {
+  const connectionString = process.env.DATABASE_URL;
+  if (connectionString && connectionString.includes('neon.tech')) {
+    try {
+      if (typeof (globalThis as any).WebSocket === 'undefined') {
+        try {
+          neonConfig.webSocketConstructor = require('ws');
+        } catch (_) {}
+      }
+      const pool = new Pool({ connectionString });
+      const adapter = new PrismaNeon(pool);
+      return { adapter };
+    } catch (err: any) {
+      console.warn('Neon adapter init error, falling back:', err?.message);
+    }
+  }
+  return {};
+}
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    super(getPrismaOptions());
+  }
 
   async onModuleInit() {
     try {
