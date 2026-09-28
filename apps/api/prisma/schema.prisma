@@ -177,7 +177,84 @@ model Company {
   ports              Port[]
   drivers            Driver[]
 
+  // ── Master Data expansion (spec session 1 — وثيقة المواصفات) ──
+  cities                City[]
+  measurementUnits      MeasurementUnit[]
+  logisticsCats         LogisticsCategory[]
+  portTypes             PortType[]
+  shippingLineBranches  ShippingLineBranch[]
+  shippingLineContacts  ShippingLineContact[]
+  vendorBranches        VendorBranch[]
+  vendorContacts        VendorContact[]
+  overseasAgentBranches OverseasAgentBranch[]
+  overseasAgentContacts OverseasAgentContact[]
+
   @@map("companies")
+}
+
+// ── Master Data: reference libraries & cities ──
+model City {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  countryCode String   @map("country_code") @db.VarChar(2)
+  nameEn      String   @map("name_en") @db.VarChar(150)
+  nameAr      String?  @map("name_ar") @db.VarChar(150)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, countryCode, nameEn])
+  @@index([companyId, countryCode])
+  @@map("cities")
+}
+
+model MeasurementUnit {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  nameEn    String   @map("name_en") @db.VarChar(100)
+  nameAr    String?  @map("name_ar") @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chargeItems ChargeItem[]
+
+  @@unique([companyId, code])
+  @@map("measurement_units")
+}
+
+model LogisticsCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  nameEn    String   @map("name_en") @db.VarChar(100)
+  nameAr    String?  @map("name_ar") @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chargeItems ChargeItem[]
+
+  @@unique([companyId, code])
+  @@map("logistics_categories")
+}
+
+model PortType {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  nameEn    String   @map("name_en") @db.VarChar(100)
+  nameAr    String?  @map("name_ar") @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ports   Port[]
+
+  @@unique([companyId, code])
+  @@map("port_types")
 }
 
 model User {
@@ -265,10 +342,12 @@ model Port {
   nameAr      String?  @map("name_ar") @db.VarChar(255)
   countryCode String   @map("country_code") @db.VarChar(2)
   portType    String   @default("sea") @map("port_type") @db.VarChar(20)
+  portTypeId  String?  @map("port_type_id") @db.Uuid
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   company               Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  portTypeRef           PortType?   @relation(fields: [portTypeId], references: [id])
   originQuotations      Quotation[] @relation("OriginPort")
   destinationQuotations Quotation[] @relation("DestinationPort")
   originShipments       Shipment[]  @relation("ShipmentOriginPort")
@@ -289,8 +368,10 @@ model ShippingLine {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   shipments Shipment[]
+  branches  ShippingLineBranch[]
+  contacts  ShippingLineContact[]
 
   @@map("shipping_lines")
 }
@@ -305,52 +386,207 @@ model OverseasAgent {
   contactEmail   String?  @map("contact_email") @db.VarChar(150)
   contactPhone   String?  @map("contact_phone") @db.VarChar(50)
   specialization String?  @db.VarChar(100)
+  services       String[] @default([]) @db.Text
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
   shipments Shipment[]
+  branches  OverseasAgentBranch[]
+  contacts  OverseasAgentContact[]
 
   @@map("overseas_agents")
 }
 
 model Vendor {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId    String     @map("company_id") @db.Uuid
-  name         String     @db.VarChar(255)
-  vendorType   VendorType @map("vendor_type")
-  taxId        String?    @map("tax_id") @db.VarChar(50)
-  contactName  String?    @map("contact_name") @db.VarChar(150)
-  contactPhone String?    @map("contact_phone") @db.VarChar(50)
-  contactEmail String?    @map("contact_email") @db.VarChar(150)
-  isActive     Boolean    @default(true) @map("is_active")
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String     @map("company_id") @db.Uuid
+  name          String     @db.VarChar(255)
+  vendorType    VendorType @map("vendor_type")
+  services      String[]   @default([]) @db.Text
+  taxId         String?    @map("tax_id") @db.VarChar(50)
+  contactName   String?    @map("contact_name") @db.VarChar(150)
+  contactPhone  String?    @map("contact_phone") @db.VarChar(50)
+  contactEmail  String?    @map("contact_email") @db.VarChar(150)
+  address       String?    @db.Text
+  phone         String?    @db.VarChar(50)
+  commercialReg String?    @map("commercial_reg") @db.VarChar(100)
+  crExpiry      DateTime?  @map("cr_expiry") @db.Date
+  taxCardNumber String?    @map("tax_card_number") @db.VarChar(100)
+  taxCardExpiry DateTime?  @map("tax_card_expiry") @db.Date
+  isActive      Boolean    @default(true) @map("is_active")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   shipmentCosts ShipmentCost[]
   drivers       Driver[]
+  branches      VendorBranch[]
+  contacts      VendorContact[]
 
   @@map("vendors")
 }
 
-model ChargeItem {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId        String   @map("company_id") @db.Uuid
-  code             String   @db.VarChar(50)
-  nameEn           String   @map("name_en") @db.VarChar(255)
-  nameAr           String   @map("name_ar") @db.VarChar(255)
-  category         String   @db.VarChar(50)
-  defaultCurrency  String   @default("USD") @map("default_currency") @db.VarChar(3)
-  defaultPrice     Decimal? @map("default_price") @db.Decimal(12, 2)
-  defaultSellPrice Decimal? @map("default_sell_price") @db.Decimal(12, 2)
-  notes            String?  @db.Text
-  showInPricing    Boolean  @default(true) @map("show_in_pricing")
-  showInQuotation  Boolean  @default(true) @map("show_in_quotation")
-  showInInvoice    Boolean  @default(true) @map("show_in_invoice")
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+model ShippingLineBranch {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  shippingLineId String   @map("shipping_line_id") @db.Uuid
+  code           String?  @db.VarChar(50)
+  name           String   @db.VarChar(150)
+  address        String?  @db.Text
+  city           String?  @db.VarChar(100)
+  countryCode    String?  @map("country_code") @db.VarChar(2)
+  phone          String?  @db.VarChar(50)
+  email          String?  @db.VarChar(150)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shippingLine ShippingLine          @relation(fields: [shippingLineId], references: [id], onDelete: Cascade)
+  contacts     ShippingLineContact[]
+
+  @@unique([shippingLineId, name])
+  @@index([companyId, shippingLineId])
+  @@map("shipping_line_branches")
+}
+
+model ShippingLineContact {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  shippingLineId String   @map("shipping_line_id") @db.Uuid
+  branchId       String?  @map("branch_id") @db.Uuid
+  name           String   @db.VarChar(255)
+  title          String?  @db.VarChar(100)
+  phone          String?  @db.VarChar(50)
+  mobile         String?  @db.VarChar(50)
+  email          String?  @db.VarChar(150)
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shippingLine ShippingLine        @relation(fields: [shippingLineId], references: [id], onDelete: Cascade)
+  branch       ShippingLineBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, shippingLineId])
+  @@map("shipping_line_contacts")
+}
+
+model VendorBranch {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  vendorId    String   @map("vendor_id") @db.Uuid
+  code        String?  @db.VarChar(50)
+  name        String   @db.VarChar(150)
+  address     String?  @db.Text
+  city        String?  @db.VarChar(100)
+  countryCode String?  @map("country_code") @db.VarChar(2)
+  phone       String?  @db.VarChar(50)
+  email       String?  @db.VarChar(150)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor   Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  contacts VendorContact[]
+
+  @@unique([vendorId, name])
+  @@index([companyId, vendorId])
+  @@map("vendor_branches")
+}
+
+model VendorContact {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  vendorId  String   @map("vendor_id") @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String   @db.VarChar(255)
+  title     String?  @db.VarChar(100)
+  phone     String?  @db.VarChar(50)
+  mobile    String?  @db.VarChar(50)
+  email     String?  @db.VarChar(150)
+  isPrimary Boolean  @default(false) @map("is_primary")
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor  Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  branch  VendorBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, vendorId])
+  @@map("vendor_contacts")
+}
+
+model OverseasAgentBranch {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  overseasAgentId String   @map("overseas_agent_id") @db.Uuid
+  code            String?  @db.VarChar(50)
+  name            String   @db.VarChar(150)
+  address         String?  @db.Text
+  city            String?  @db.VarChar(100)
+  countryCode     String?  @map("country_code") @db.VarChar(2)
+  phone           String?  @db.VarChar(50)
+  email           String?  @db.VarChar(150)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  overseasAgent OverseasAgent          @relation(fields: [overseasAgentId], references: [id], onDelete: Cascade)
+  contacts      OverseasAgentContact[]
+
+  @@unique([overseasAgentId, name])
+  @@index([companyId, overseasAgentId])
+  @@map("overseas_agent_branches")
+}
+
+model OverseasAgentContact {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  overseasAgentId String   @map("overseas_agent_id") @db.Uuid
+  branchId        String?  @map("branch_id") @db.Uuid
+  name            String   @db.VarChar(255)
+  title           String?  @db.VarChar(100)
+  phone           String?  @db.VarChar(50)
+  mobile          String?  @db.VarChar(50)
+  email           String?  @db.VarChar(150)
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  overseasAgent OverseasAgent        @relation(fields: [overseasAgentId], references: [id], onDelete: Cascade)
+  branch        OverseasAgentBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, overseasAgentId])
+  @@map("overseas_agent_contacts")
+}
+
+model ChargeItem {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId          String   @map("company_id") @db.Uuid
+  code               String   @db.VarChar(50)
+  nameEn             String   @map("name_en") @db.VarChar(255)
+  nameAr             String   @map("name_ar") @db.VarChar(255)
+  category           String   @db.VarChar(50)
+  categoryId         String?  @map("category_id") @db.Uuid
+  unitId             String?  @map("unit_id") @db.Uuid
+  defaultCurrency    String   @default("USD") @map("default_currency") @db.VarChar(3)
+  defaultPrice       Decimal? @map("default_price") @db.Decimal(12, 2)
+  defaultSellPrice   Decimal? @map("default_sell_price") @db.Decimal(12, 2)
+  notes              String?  @db.Text
+  showInPricing      Boolean  @default(true) @map("show_in_pricing")
+  showInQuotation    Boolean  @default(true) @map("show_in_quotation")
+  showInInvoice      Boolean  @default(true) @map("show_in_invoice")
+  showInDisbursement Boolean  @default(false) @map("show_in_disbursement")
+  showInCommission   Boolean  @default(false) @map("show_in_commission")
+  showInOperations   Boolean  @default(false) @map("show_in_operations")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  unit           MeasurementUnit?   @relation(fields: [unitId], references: [id])
+  categoryRef    LogisticsCategory? @relation(fields: [categoryId], references: [id])
   quotationItems QuotationItem[]
   invoiceItems   InvoiceItem[]
   shipmentCosts  ShipmentCost[]
