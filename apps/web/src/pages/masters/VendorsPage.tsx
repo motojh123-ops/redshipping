@@ -9,7 +9,30 @@ import { Modal } from '../../components/ui/Modal';
 import { exportToCsv } from '../../utils/exportUtils';
 import { api } from '../../services/api';
 
-/** Shape returned by GET/POST /masters/vendors (see Prisma Vendor model) */
+/** Shape returned by GET/POST /masters/vendors (see Prisma Vendor model — hierarchy + services + registrations) */
+interface VendorContact {
+  id?: string;
+  name: string;
+  title?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  isPrimary?: boolean;
+  notes?: string | null;
+}
+
+interface VendorBranch {
+  id?: string;
+  code?: string | null;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contacts?: VendorContact[];
+}
+
 interface Vendor {
   id: string;
   name: string;
@@ -18,8 +41,47 @@ interface Vendor {
   contactName?: string | null;
   contactPhone?: string | null;
   contactEmail?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  commercialReg?: string | null;
+  crExpiry?: string | null;
+  taxCardNumber?: string | null;
+  taxCardExpiry?: string | null;
+  services?: string[];
+  branches?: VendorBranch[];
+  contacts?: VendorContact[];
   isActive: boolean;
 }
+
+/** Multi-select service options (spec: خدمات متعددة لكل مورد) */
+const SERVICE_OPTIONS = [
+  'نقل بري (تريلات)',
+  'نقل مبرد',
+  'تخليص جمركي',
+  'تخزين وخدمات',
+  'تبخير شحنات',
+  'فحص ومعاينة',
+  'مناولة وتشييع',
+  'خدمات الميناء',
+];
+
+const toInputDate = (iso?: string | null) => (iso ? String(iso).slice(0, 10) : '');
+
+/** Days-remaining chip for expiry dates (feeds the Alarms engine) */
+const daysUntil = (iso?: string | null) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
+
+const ExpiryChip: React.FC<{ label: string; date?: string | null }> = ({ label, date }) => {
+  const days = daysUntil(date);
+  if (days === null) return null;
+  const level =
+    days < 0 ? 'bg-red-500/10 text-red-600 border-red-500/30' : days <= 30 ? 'bg-amber-500/10 text-amber-600 border-amber-500/30' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${level}`}>
+      {label}: {new Date(date as string).toLocaleDateString('en-GB')}
+      {days < 0 ? ' (منتهي)' : ` (${days} يوم)`}
+    </span>
+  );
+};
 
 const VENDOR_TYPE_META: Record<Vendor['vendorType'], { label: string; icon: React.FC<any>; classes: string }> = {
   trucking: { label: 'نقل بري', icon: Truck, classes: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 ring-1 ring-brand-200 dark:ring-brand-800' },
@@ -87,6 +149,12 @@ export const VendorsPage: React.FC = () => {
       { header: 'الهاتف', accessor: (v: Vendor) => v.contactPhone || '—' },
       { header: 'البريد الإلكتروني', accessor: (v: Vendor) => v.contactEmail || '—' },
       { header: 'الرقم الضريبي', accessor: (v: Vendor) => v.taxId || '—' },
+      { header: 'الخدمات', accessor: (v: Vendor) => (v.services || []).join(' | ') || '—' },
+      { header: 'السجل التجاري', accessor: (v: Vendor) => v.commercialReg || '—' },
+      { header: 'انتهاء السجل', accessor: (v: Vendor) => toInputDate(v.crExpiry) || '—' },
+      { header: 'البطاقة الضريبية', accessor: (v: Vendor) => v.taxCardNumber || '—' },
+      { header: 'انتهاء البطاقة', accessor: (v: Vendor) => toInputDate(v.taxCardExpiry) || '—' },
+      { header: 'عدد الفروع', accessor: (v: Vendor) => String((v.branches || []).length) },
       { header: 'الحالة', accessor: (v: Vendor) => (v.isActive ? 'نشط' : 'معطّل') },
     ]);
   };
@@ -210,6 +278,7 @@ export const VendorsPage: React.FC = () => {
                   <th className="py-3.5 px-4 text-start">نوع الخدمة</th>
                   <th className="py-3.5 px-4 text-start">مسؤول الاتصال</th>
                   <th className="py-3.5 px-4 text-start">الرقم الضريبي</th>
+                  <th className="py-3.5 px-4 text-start">الخدمات والاعتمادات</th>
                   <th className="py-3.5 px-4 text-start">الحالة</th>
                   <th className="py-3.5 px-4 text-start">الإجراءات</th>
                 </tr>
@@ -252,6 +321,32 @@ export const VendorsPage: React.FC = () => {
 
                       <td className="py-4 px-4 text-xs font-mono">
                         {v.taxId ? <span className="font-semibold text-slate-800 dark:text-slate-200">{v.taxId}</span> : <span className="text-slate-400">—</span>}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <div className="space-y-1 max-w-xs">
+                          {(v.services || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {(v.services || []).slice(0, 4).map((s) => (
+                                <span key={s} className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
+                                  {s}
+                                </span>
+                              ))}
+                              {(v.services || []).length > 4 && (
+                                <span className="text-[10px] text-slate-400">+{v.services!.length - 4}</span>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-1">
+                            <ExpiryChip label="سجل" date={v.crExpiry} />
+                            <ExpiryChip label="بطاقة" date={v.taxCardExpiry} />
+                          </div>
+                          {(v.branches || []).length > 0 && (
+                            <span className="text-[10px] text-slate-400 block">
+                              {(v.branches || []).length} فرع • {((v.branches || []).reduce((acc: number, b) => acc + (b.contacts?.length || 0), 0) + (v.contacts || []).length)} مسؤول
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-4 px-4">
@@ -355,19 +450,101 @@ const CreateVendorModal: React.FC<{
     contactName: initial?.contactName || '',
     contactPhone: initial?.contactPhone || '',
     contactEmail: initial?.contactEmail || '',
+    address: initial?.address || '',
+    phone: initial?.phone || '',
+    commercialReg: initial?.commercialReg || '',
+    crExpiry: toInputDate(initial?.crExpiry),
+    taxCardNumber: initial?.taxCardNumber || '',
+    taxCardExpiry: toInputDate(initial?.taxCardExpiry),
   });
+  const [services, setServices] = useState<string[]>(initial?.services || []);
+  const [customService, setCustomService] = useState('');
+  const [branches, setBranches] = useState<VendorBranch[]>(
+    (initial?.branches || []).map((b) => ({ ...b, contacts: b.contacts ? [...b.contacts] : [] })),
+  );
+  const [contacts, setContacts] = useState<VendorContact[]>(
+    (initial?.contacts || []).map((c) => ({ ...c })),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!initial;
 
+  const toggleService = (s: string) =>
+    setServices((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+
+  const addCustomService = () => {
+    const s = customService.trim();
+    if (s && !services.includes(s)) setServices((prev) => [...prev, s]);
+    setCustomService('');
+  };
+
+  const updBranch = (i: number, patch: Partial<VendorBranch>) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
+  const delBranch = (i: number) => setBranches((prev) => prev.filter((_, idx) => idx !== i));
+  const addBranch = () =>
+    setBranches((prev) => [...prev, { name: '', code: '', city: '', countryCode: '', phone: '', email: '', address: '', contacts: [] }]);
+  const addBranchContact = (i: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, contacts: [...(b.contacts || []), { name: '', title: '', phone: '', mobile: '', email: '' }] } : b)));
+  const updBranchContact = (bi: number, ci: number, patch: Partial<VendorContact>) =>
+    setBranches((prev) =>
+      prev.map((b, idx) =>
+        idx === bi ? { ...b, contacts: (b.contacts || []).map((c, jdx) => (jdx === ci ? { ...c, ...patch } : c)) } : b,
+      ),
+    );
+  const delBranchContact = (bi: number, ci: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === bi ? { ...b, contacts: (b.contacts || []).filter((_, jdx) => jdx !== ci) } : b)));
+
+  const addContact = () => setContacts((prev) => [...prev, { name: '', title: '', phone: '', mobile: '', email: '' }]);
+  const updContact = (i: number, patch: Partial<VendorContact>) => setContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const delContact = (i: number) => setContacts((prev) => prev.filter((_, idx) => idx !== i));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) {
+      setError('اسم المورد مطلوب');
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, unknown> = {
         name: form.name.trim(),
         vendorType: form.vendorType,
+        services,
+        address: form.address.trim() || null,
+        phone: form.phone.trim() || null,
+        commercialReg: form.commercialReg.trim() || null,
+        crExpiry: form.crExpiry || null,
+        taxCardNumber: form.taxCardNumber.trim() || null,
+        taxCardExpiry: form.taxCardExpiry || null,
+        // Multi-level hierarchy: Branch → Persons in Charge (spec Session 1)
+        branches: branches
+          .filter((b) => b.name.trim())
+          .map((b) => ({
+            name: b.name.trim(),
+            code: b.code?.trim() || null,
+            city: b.city?.trim() || null,
+            countryCode: b.countryCode?.trim().toUpperCase() || null,
+            phone: b.phone?.trim() || null,
+            email: b.email?.trim() || null,
+            address: b.address?.trim() || null,
+            contacts: (b.contacts || []).filter((c) => c.name.trim()).map((c) => ({
+              name: c.name.trim(),
+              title: c.title?.trim() || null,
+              phone: c.phone?.trim() || null,
+              mobile: c.mobile?.trim() || null,
+              email: c.email?.trim() || null,
+            })),
+          })),
+        contacts: contacts
+          .filter((c) => c.name.trim())
+          .map((c) => ({
+            name: c.name.trim(),
+            title: c.title?.trim() || null,
+            phone: c.phone?.trim() || null,
+            mobile: c.mobile?.trim() || null,
+            email: c.email?.trim() || null,
+          })),
       };
       if (form.taxId.trim()) payload.taxId = form.taxId.trim();
       if (form.contactName.trim()) payload.contactName = form.contactName.trim();
@@ -378,16 +555,8 @@ const CreateVendorModal: React.FC<{
         ? await api.patch(`/masters/vendors/${initial!.id}`, payload)
         : await api.post('/masters/vendors', payload);
 
-      onSuccess({
-        id: saved?.id || initial?.id || String(Date.now()),
-        name: saved?.name ?? payload.name,
-        vendorType: saved?.vendorType ?? payload.vendorType,
-        taxId: saved?.taxId ?? payload.taxId ?? null,
-        contactName: saved?.contactName ?? payload.contactName ?? null,
-        contactPhone: saved?.contactPhone ?? payload.contactPhone ?? null,
-        contactEmail: saved?.contactEmail ?? payload.contactEmail ?? null,
-        isActive: saved?.isActive !== false,
-      });
+      // The API returns the full vendor (with branches + contacts) — pass it through
+      onSuccess(saved as Vendor);
       onClose();
     } catch (err: any) {
       setError(err?.message || 'تعذر حفظ المورد — حاول مجدداً');
@@ -397,7 +566,13 @@ const CreateVendorModal: React.FC<{
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="إضافة مورد لوجستي جديد" maxWidth="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEdit ? 'تعديل بيانات المورد' : 'إضافة مورد لوجستي جديد'}
+      subtitle="الخدمات المتعددة + الاعتمادات الرسمية وتواريخ انتهائها + شجرة الفروع والمسؤولين"
+      maxWidth="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div>
           <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">اسم المورد أو الشركة *</label>
@@ -440,6 +615,331 @@ const CreateVendorModal: React.FC<{
               );
             })}
           </div>
+        </div>
+
+        {/* Multi-select services (spec: خدمات متعددة) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <span className="font-bold text-slate-800 dark:text-slate-200 block">الخدمات المقدمة (اختيار متعدد)</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {SERVICE_OPTIONS.map((s) => {
+              const active = services.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleService(s)}
+                  className={`px-3 py-2 rounded-xl border text-start font-bold transition ${
+                    active
+                      ? 'border-[#FF5E1E] bg-orange-500/10 text-[#FF5E1E]'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                  }`}
+                >
+                  {active ? '✓ ' : '+ '}
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          {services.filter((s) => !SERVICE_OPTIONS.includes(s)).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {services
+                .filter((s) => !SERVICE_OPTIONS.includes(s))
+                .map((s) => (
+                  <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 text-brand-700 border border-brand-200">
+                    {s}
+                    <button type="button" onClick={() => toggleService(s)} className="text-red-500 hover:text-red-700">✕</button>
+                  </span>
+                ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customService}
+              onChange={(e) => setCustomService(e.target.value)}
+              placeholder="خدمة أخرى غير موجودة بالقائمة..."
+              className="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+            />
+            <button
+              type="button"
+              onClick={addCustomService}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            >
+              إضافة
+            </button>
+          </div>
+        </div>
+        {/* Official registrations + expiry dates (spec: اعتمادات رسمية + تنبيهات الانتهاء) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <span className="font-bold text-slate-800 dark:text-slate-200 block">الاعتمادات الرسمية وتواريخ الانتهاء</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">السجل التجاري</label>
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="CR-123456"
+                value={form.commercialReg}
+                onChange={(e) => setForm({ ...form, commercialReg: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">انتهاء السجل التجاري</label>
+              <input
+                type="date"
+                dir="ltr"
+                value={form.crExpiry}
+                onChange={(e) => setForm({ ...form, crExpiry: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">البطاقة الضريبية</label>
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="TAX-654-321"
+                value={form.taxCardNumber}
+                onChange={(e) => setForm({ ...form, taxCardNumber: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">انتهاء البطاقة الضريبية</label>
+              <input
+                type="date"
+                dir="ltr"
+                value={form.taxCardExpiry}
+                onChange={(e) => setForm({ ...form, taxCardExpiry: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">العنوان</label>
+              <input
+                type="text"
+                placeholder="مقر الشركة / المخزن"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">هاتف الشركة</label>
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="+20 2 0000 0000"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+            </div>
+          </div>
+        </div>
+        {/* Branches tree: Branch → Persons in Charge (spec: الهيكل الشجري) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-800 dark:text-slate-200">الفروع والمعاملون بالفرع</span>
+            <button
+              type="button"
+              onClick={addBranch}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة فرع
+            </button>
+          </div>
+          {branches.length === 0 && (
+            <p className="text-[11px] text-slate-400">لا توجد فروع — يمكن إبقاء المورد بدون تفريعات</p>
+          )}
+          {branches.map((b, bi) => (
+            <div key={bi} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="اسم الفرع *"
+                  value={b.name}
+                  onChange={(e) => updBranch(bi, { name: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                />
+                <input
+                  type="text"
+                  placeholder="كود الفرع"
+                  value={b.code || ''}
+                  onChange={(e) => updBranch(bi, { code: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="text"
+                  placeholder="المدينة"
+                  value={b.city || ''}
+                  onChange={(e) => updBranch(bi, { city: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  maxLength={2}
+                  placeholder="كود الدولة (EG)"
+                  value={b.countryCode || ''}
+                  onChange={(e) => updBranch(bi, { countryCode: e.target.value.toUpperCase() })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="هاتف الفرع"
+                  value={b.phone || ''}
+                  onChange={(e) => updBranch(bi, { phone: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="email"
+                  dir="ltr"
+                  placeholder="branch@vendor.com"
+                  value={b.email || ''}
+                  onChange={(e) => updBranch(bi, { email: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+              </div>
+              <div className="space-y-2 border-t border-dashed border-slate-200 dark:border-slate-700 pt-2">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">مسؤولو الفرع:</span>
+                {(b.contacts || []).map((c, ci) => (
+                  <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+                    <input
+                      type="text"
+                      placeholder="الاسم *"
+                      value={c.name}
+                      onChange={(e) => updBranchContact(bi, ci, { name: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    <input
+                      type="text"
+                      placeholder="المسمى"
+                      value={c.title || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { title: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="هاتف"
+                      value={c.phone || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { phone: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="موبايل"
+                      value={c.mobile || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { mobile: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <input
+                      type="email"
+                      dir="ltr"
+                      placeholder="بريد"
+                      value={c.email || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { email: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => delBranchContact(bi, ci)}
+                      className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+                      title="حذف المسؤول"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addBranchContact(bi)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-brand-600 border border-brand-200 dark:border-brand-800 hover:bg-brand-50 dark:hover:bg-brand-950/40 transition"
+                  >
+                    + مسؤول بالفرع
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => delBranch(bi)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                  >
+                    حذف الفرع
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Vendor-level persons in charge (outside branches) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-800 dark:text-slate-200">الأشخاص المسؤولون (مستوى الشركة)</span>
+            <button
+              type="button"
+              onClick={addContact}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة مسؤول
+            </button>
+          </div>
+          {contacts.length === 0 && (
+            <p className="text-[11px] text-slate-400">لا يوجد مسؤولون على مستوى الشركة — يمكن الاكتفاء بمسؤولي الفروع</p>
+          )}
+          {contacts.map((c, ci) => (
+            <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+              <input
+                type="text"
+                placeholder="الاسم *"
+                value={c.name}
+                onChange={(e) => updContact(ci, { name: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <input
+                type="text"
+                placeholder="المسمى"
+                value={c.title || ''}
+                onChange={(e) => updContact(ci, { title: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="هاتف"
+                value={c.phone || ''}
+                onChange={(e) => updContact(ci, { phone: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="موبايل"
+                value={c.mobile || ''}
+                onChange={(e) => updContact(ci, { mobile: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <input
+                type="email"
+                dir="ltr"
+                placeholder="بريد"
+                value={c.email || ''}
+                onChange={(e) => updContact(ci, { email: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => delContact(ci)}
+                className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+                title="حذف المسؤول"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
