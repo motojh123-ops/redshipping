@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Ship, Plus, ExternalLink, Phone, Globe, Download, TrendingUp,
-  Compass, Mail, ChevronDown, User, Search, Pencil, Loader2, CheckCircle2, AlertCircle, X, Power
+  Compass, Mail, ChevronDown, User, Search, Pencil, Loader2, CheckCircle2, AlertCircle, X, Power, Building2
 } from 'lucide-react';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -10,7 +10,29 @@ import { Modal } from '../../components/ui/Modal';
 import { exportToCsv } from '../../utils/exportUtils';
 import { api } from '../../services/api';
 
-/** Shape returned by GET/POST /masters/shipping-lines (see Prisma ShippingLine model) */
+/** Shape returned by GET/POST /masters/shipping-lines (see Prisma ShippingLine model — hierarchy included) */
+interface LineContact {
+  id?: string;
+  name: string;
+  title?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  isPrimary?: boolean;
+}
+
+interface LineBranch {
+  id?: string;
+  code?: string | null;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contacts?: LineContact[];
+}
+
 interface ShippingLine {
   id: string;
   name: string;
@@ -19,6 +41,8 @@ interface ShippingLine {
   contactEmail?: string | null;
   contactPhone?: string | null;
   website?: string | null;
+  branches?: LineBranch[];
+  contacts?: LineContact[];
   isActive: boolean;
 }
 
@@ -70,6 +94,8 @@ export const ShippingLinesPage: React.FC = () => {
       { header: 'البريد الإلكتروني', accessor: (l: ShippingLine) => l.contactEmail || '—' },
       { header: 'رقم الهاتف', accessor: (l: ShippingLine) => l.contactPhone || '—' },
       { header: 'الموقع الإلكتروني', accessor: (l: ShippingLine) => l.website || '—' },
+      { header: 'عدد المكاتب/الفروع', accessor: (l: ShippingLine) => String((l.branches || []).length) },
+      { header: 'عدد المسؤولين', accessor: (l: ShippingLine) => String(((l.branches || []).reduce((acc: number, b) => acc + (b.contacts?.length || 0), 0) + (l.contacts || []).length)) },
       { header: 'الحالة', accessor: (l: ShippingLine) => (l.isActive ? 'نشط' : 'غير نشط') },
     ]);
   };
@@ -204,7 +230,16 @@ export const ShippingLinesPage: React.FC = () => {
                       <ExternalLink className="w-3 h-3 shrink-0" />
                     </a>
                   )}
-                  {!line.contactName && !line.contactEmail && !line.contactPhone && !line.website && (
+                  {(line.branches || []).length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>
+                        {(line.branches || []).length} مكتب/فرع •{' '}
+                        {((line.branches || []).reduce((acc: number, b) => acc + (b.contacts?.length || 0), 0) + (line.contacts || []).length)} مسؤول
+                      </span>
+                    </div>
+                  )}
+                  {!line.contactName && !line.contactEmail && !line.contactPhone && !line.website && (line.branches || []).length === 0 && (
                     <span className="text-[11px] text-slate-400">لا توجد بيانات اتصال مسجلة — أضفها من زر التعديل.</span>
                   )}
                 </div>
@@ -308,16 +343,68 @@ const CreateShippingLineModal: React.FC<{
     contactPhone: initial?.contactPhone || '',
     website: initial?.website || '',
   });
+  const [branches, setBranches] = useState<LineBranch[]>(
+    (initial?.branches || []).map((b) => ({ ...b, contacts: b.contacts ? [...b.contacts] : [] })),
+  );
+  const [contacts, setContacts] = useState<LineContact[]>((initial?.contacts || []).map((c) => ({ ...c })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!initial;
+
+  const updBranch = (i: number, patch: Partial<LineBranch>) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
+  const delBranch = (i: number) => setBranches((prev) => prev.filter((_, idx) => idx !== i));
+  const addBranch = () =>
+    setBranches((prev) => [...prev, { name: '', code: '', city: '', countryCode: '', phone: '', email: '', address: '', contacts: [] }]);
+  const addBranchContact = (i: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, contacts: [...(b.contacts || []), { name: '', title: '', phone: '', mobile: '', email: '' }] } : b)));
+  const updBranchContact = (bi: number, ci: number, patch: Partial<LineContact>) =>
+    setBranches((prev) =>
+      prev.map((b, idx) =>
+        idx === bi ? { ...b, contacts: (b.contacts || []).map((c, jdx) => (jdx === ci ? { ...c, ...patch } : c)) } : b,
+      ),
+    );
+  const delBranchContact = (bi: number, ci: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === bi ? { ...b, contacts: (b.contacts || []).filter((_, jdx) => jdx !== ci) } : b)));
+  const addContact = () => setContacts((prev) => [...prev, { name: '', title: '', phone: '', mobile: '', email: '' }]);
+  const updContact = (i: number, patch: Partial<LineContact>) => setContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const delContact = (i: number) => setContacts((prev) => prev.filter((_, idx) => idx !== i));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
     try {
-      const payload: Record<string, string> = {};
+      const payload: Record<string, unknown> = {
+        // Multi-level hierarchy: Line Office/Branch → Persons in Charge (spec Session 1)
+        branches: branches
+          .filter((b) => b.name.trim())
+          .map((b) => ({
+            name: b.name.trim(),
+            code: b.code?.trim() || null,
+            city: b.city?.trim() || null,
+            countryCode: b.countryCode?.trim().toUpperCase() || null,
+            phone: b.phone?.trim() || null,
+            email: b.email?.trim() || null,
+            address: b.address?.trim() || null,
+            contacts: (b.contacts || []).filter((c) => c.name.trim()).map((c) => ({
+              name: c.name.trim(),
+              title: c.title?.trim() || null,
+              phone: c.phone?.trim() || null,
+              mobile: c.mobile?.trim() || null,
+              email: c.email?.trim() || null,
+            })),
+          })),
+        contacts: contacts
+          .filter((c) => c.name.trim())
+          .map((c) => ({
+            name: c.name.trim(),
+            title: c.title?.trim() || null,
+            phone: c.phone?.trim() || null,
+            mobile: c.mobile?.trim() || null,
+            email: c.email?.trim() || null,
+          })),
+      };
       if (form.name.trim()) payload.name = form.name.trim();
       if (form.scac.trim()) payload.scac = form.scac.trim().toUpperCase();
       if (form.contactName.trim()) payload.contactName = form.contactName.trim();
@@ -328,16 +415,8 @@ const CreateShippingLineModal: React.FC<{
       const saved: any = isEdit
         ? await api.patch(`/masters/shipping-lines/${initial!.id}`, payload)
         : await api.post('/masters/shipping-lines', payload);
-      onSuccess({
-        id: saved?.id || initial?.id || String(Date.now()),
-        name: saved?.name ?? payload.name,
-        scac: saved?.scac ?? payload.scac,
-        contactName: saved?.contactName ?? payload.contactName,
-        contactEmail: saved?.contactEmail ?? payload.contactEmail,
-        contactPhone: saved?.contactPhone ?? payload.contactPhone,
-        website: saved?.website ?? payload.website,
-        isActive: saved?.isActive !== false,
-      });
+      // The API returns the full line (with branches + contacts) — pass it through
+      onSuccess(saved as ShippingLine);
       onClose();
     } catch (err: any) {
       setError(err?.message || 'تعذر حفظ الخط الملاحي — حاول مجدداً');
@@ -347,7 +426,13 @@ const CreateShippingLineModal: React.FC<{
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="إضافة خط ملاحي جديد" maxWidth="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEdit ? 'تعديل بيانات الخط الملاحي' : 'إضافة خط ملاحي جديد'}
+      subtitle="مكاتب الخط + شجرة المسؤولين عن الحجز والتسعير والمتابعة"
+      maxWidth="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -420,6 +505,205 @@ const CreateShippingLineModal: React.FC<{
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
             />
           </div>
+        </div>
+
+        {/* Branches tree: Line Office/Branch → Persons in Charge (spec: الهيكل الشجري) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-800 dark:text-slate-200">مكاتب الخط وفروعها</span>
+            <button
+              type="button"
+              onClick={addBranch}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة مكتب/فرع
+            </button>
+          </div>
+          {branches.length === 0 && (
+            <p className="text-[11px] text-slate-400">لا توجد مكاتب — يمكن إدارة الخط على مستوى الشركة مباشرة</p>
+          )}
+          {branches.map((b, bi) => (
+            <div key={bi} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="اسم المكتب/الفرع *"
+                  value={b.name}
+                  onChange={(e) => updBranch(bi, { name: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                />
+                <input
+                  type="text"
+                  placeholder="كود الفرع"
+                  value={b.code || ''}
+                  onChange={(e) => updBranch(bi, { code: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="text"
+                  placeholder="المدينة"
+                  value={b.city || ''}
+                  onChange={(e) => updBranch(bi, { city: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  maxLength={2}
+                  placeholder="كود الدولة (EG)"
+                  value={b.countryCode || ''}
+                  onChange={(e) => updBranch(bi, { countryCode: e.target.value.toUpperCase() })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="هاتف المكتب"
+                  value={b.phone || ''}
+                  onChange={(e) => updBranch(bi, { phone: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+                <input
+                  type="email"
+                  dir="ltr"
+                  placeholder="office@line.com"
+                  value={b.email || ''}
+                  onChange={(e) => updBranch(bi, { email: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+              </div>
+              <div className="space-y-2 border-t border-dashed border-slate-200 dark:border-slate-700 pt-2">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">مسؤولو المكتب:</span>
+                {(b.contacts || []).map((c, ci) => (
+                  <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+                    <input
+                      type="text"
+                      placeholder="الاسم *"
+                      value={c.name}
+                      onChange={(e) => updBranchContact(bi, ci, { name: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    <input
+                      type="text"
+                      placeholder="المسمى"
+                      value={c.title || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { title: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="هاتف"
+                      value={c.phone || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { phone: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="موبايل"
+                      value={c.mobile || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { mobile: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <input
+                      type="email"
+                      dir="ltr"
+                      placeholder="بريد"
+                      value={c.email || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { email: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => delBranchContact(bi, ci)}
+                      className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addBranchContact(bi)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-brand-600 border border-brand-200 dark:border-brand-800 hover:bg-brand-50 dark:hover:bg-brand-950/40 transition"
+                  >
+                    + مسؤول بالمكتب
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => delBranch(bi)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                  >
+                    حذف المكتب
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Line-level persons in charge (outside offices) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-800 dark:text-slate-200">الأشخاص المسؤولون (مستوى الخط)</span>
+            <button
+              type="button"
+              onClick={addContact}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة مسؤول
+            </button>
+          </div>
+          {contacts.map((c, ci) => (
+            <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+              <input
+                type="text"
+                placeholder="الاسم *"
+                value={c.name}
+                onChange={(e) => updContact(ci, { name: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <input
+                type="text"
+                placeholder="المسمى"
+                value={c.title || ''}
+                onChange={(e) => updContact(ci, { title: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="هاتف"
+                value={c.phone || ''}
+                onChange={(e) => updContact(ci, { phone: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="موبايل"
+                value={c.mobile || ''}
+                onChange={(e) => updContact(ci, { mobile: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <input
+                type="email"
+                dir="ltr"
+                placeholder="بريد"
+                value={c.email || ''}
+                onChange={(e) => updContact(ci, { email: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => delContact(ci)}
+                className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
 
         {error && (
