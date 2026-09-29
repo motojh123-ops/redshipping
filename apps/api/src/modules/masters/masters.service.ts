@@ -336,10 +336,12 @@ export class MastersService {
   }
 
   async updateVendor(tenantId: string, id: string, data: any) {
-    await this.findVendor(tenantId, id);
+    const existing = await this.findVendor(tenantId, id);
     const { branches, contacts, companyId: _c, id: _i, ...rest } = data || {};
+    // Merge with the current record so partial PATCHes (e.g. { isActive }) never wipe fields
+    const merged = { ...existing, ...rest };
     await this.prisma.$transaction(async (tx) => {
-      await tx.vendor.update({ where: { id }, data: this.vendorScalar(tenantId, rest) });
+      await tx.vendor.update({ where: { id }, data: this.vendorScalar(tenantId, merged) });
       if (Array.isArray(branches)) {
         await tx.vendorBranch.deleteMany({ where: { vendorId: id } });
         for (const b of branches) {
@@ -426,10 +428,12 @@ export class MastersService {
   }
 
   async updateOverseasAgent(tenantId: string, id: string, data: any) {
-    await this.findOverseasAgent(tenantId, id);
+    const existing = await this.findOverseasAgent(tenantId, id);
     const { branches, contacts, companyId: _c, id: _i, ...rest } = data || {};
+    // Merge with the current record so partial PATCHes (e.g. { isActive }) never wipe fields
+    const merged = { ...existing, ...rest };
     await this.prisma.$transaction(async (tx) => {
-      await tx.overseasAgent.update({ where: { id }, data: this.agentScalar(rest) });
+      await tx.overseasAgent.update({ where: { id }, data: this.agentScalar(merged) });
       if (Array.isArray(branches)) {
         await tx.overseasAgentBranch.deleteMany({ where: { overseasAgentId: id } });
         for (const b of branches) {
@@ -543,9 +547,11 @@ export class MastersService {
   async updateChargeItem(tenantId: string, id: string, data: any) {
     const item = await this.prisma.chargeItem.findFirst({ where: { id, companyId: tenantId } });
     if (!item) throw new NotFoundException('Charge item not found');
+    // Merge with the current record so partial PATCHes never wipe fields
+    const merged = { ...item, ...data };
     await this.prisma.chargeItem.update({
       where: { id },
-      data: this.chargeItemScalar(data),
+      data: this.chargeItemScalar(merged),
     });
     return this.prisma.chargeItem.findFirst({
       where: { id },
