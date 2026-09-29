@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   MapPin, Plus, Globe, Search, Anchor, Navigation,
   Calculator, CheckCircle2, XCircle, DollarSign,
   Download, Upload, FileSpreadsheet, ArrowRightLeft,
-  Compass, Clock, ShieldCheck, Box, RefreshCw
+  Compass, Clock, ShieldCheck, Box, RefreshCw, Loader2
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -12,6 +12,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Modal } from '../../components/ui/Modal';
+import { api } from '../../services/api';
 import { toast } from 'sonner';
 import { exportWorkbook } from '../../utils/excelExport';
 import Papa from 'papaparse';
@@ -31,6 +32,12 @@ export const PortsPage: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
+  // Dynamic port-types library + tenant-registered ports (Masters module — Session 1 spec)
+  const [portTypes, setPortTypes] = useState<Array<{ id: string; code: string; nameEn: string; nameAr: string | null; isActive: boolean }>>([]);
+  const [customPorts, setCustomPorts] = useState<any[]>([]);
+  const [savingPort, setSavingPort] = useState(false);
+  const [portForm, setPortForm] = useState({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '' });
+
   // Distance Calculator state
   const [originPort, setOriginPort] = useState('CNNGB');
   const [destPort, setDestPort] = useState('EGALY');
@@ -44,20 +51,49 @@ export const PortsPage: React.FC = () => {
   const [fromCurrency, setFromCurrency] = useState('USD');
   const [toCurrency, setToCurrency] = useState('EGP');
 
+  // Load dynamic port types library + ports registered by this company
+  useEffect(() => {
+    api.get('/masters/libraries/port-types').then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setPortTypes(list);
+    }).catch(() => {});
+    api.get('/masters/ports').then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      const flagOf = (code: string) =>
+        /^[a-z]{2}$/i.test(code || '')
+          ? String.fromCodePoint(...[...code.toUpperCase()].map((ch) => 127397 + ch.charCodeAt(0)))
+          : '🏳️';
+      setCustomPorts(
+        list
+          .filter((p: any) => p.companyId)
+          .map((p: any) => ({
+            unlocode: p.code,
+            name: p.nameEn,
+            nameAr: p.nameAr || p.nameEn,
+            country: p.countryCode,
+            flagEmoji: flagOf(p.countryCode),
+            isDryPort: (p.portType || '').includes('dry'),
+            terminals: [],
+            isCustom: true,
+          })),
+      );
+    }).catch(() => {});
+  }, []);
+
   const { data: apiPorts, loading } = useApi<any[]>('/maritime/ports');
 
-  // Merged ports list
+  // Merged ports list (static registry + maritime API + company-registered ports)
   const allPorts = useMemo(() => {
     const registryArray = Object.values(PORTS_REGISTRY);
+    // Merge unique
+    const map = new Map<string, any>();
+    registryArray.forEach((p) => map.set(p.unlocode, p));
     if (apiPorts && apiPorts.length > 0) {
-      // Merge unique
-      const map = new Map<string, any>();
-      registryArray.forEach((p) => map.set(p.unlocode, p));
       apiPorts.forEach((p) => map.set(p.unlocode, p));
-      return Array.from(map.values());
     }
-    return registryArray;
-  }, [apiPorts]);
+    customPorts.forEach((p) => map.set(p.unlocode, p));
+    return Array.from(map.values());
+  }, [apiPorts, customPorts]);
 
   const filteredPorts = useMemo(() => {
     return allPorts.filter((p) => {
@@ -722,10 +758,53 @@ export const PortsPage: React.FC = () => {
         subtitle="تسجيل ميناء بحري جديد أو مستودع جاف في قاعدة البيانات"
       >
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            toast.success('تم تسجيل الميناء بنجاح في قاعدة البيانات');
-            setIsCreateOpen(false);
+            const code = portForm.code.trim().toUpperCase();
+            if (!/^[A-Z]{5}$/.test(code)) {
+              toast.error('كود UN/LOCODE يجب أن يتكون من 5 أحرف إنجليزية (مثال: EGATK)');
+              return;
+            }
+            if (!portForm.nameEn.trim()) {
+              toast.error('أدخل اسم الميناء بالإنجليزية');
+              return;
+            }
+            const selectedType = portTypes.find((t) => t.id === portForm.portTypeId);
+            const payload = {
+              code,
+              nameEn: portForm.nameEn.trim(),
+              nameAr: portForm.nameAr.trim() || null,
+              countryCode: portForm.countryCode.trim().toUpperCase(),
+              portType: selectedType?.code || 'sea',
+              portTypeId: portForm.portTypeId || null,
+            };
+            setSavingPort(true);
+            try {
+              await api.post('/masters/ports', payload);
+              toast.success(`تم تسجيل ميناء "${payload.nameEn}" في قاعدة البيانات`);
+              setCustomPorts((prev) => [
+                ...prev,
+                {
+                  unlocode: payload.code,
+                  name: payload.nameEn,
+                  nameAr: payload.nameAr || payload.nameEn,
+                  country: payload.countryCode,
+                  flagEmoji:
+                    payload.countryCode.length === 2
+                      ? String.fromCodePoint(...[...payload.countryCode].map((ch) => 127397 + ch.charCodeAt(0)))
+                      : '🏳️',
+                  isDryPort: (payload.portType || 'sea').includes('dry'),
+                  terminals: [],
+                  isCustom: true,
+                },
+              ]);
+              setPortForm({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '' });
+              setIsCreateOpen(false);
+            } catch (err: any) {
+              toast.error(err?.message || 'تعذر حفظ الميناء — قد يكون الكود مستخدماً مسبقاً');
+            } finally {
+              setSavingPort(false);
+            }
           }}
           className="space-y-4 text-xs"
         >
@@ -737,7 +816,10 @@ export const PortsPage: React.FC = () => {
               type="text"
               required
               maxLength={5}
+              dir="ltr"
               placeholder="مثال: EGATK"
+              value={portForm.code}
+              onChange={(e) => setPortForm({ ...portForm, code: e.target.value.toUpperCase() })}
               className="w-full uppercase font-mono bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
             />
           </div>
@@ -748,7 +830,10 @@ export const PortsPage: React.FC = () => {
               <input
                 type="text"
                 required
+                dir="ltr"
                 placeholder="Port of Adabiya"
+                value={portForm.nameEn}
+                onChange={(e) => setPortForm({ ...portForm, nameEn: e.target.value })}
                 className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
               />
             </div>
@@ -756,8 +841,9 @@ export const PortsPage: React.FC = () => {
               <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">الاسم بالعربية:</label>
               <input
                 type="text"
-                required
                 placeholder="ميناء الأدبية"
+                value={portForm.nameAr}
+                onChange={(e) => setPortForm({ ...portForm, nameAr: e.target.value })}
                 className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
               />
             </div>
@@ -765,19 +851,39 @@ export const PortsPage: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">الدولة:</label>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                كود الدولة (حرفان — ISO):
+              </label>
               <input
                 type="text"
                 required
-                defaultValue="Egypt"
-                className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
+                maxLength={2}
+                dir="ltr"
+                placeholder="EG"
+                value={portForm.countryCode}
+                onChange={(e) => setPortForm({ ...portForm, countryCode: e.target.value.toUpperCase() })}
+                className="w-full font-mono uppercase bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">نوع الميناء:</label>
-              <select className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white">
-                <option value="seaport">ميناء بحري (Seaport)</option>
-                <option value="dry_port">ميناء جاف (Dry Port)</option>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">نوع الميناء (مكتبة ديناميكية):</label>
+              <select
+                value={portForm.portTypeId}
+                onChange={(e) => setPortForm({ ...portForm, portTypeId: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
+              >
+                <option value="">— اختر النوع —</option>
+                {portTypes.filter((t) => t.isActive).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nameAr || t.nameEn}
+                  </option>
+                ))}
+                {portTypes.length === 0 && (
+                  <>
+                    <option value="sea">ميناء بحري (Sea Port)</option>
+                    <option value="dry">ميناء جاف (Dry Port)</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -792,8 +898,10 @@ export const PortsPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-[#FF5E1E] text-white font-semibold shadow-md shadow-[#FF5E1E]/20"
+              disabled={savingPort}
+              className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-semibold shadow-md shadow-[#FF5E1E]/20 inline-flex items-center gap-2"
             >
+              {savingPort && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               حفظ الميناء
             </button>
           </div>

@@ -31,6 +31,7 @@ import {
   Sparkles,
   Layers,
   Contact,
+  MapPinned,
 } from 'lucide-react';
 import { useThemeStore } from '../../store/themeStore';
 
@@ -184,6 +185,7 @@ export const Sidebar: React.FC = () => {
       },
       items: [
         { to: '/masters/directory', labelAr: 'أطلس الدول والأعلام والموانئ', labelEn: 'World Atlas & Flags', icon: Globe2, badge: '250+' },
+        { to: '/masters/cities', labelAr: 'أطلس الدول: إدارة المدن', labelEn: 'Country Atlas: Cities', icon: MapPinned },
         { to: '/masters/charge-items', labelAr: 'البنود العامة (Charges)', labelEn: 'Charge Items', icon: Tag },
         { to: '/masters/ports', labelAr: 'سجل الموانئ (UN/LOCODE)', labelEn: 'Ports & Terminals', icon: MapPin, badge: 'Global' },
         { to: '/masters/shipping-lines', labelAr: 'خطوط الملاحة والاتصالات', labelEn: 'Shipping Lines', icon: Ship },
