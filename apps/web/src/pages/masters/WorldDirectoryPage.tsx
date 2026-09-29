@@ -22,9 +22,10 @@ import {
 } from 'lucide-react';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { api } from '../../services/api';
-import { Loader2, Plus, Edit2, Trash2, MapPinned } from 'lucide-react';
+import { Loader2, Plus, Edit2, Trash2, MapPinned, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from '../../components/ui/Modal';
+import { exportToCsv } from '../../utils/exportUtils';
 import { PortDefinition, TradeCorridor, CountryDefinition } from '@banna/shared-types';
 
 /** Managed city row from /masters/cities (Country Atlas drill-down) */
@@ -33,8 +34,49 @@ interface AtlasCity {
   countryCode: string;
   nameEn: string;
   nameAr: string | null;
+  state: string | null;
+  cityCode: string | null;
+  timezone: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  isLogisticsHub: boolean;
+  notes: string | null;
   isActive: boolean;
 }
+
+/** Suggested timezones for the city form datalist */
+const COMMON_TIMEZONES = [
+  'Africa/Cairo',
+  'Africa/Casablanca',
+  'Africa/Nairobi',
+  'Africa/Lagos',
+  'Africa/Johannesburg',
+  'Asia/Riyadh',
+  'Asia/Dubai',
+  'Asia/Doha',
+  'Asia/Kuwait',
+  'Asia/Amman',
+  'Asia/Beirut',
+  'Asia/Istanbul',
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Singapore',
+  'Asia/Kolkata',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Rotterdam',
+  'Europe/Antwerp',
+  'Europe/Hamburg',
+  'Europe/Madrid',
+  'Europe/Genoa',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Australia/Sydney',
+  'UTC',
+];
 
 export const WorldDirectoryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'countries' | 'ports' | 'corridors'>('countries');
@@ -65,7 +107,23 @@ export const WorldDirectoryPage: React.FC = () => {
   const [cityFormOpen, setCityFormOpen] = useState(false);
   const [editingCityId, setEditingCityId] = useState<string | null>(null);
   const [citySaving, setCitySaving] = useState(false);
-  const [cityForm, setCityForm] = useState({ nameEn: '', nameAr: '' });
+  const [cityForm, setCityForm] = useState({
+    nameEn: '',
+    nameAr: '',
+    state: '',
+    cityCode: '',
+    timezone: '',
+    latitude: '',
+    longitude: '',
+    isLogisticsHub: false,
+    isActive: true,
+    notes: '',
+  });
+
+  // Country drill-down modal UI state
+  const [modalTab, setModalTab] = useState<'overview' | 'cities' | 'ports'>('cities');
+  const [citySearch, setCitySearch] = useState('');
+  const [cityStatusFilter, setCityStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -122,15 +180,52 @@ export const WorldDirectoryPage: React.FC = () => {
     [cities, selectedCountry],
   );
 
-  const openAddCity = () => {
+  /** drill into a country: open the manager modal on its cities tab */
+  const openCountry = (country: CountryDefinition) => {
+    setSelectedCountry(country);
+    setModalTab('cities');
+    setCitySearch('');
+    setCityStatusFilter('all');
+    setCityFormOpen(false);
     setEditingCityId(null);
-    setCityForm({ nameEn: '', nameAr: '' });
+  };
+
+  /** timezone suggestion taken from the country's first known port */
+  const suggestedTimezone = (country: CountryDefinition) =>
+    ports.find((p) => p.countryCode === country.cca2)?.timeZone || '';
+
+  const openAddCity = () => {
+    if (!selectedCountry) return;
+    setEditingCityId(null);
+    setCityForm({
+      nameEn: '',
+      nameAr: '',
+      state: '',
+      cityCode: '',
+      timezone: suggestedTimezone(selectedCountry),
+      latitude: '',
+      longitude: '',
+      isLogisticsHub: false,
+      isActive: true,
+      notes: '',
+    });
     setCityFormOpen(true);
   };
 
   const openEditCity = (city: AtlasCity) => {
     setEditingCityId(city.id);
-    setCityForm({ nameEn: city.nameEn, nameAr: city.nameAr || '' });
+    setCityForm({
+      nameEn: city.nameEn,
+      nameAr: city.nameAr || '',
+      state: city.state || '',
+      cityCode: city.cityCode || '',
+      timezone: city.timezone || '',
+      latitude: city.latitude !== null && city.latitude !== undefined ? String(city.latitude) : '',
+      longitude: city.longitude !== null && city.longitude !== undefined ? String(city.longitude) : '',
+      isLogisticsHub: Boolean(city.isLogisticsHub),
+      isActive: Boolean(city.isActive),
+      notes: city.notes || '',
+    });
     setCityFormOpen(true);
   };
 
@@ -148,20 +243,48 @@ export const WorldDirectoryPage: React.FC = () => {
       toast.error('اسم المدينة بالإنجليزية مطلوب');
       return;
     }
+
+    const latRaw = cityForm.latitude.trim();
+    const lngRaw = cityForm.longitude.trim();
+    if ((latRaw && !lngRaw) || (!latRaw && lngRaw)) {
+      toast.error('أدخل خطي العرض والطول معاً أو اتركهما فارغين');
+      return;
+    }
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+    if (latRaw && lngRaw) {
+      latitude = Number(latRaw);
+      longitude = Number(lngRaw);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        toast.error('خط العرض يجب أن يكون بين -90 و 90');
+        return;
+      }
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        toast.error('خط الطول يجب أن يكون بين -180 و 180');
+        return;
+      }
+    }
+
+    const payload: Record<string, unknown> = {
+      nameEn,
+      nameAr: cityForm.nameAr.trim() || null,
+      state: cityForm.state.trim() || null,
+      cityCode: cityForm.cityCode.trim() || null,
+      timezone: cityForm.timezone.trim() || null,
+      latitude,
+      longitude,
+      isLogisticsHub: cityForm.isLogisticsHub,
+      isActive: cityForm.isActive,
+      notes: cityForm.notes.trim() || null,
+    };
+
     setCitySaving(true);
     try {
       if (editingCityId) {
-        await api.patch(`/masters/cities/${editingCityId}`, {
-          nameEn,
-          nameAr: cityForm.nameAr.trim() || null,
-        });
+        await api.patch(`/masters/cities/${editingCityId}`, payload);
         toast.success('تم تحديث المدينة بنجاح');
       } else {
-        await api.post('/masters/cities', {
-          countryCode: selectedCountry.cca2.toUpperCase(),
-          nameEn,
-          nameAr: cityForm.nameAr.trim() || undefined,
-        });
+        await api.post('/masters/cities', { ...payload, countryCode: selectedCountry.cca2.toUpperCase() });
         toast.success('تمت إضافة المدينة بنجاح');
       }
       setCityFormOpen(false);
@@ -192,6 +315,54 @@ export const WorldDirectoryPage: React.FC = () => {
     } catch {
       toast.error('تعذر تحديث حالة المدينة');
     }
+  };
+
+  /** ports of the drilled-in country (static maritime registry) */
+  const selectedCountryPorts = useMemo(
+    () => (selectedCountry ? ports.filter((p) => p.countryCode === selectedCountry.cca2) : []),
+    [ports, selectedCountry],
+  );
+
+  /** city stats for the drilled-in country */
+  const selectedCountryStats = useMemo(() => {
+    const total = selectedCountryCities.length;
+    const active = selectedCountryCities.filter((c) => c.isActive).length;
+    const hubs = selectedCountryCities.filter((c) => c.isLogisticsHub).length;
+    return { total, active, disabled: total - active, hubs };
+  }, [selectedCountryCities]);
+
+  /** cities shown in the modal after search + status filter */
+  const filteredModalCities = useMemo(() => {
+    const q = citySearch.trim().toLowerCase();
+    return selectedCountryCities.filter((c) => {
+      if (cityStatusFilter === 'active' && !c.isActive) return false;
+      if (cityStatusFilter === 'disabled' && c.isActive) return false;
+      if (!q) return true;
+      return (
+        c.nameEn.toLowerCase().includes(q) ||
+        (c.nameAr || '').toLowerCase().includes(q) ||
+        (c.state || '').toLowerCase().includes(q) ||
+        (c.cityCode || '').toLowerCase().includes(q) ||
+        (c.timezone || '').toLowerCase().includes(q)
+      );
+    });
+  }, [selectedCountryCities, citySearch, cityStatusFilter]);
+
+  /** CSV export of the visible city list */
+  const handleExportCities = () => {
+    if (!selectedCountry) return;
+    exportToCsv(`cities-${selectedCountry.cca2}`, filteredModalCities, [
+      { header: 'الكود', accessor: (c: AtlasCity) => c.cityCode || '' },
+      { header: 'المدينة (عربي)', accessor: (c: AtlasCity) => c.nameAr || '' },
+      { header: 'City', accessor: (c: AtlasCity) => c.nameEn },
+      { header: 'المحافظة / المنطقة', accessor: (c: AtlasCity) => c.state || '' },
+      { header: 'المنطقة الزمنية', accessor: (c: AtlasCity) => c.timezone || '' },
+      { header: 'خط العرض', accessor: (c: AtlasCity) => c.latitude ?? '' },
+      { header: 'خط الطول', accessor: (c: AtlasCity) => c.longitude ?? '' },
+      { header: 'مركز لوجستي', accessor: (c: AtlasCity) => (c.isLogisticsHub ? 'نعم' : 'لا') },
+      { header: 'الحالة', accessor: (c: AtlasCity) => (c.isActive ? 'فعّالة' : 'معطّلة') },
+      { header: 'ملاحظات', accessor: (c: AtlasCity) => c.notes || '' },
+    ]);
   };
 
   // Filtered Countries
@@ -389,7 +560,7 @@ export const WorldDirectoryPage: React.FC = () => {
             {filteredCountries.map((country) => (
               <div
                 key={country.cca2}
-                onClick={() => setSelectedCountry(country)}
+                onClick={() => openCountry(country)}
                 className="group p-4 rounded-2xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-[#FF5E1E]/50 hover:shadow-md transition cursor-pointer flex flex-col justify-between"
               >
                 <div>
@@ -699,55 +870,157 @@ export const WorldDirectoryPage: React.FC = () => {
         <Modal
           isOpen={!!selectedCountry}
           onClose={closeCountryModal}
-          title={`${selectedCountry.nameAr} — إدارة المدن`}
-          subtitle={`${selectedCountry.nameEn} • ISO ${selectedCountry.cca2}/${selectedCountry.cca3} — المدن المسجلة: ${selectedCountryCities.length}`}
-          maxWidth="lg"
+          title={`${selectedCountry.nameAr} — عمق الدولة`}
+          subtitle={`${selectedCountry.nameEn} • ISO ${selectedCountry.cca2}/${selectedCountry.cca3}`}
+          maxWidth="4xl"
         >
-          <div className="space-y-5">
-            {/* Country identity summary */}
+          <div className="space-y-4">
+            {/* Country banner */}
             <div className="flex items-center gap-4 p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0E121A] border border-slate-100 dark:border-[#1E2638]">
               <CountryFlag
                 countryCode={selectedCountry.cca2}
-                className="w-14 h-10 rounded shadow-sm object-cover"
+                className="w-16 h-11 rounded shadow-sm object-cover"
                 title={selectedCountry.nameEn}
               />
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block">العاصمة</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100">{selectedCountry.capital || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">العملة</span>
-                  <span className="font-bold font-mono text-[#FF5E1E]">{selectedCountry.currencies?.join(', ') || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">رمز الاتصال</span>
-                  <span className="font-bold font-mono text-slate-800 dark:text-slate-100">{selectedCountry.callingCode || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">المنطقة</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100">{selectedCountry.region || '—'}</span>
-                </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{selectedCountry.nameAr}</h3>
+                <p className="text-[11px] text-slate-400 font-mono truncate" dir="ltr">
+                  {selectedCountry.nameEn}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-orange-500/10 text-[#FF5E1E] border border-orange-500/20 flex items-center gap-1">
+                  <MapPinned className="w-3 h-3" />
+                  {selectedCountryCities.length} مدينة
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-500 border border-sky-500/20 flex items-center gap-1">
+                  <Anchor className="w-3 h-3" />
+                  {selectedCountryPorts.length} ميناء
+                </span>
               </div>
             </div>
 
-            {/* Cities manager */}
+            {/* Modal tabs */}
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] w-fit">
+              {([
+                { key: 'overview', label: 'نظرة عامة', icon: Info },
+                { key: 'cities', label: `المدن (${selectedCountryCities.length})`, icon: MapPinned },
+                { key: 'ports', label: `الموانئ (${selectedCountryPorts.length})`, icon: Anchor },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setModalTab(t.key)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    modalTab === t.key
+                      ? 'bg-[#FF5E1E] text-white shadow-md shadow-orange-500/20'
+                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  <t.icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Tab: overview ── */}
+            {modalTab === 'overview' && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {[
+                  { label: 'العاصمة', value: selectedCountry.capital || '—', icon: Building2 },
+                  { label: 'المنطقة', value: selectedCountry.region || '—', icon: Compass },
+                  { label: 'المنطقة الفرعية', value: selectedCountry.subregion || '—', icon: Globe2 },
+                  { label: 'العملة', value: selectedCountry.currencies?.join('، ') || '—', icon: Coins },
+                  { label: 'رمز الاتصال', value: selectedCountry.callingCode || '—', icon: Phone },
+                  { label: 'ISO (Alpha-2/3)', value: `${selectedCountry.cca2} / ${selectedCountry.cca3}`, icon: ShieldCheck },
+                  { label: 'الإحداثيات', value: selectedCountry.latlng?.join('، ') || '—', icon: Navigation },
+                  { label: 'المدن المسجلة', value: String(selectedCountryCities.length), icon: MapPinned },
+                ].map((item) => (
+                  <div key={item.label} className="p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638]">
+                    <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-bold">
+                      <item.icon className="w-3.5 h-3.5 text-[#FF5E1E]" />
+                      {item.label}
+                    </div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-white mt-1 truncate" dir="auto">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── Tab: cities ── */}
+            {modalTab === 'cities' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                  <MapPinned className="w-4 h-4 text-[#FF5E1E]" />
-                  مدن {selectedCountry.nameAr}
-                </h4>
-                {!cityFormOpen && (
+              {/* Stats chips */}
+              <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  الإجمالي: {selectedCountryStats.total}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                  فعّالة: {selectedCountryStats.active}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                  معطّلة: {selectedCountryStats.disabled}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1">
+                  <Building2 className="w-3 h-3" />
+                  مراكز لوجستية: {selectedCountryStats.hubs}
+                </span>
+              </div>
+
+              {/* Toolbar: search + status filter + export + add */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={citySearch}
+                    onChange={(e) => setCitySearch(e.target.value)}
+                    placeholder="ابحث بالمدينة أو المحافظة أو الكود أو المنطقة الزمنية..."
+                    className="w-full ps-9 pe-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {([
+                    { key: 'all', label: 'الكل' },
+                    { key: 'active', label: 'فعّالة' },
+                    { key: 'disabled', label: 'معطّلة' },
+                  ] as const).map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setCityStatusFilter(f.key)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                        cityStatusFilter === f.key
+                          ? 'bg-[#FF5E1E] text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
                   <button
                     type="button"
-                    onClick={openAddCity}
-                    className="px-3 py-1.5 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] text-white text-xs font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-1.5 cursor-pointer"
+                    title="تصدير المدن الظاهرة (CSV/Excel)"
+                    disabled={filteredModalCities.length === 0}
+                    onClick={handleExportCities}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-[#FF5E1E] transition flex items-center gap-1 text-[11px] font-bold disabled:opacity-40 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    إضافة مدينة
+                    <Download className="w-3.5 h-3.5" />
+                    تصدير
                   </button>
-                )}
+                  {!cityFormOpen && (
+                    <button
+                      type="button"
+                      onClick={openAddCity}
+                      className="px-3 py-1.5 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] text-white text-xs font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      إضافة مدينة
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Inline add / edit form */}
@@ -756,7 +1029,13 @@ export const WorldDirectoryPage: React.FC = () => {
                   onSubmit={handleSaveCity}
                   className="p-3.5 rounded-2xl bg-orange-50/60 dark:bg-[#0E121A] border border-orange-200/70 dark:border-[#1E2638] space-y-3"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <p className="text-xs font-bold text-[#FF5E1E] flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" />
+                    {editingCityId ? 'تعديل بيانات المدينة' : 'إضافة مدينة جديدة'}
+                  </p>
+
+                  {/* Row 1: names + state */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">
                         المدينة بالإنجليزية <span className="text-red-500">*</span>
@@ -783,6 +1062,120 @@ export const WorldDirectoryPage: React.FC = () => {
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                       />
                     </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">المحافظة / المنطقة</label>
+                      <input
+                        type="text"
+                        dir="rtl"
+                        placeholder="مثال: مطروح"
+                        value={cityForm.state}
+                        onChange={(e) => setCityForm({ ...cityForm, state: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      />
+                    </div>
+                  </div>
+                  {/* Row 2: code + timezone + coordinates */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">كود المدينة (اختياري)</label>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        maxLength={20}
+                        placeholder="EG-ALX"
+                        value={cityForm.cityCode}
+                        onChange={(e) => setCityForm({ ...cityForm, cityCode: e.target.value.toUpperCase() })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">المنطقة الزمنية</label>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        list="city-tz-options"
+                        placeholder="Africa/Cairo"
+                        value={cityForm.timezone}
+                        onChange={(e) => setCityForm({ ...cityForm, timezone: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                      />
+                      <datalist id="city-tz-options">
+                        {Array.from(
+                          new Set([
+                            ...COMMON_TIMEZONES,
+                            ...(selectedCountry
+                              ? selectedCountryPorts.map((p) => p.timeZone).filter(Boolean)
+                              : []),
+                          ]),
+                        ).map((tz) => (
+                          <option key={tz} value={tz} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">خط العرض</label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="-90"
+                        max="90"
+                        dir="ltr"
+                        placeholder="31.2001"
+                        value={cityForm.latitude}
+                        onChange={(e) => setCityForm({ ...cityForm, latitude: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">خط الطول</label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="-180"
+                        max="180"
+                        dir="ltr"
+                        placeholder="29.9187"
+                        value={cityForm.longitude}
+                        onChange={(e) => setCityForm({ ...cityForm, longitude: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                  {/* Row 3: flags */}
+                  <div className="flex items-center gap-5 flex-wrap">
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cityForm.isLogisticsHub}
+                        onChange={(e) => setCityForm({ ...cityForm, isLogisticsHub: e.target.checked })}
+                        className="w-4 h-4 accent-[#FF5E1E] cursor-pointer"
+                      />
+                      <Building2 className="w-3.5 h-3.5 text-amber-500" />
+                      مركز لوجستي رئيسي
+                    </label>
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cityForm.isActive}
+                        onChange={(e) => setCityForm({ ...cityForm, isActive: e.target.checked })}
+                        className="w-4 h-4 accent-[#FF5E1E] cursor-pointer"
+                      />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      مدينة فعّالة (تظهر في نماذج النظام)
+                    </label>
+                  </div>
+
+                  {/* Row 4: notes */}
+                  <div>
+                    <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">ملاحظات</label>
+                    <textarea
+                      rows={2}
+                      dir="rtl"
+                      placeholder="أي تفاصيل إضافية (مناطق الخدمة، مكاتب، تعليمات تشغيل...)"
+                      value={cityForm.notes}
+                      onChange={(e) => setCityForm({ ...cityForm, notes: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs resize-y"
+                    />
                   </div>
                   <div className="flex justify-end gap-2">
                     <button
@@ -807,69 +1200,165 @@ export const WorldDirectoryPage: React.FC = () => {
                 </form>
               )}
 
-              {/* Cities list */}
-              {selectedCountryCities.length === 0 && !cityFormOpen ? (
+              {/* Cities list (search + filter applied) */}
+              {filteredModalCities.length === 0 ? (
                 <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-[#1E2638]">
                   <MapPinned className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">لا توجد مدن مسجلة لهذه الدولة بعد</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    اضغط «إضافة مدينة» لتسجيل أول مدينة — تصبح متاحة فوراً في نماذج النظام
-                  </p>
+                  {selectedCountryCities.length === 0 ? (
+                    <>
+                      <p className="text-xs font-bold text-slate-600 dark:text-slate-300">لا توجد مدن مسجلة لهذه الدولة بعد</p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        اضغط «إضافة مدينة» لتسجيل أول مدينة — تصبح متاحة فوراً في نماذج النظام
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">لا توجد نتائج مطابقة للبحث أو التصفية الحالية</p>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {selectedCountryCities.map((city) => (
+                  {filteredModalCities.map((city) => (
                     <div
                       key={city.id}
-                      className="group flex items-center justify-between gap-2 p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-[#FF5E1E]/40 transition"
+                      className="group p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-[#FF5E1E]/40 transition"
                     >
-                      <div className="min-w-0">
-                        <p
-                          className={`text-xs font-bold truncate ${
-                            city.isActive ? 'text-slate-900 dark:text-white' : 'text-slate-400 line-through'
-                          }`}
-                        >
-                          {city.nameAr || city.nameEn}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
-                          {city.nameEn}
-                        </p>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p
+                            className={`text-xs font-bold truncate flex items-center gap-1 ${
+                              city.isActive ? 'text-slate-900 dark:text-white' : 'text-slate-400 line-through'
+                            }`}
+                          >
+                            {city.nameAr || city.nameEn}
+                            {city.isLogisticsHub && <Building2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
+                            {city.nameEn}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            title={city.isActive ? 'تعطيل المدينة' : 'تنشيط المدينة'}
+                            onClick={() => handleToggleCityActive(city)}
+                            className={`w-9 h-7 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                              city.isActive
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            {city.isActive ? 'فعّالة' : 'معطّلة'}
+                          </button>
+                          <button
+                            type="button"
+                            title="تعديل"
+                            onClick={() => openEditCity(city)}
+                            className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-[#FF5E1E] transition flex items-center justify-center cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            title="حذف"
+                            onClick={() => handleDeleteCity(city)}
+                            className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-red-500 transition flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          title={city.isActive ? 'تعطيل المدينة' : 'تنشيط المدينة'}
-                          onClick={() => handleToggleCityActive(city)}
-                          className={`w-9 h-7 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                            city.isActive
-                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          {city.isActive ? 'فعّالة' : 'معطّلة'}
-                        </button>
-                        <button
-                          type="button"
-                          title="تعديل"
-                          onClick={() => openEditCity(city)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-[#FF5E1E] transition flex items-center justify-center cursor-pointer"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          title="حذف"
-                          onClick={() => handleDeleteCity(city)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-red-500 transition flex items-center justify-center cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+
+                      {/* Meta row */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-400">
+                        {city.state && <span>المحافظة: <span className="text-slate-600 dark:text-slate-300">{city.state}</span></span>}
+                        {city.cityCode && (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono" dir="ltr">
+                            {city.cityCode}
+                          </span>
+                        )}
+                        {city.timezone && (
+                          <span className="flex items-center gap-1 font-mono" dir="ltr">
+                            <Clock className="w-3 h-3" />
+                            {city.timezone}
+                          </span>
+                        )}
+                        {city.latitude !== null && city.longitude !== null && (
+                          <span className="flex items-center gap-1 font-mono" dir="ltr">
+                            <Navigation className="w-3 h-3 text-[#FF5E1E]" />
+                            {city.latitude.toFixed(4)}، {city.longitude.toFixed(4)}
+                          </span>
+                        )}
                       </div>
+
+                      {city.notes && (
+                        <p className="mt-1.5 text-[10px] text-slate-400 truncate" title={city.notes}>
+                          📝 {city.notes}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
             </div>
+            )}
+
+            {/* ── Tab: ports (static maritime registry for this country) ── */}
+            {modalTab === 'ports' && (
+              <div className="space-y-3">
+                {selectedCountryPorts.length === 0 ? (
+                  <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-[#1E2638]">
+                    <Anchor className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">لا توجد موانئ مسجلة لهذه الدولة في السجل البحري العالمي</p>
+                    <p className="text-[11px] text-slate-400 mt-1">يمكن إضافة موانئ مخصصة من شاشة «سجل الموانئ» في موديول المرجعيات</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {selectedCountryPorts.map((port) => (
+                      <div key={port.unlocode} className="p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-orange-50 dark:bg-orange-500/10 text-[#FF5E1E] border border-orange-200 dark:border-orange-500/20">
+                            {port.unlocode}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              port.portType === 'land_crossing'
+                                ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                : port.isDryPort || port.portType === 'dry'
+                                ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                : 'bg-sky-500/10 text-sky-500 border border-sky-500/20'
+                            }`}
+                          >
+                            {port.portType === 'land_crossing'
+                              ? 'منفذ بري'
+                              : port.isDryPort || port.portType === 'dry'
+                              ? 'ميناء جاف'
+                              : port.portType === 'air'
+                              ? 'مطار'
+                              : 'ميناء بحري'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white mt-1.5 truncate">{port.nameAr}</p>
+                        <p className="text-[10px] text-slate-400 truncate" dir="ltr">
+                          {port.name}
+                          {port.city ? ` • ${port.city}` : ''}
+                        </p>
+                        {port.coordinates && (
+                          <p className="text-[10px] text-slate-400 font-mono mt-1" dir="ltr">
+                            {port.coordinates.lat}, {port.coordinates.lng}
+                          </p>
+                        )}
+                        {port.customsAuthorityCode && (
+                          <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-[#FF5E1E]" />
+                            رمز الجمارك: <span className="font-mono">{port.customsAuthorityCode}</span>
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}

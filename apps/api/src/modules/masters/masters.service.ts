@@ -131,6 +131,13 @@ export class MastersService {
     });
   }
 
+  /** optional numeric input → number | null */
+  private static toNumberOrNull(v: any): number | null {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
   async createCity(tenantId: string, data: any) {
     const countryCode = String(data?.countryCode || '').trim().toUpperCase();
     const nameEn = String(data?.nameEn || '').trim();
@@ -138,16 +145,59 @@ export class MastersService {
     if (!nameEn) throw new BadRequestException('nameEn is required');
     const existing = await this.prisma.city.findFirst({ where: { companyId: tenantId, countryCode, nameEn } });
     if (existing) throw new BadRequestException('This city already exists for the selected country');
+
+    const latitude = MastersService.toNumberOrNull(data?.latitude);
+    const longitude = MastersService.toNumberOrNull(data?.longitude);
+    if (latitude !== null && (latitude < -90 || latitude > 90)) throw new BadRequestException('latitude must be between -90 and 90');
+    if (longitude !== null && (longitude < -180 || longitude > 180)) throw new BadRequestException('longitude must be between -180 and 180');
+
     return this.prisma.city.create({
-      data: { companyId: tenantId, countryCode, nameEn, nameAr: data.nameAr ? String(data.nameAr).trim() : null },
+      data: {
+        companyId: tenantId,
+        countryCode,
+        nameEn,
+        nameAr: data?.nameAr ? String(data.nameAr).trim() : null,
+        state: data?.state ? String(data.state).trim() : null,
+        cityCode: data?.cityCode ? String(data.cityCode).trim().toUpperCase() : null,
+        timezone: data?.timezone ? String(data.timezone).trim() : null,
+        latitude,
+        longitude,
+        isLogisticsHub: data?.isLogisticsHub === undefined ? false : Boolean(data.isLogisticsHub),
+        notes: data?.notes ? String(data.notes).trim() : null,
+        isActive: data?.isActive === undefined ? true : Boolean(data.isActive),
+      },
     });
   }
 
   async updateCity(tenantId: string, id: string, data: any) {
     const city = await this.prisma.city.findFirst({ where: { id, companyId: tenantId } });
     if (!city) throw new NotFoundException('City not found');
-    const { id: _ignored, companyId: _c, ...rest } = data || {};
-    return this.prisma.city.update({ where: { id }, data: rest });
+
+    const payload: any = {};
+    if (data?.nameEn !== undefined) {
+      const nameEn = String(data.nameEn).trim();
+      if (!nameEn) throw new BadRequestException('nameEn cannot be empty');
+      payload.nameEn = nameEn;
+    }
+    if (data?.nameAr !== undefined) payload.nameAr = data.nameAr ? String(data.nameAr).trim() : null;
+    if (data?.state !== undefined) payload.state = data.state ? String(data.state).trim() : null;
+    if (data?.cityCode !== undefined) payload.cityCode = data.cityCode ? String(data.cityCode).trim().toUpperCase() : null;
+    if (data?.timezone !== undefined) payload.timezone = data.timezone ? String(data.timezone).trim() : null;
+    if (data?.latitude !== undefined) {
+      const lat = MastersService.toNumberOrNull(data.latitude);
+      if (lat !== null && (lat < -90 || lat > 90)) throw new BadRequestException('latitude must be between -90 and 90');
+      payload.latitude = lat;
+    }
+    if (data?.longitude !== undefined) {
+      const lng = MastersService.toNumberOrNull(data.longitude);
+      if (lng !== null && (lng < -180 || lng > 180)) throw new BadRequestException('longitude must be between -180 and 180');
+      payload.longitude = lng;
+    }
+    if (data?.isLogisticsHub !== undefined) payload.isLogisticsHub = Boolean(data.isLogisticsHub);
+    if (data?.notes !== undefined) payload.notes = data.notes ? String(data.notes).trim() : null;
+    if (data?.isActive !== undefined) payload.isActive = Boolean(data.isActive);
+
+    return this.prisma.city.update({ where: { id }, data: payload });
   }
 
   async deleteCity(tenantId: string, id: string) {
