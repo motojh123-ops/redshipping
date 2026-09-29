@@ -264,7 +264,7 @@ export const NotificationsCenterPage: React.FC = () => {
                   }`}
                 >
                   <AlertTriangle className="w-3 h-3" />
-                  حرج &lt; 15 يوم ({criticalCount})
+                  حرج &lt; 7 أيام ({criticalCount})
                 </button>
               )}
               {warningCount > 0 && (
