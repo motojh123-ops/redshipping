@@ -8,7 +8,29 @@ import { CountrySelect } from '../../components/ui/CountrySelect';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { api } from '../../services/api';
 
-/** Shape returned by GET/POST /masters/overseas-agents (see Prisma OverseasAgent model) */
+/** Shape returned by GET/POST /masters/overseas-agents (see Prisma OverseasAgent model — hierarchy + services) */
+interface AgentContact {
+  id?: string;
+  name: string;
+  title?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  isPrimary?: boolean;
+}
+
+interface AgentBranch {
+  id?: string;
+  code?: string | null;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contacts?: AgentContact[];
+}
+
 interface OverseasAgent {
   id: string;
   name: string;
@@ -18,8 +40,23 @@ interface OverseasAgent {
   contactEmail?: string | null;
   contactPhone?: string | null;
   specialization?: string | null;
+  services?: string[];
+  branches?: AgentBranch[];
+  contacts?: AgentContact[];
   isActive: boolean;
 }
+
+/** Multi-select service options for agents (spec: خدمات متعددة) */
+const AGENT_SERVICE_OPTIONS = [
+  'مناولة عند المنشأ',
+  'نقل ما قبل الشحن',
+  'تخليص تصدير',
+  'توثيق ومستندات',
+  'خدمة من الباب للباب',
+  'تخزين',
+  'تحصيل نولون',
+  'شحنات خطرة (DG)',
+];
 
 export const OverseasAgentsPage: React.FC = () => {
   const [agents, setAgents] = useState<OverseasAgent[]>([]);
@@ -153,6 +190,29 @@ export const OverseasAgentsPage: React.FC = () => {
                 </div>
               )}
 
+              {(agent.services || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {(agent.services || []).slice(0, 4).map((s) => (
+                    <span key={s} className="inline-flex px-2 py-0.5 rounded-md bg-brand-50 dark:bg-brand-950/60 text-[10px] font-bold text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
+                      {s}
+                    </span>
+                  ))}
+                  {(agent.services || []).length > 4 && (
+                    <span className="text-[10px] text-slate-400">+{agent.services!.length - 4}</span>
+                  )}
+                </div>
+              )}
+
+              {(agent.branches || []).length > 0 && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
+                  <Globe2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    {(agent.branches || []).length} فرع •{' '}
+                    {((agent.branches || []).reduce((acc: number, b) => acc + (b.contacts?.length || 0), 0) + (agent.contacts || []).length)} مسؤول
+                  </span>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5 text-xs text-slate-500">
                 {agent.contactEmail ? (
                   <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-slate-400" /><span className="truncate" dir="ltr">{agent.contactEmail}</span></div>
@@ -194,9 +254,38 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial
     contactPhone: initial?.contactPhone || '',
     specialization: initial?.specialization || '',
   });
+  const [services, setServices] = useState<string[]>(initial?.services || []);
+  const [customService, setCustomService] = useState('');
+  const [branches, setBranches] = useState<AgentBranch[]>(
+    (initial?.branches || []).map((b) => ({ ...b, contacts: b.contacts ? [...b.contacts] : [] })),
+  );
+  const [contacts, setContacts] = useState<AgentContact[]>((initial?.contacts || []).map((c) => ({ ...c })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!initial;
+
+  const toggleService = (s: string) => setServices((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  const addCustomService = () => {
+    const s = customService.trim();
+    if (s && !services.includes(s)) setServices((prev) => [...prev, s]);
+    setCustomService('');
+  };
+  const updBranch = (i: number, patch: Partial<AgentBranch>) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
+  const delBranch = (i: number) => setBranches((prev) => prev.filter((_, idx) => idx !== i));
+  const addBranch = () =>
+    setBranches((prev) => [...prev, { name: '', code: '', city: '', countryCode: '', phone: '', email: '', address: '', contacts: [] }]);
+  const addBranchContact = (i: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === i ? { ...b, contacts: [...(b.contacts || []), { name: '', title: '', phone: '', mobile: '', email: '' }] } : b)));
+  const updBranchContact = (bi: number, ci: number, patch: Partial<AgentContact>) =>
+    setBranches((prev) =>
+      prev.map((b, idx) => (idx === bi ? { ...b, contacts: (b.contacts || []).map((c, jdx) => (jdx === ci ? { ...c, ...patch } : c)) } : b)),
+    );
+  const delBranchContact = (bi: number, ci: number) =>
+    setBranches((prev) => prev.map((b, idx) => (idx === bi ? { ...b, contacts: (b.contacts || []).filter((_, jdx) => jdx !== ci) } : b)));
+  const addContact = () => setContacts((prev) => [...prev, { name: '', title: '', phone: '', mobile: '', email: '' }]);
+  const updContact = (i: number, patch: Partial<AgentContact>) => setContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const delContact = (i: number) => setContacts((prev) => prev.filter((_, idx) => idx !== i));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,10 +298,39 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial
 
     setSaving(true);
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, unknown> = {
         name: form.name.trim(),
         countryCode: form.countryCode,
         city: form.city.trim(),
+        services,
+        // Multi-level hierarchy: Agent Branch → Persons in Charge (spec Session 1)
+        branches: branches
+          .filter((b) => b.name.trim())
+          .map((b) => ({
+            name: b.name.trim(),
+            code: b.code?.trim() || null,
+            city: b.city?.trim() || null,
+            countryCode: b.countryCode?.trim().toUpperCase() || null,
+            phone: b.phone?.trim() || null,
+            email: b.email?.trim() || null,
+            address: b.address?.trim() || null,
+            contacts: (b.contacts || []).filter((c) => c.name.trim()).map((c) => ({
+              name: c.name.trim(),
+              title: c.title?.trim() || null,
+              phone: c.phone?.trim() || null,
+              mobile: c.mobile?.trim() || null,
+              email: c.email?.trim() || null,
+            })),
+          })),
+        contacts: contacts
+          .filter((c) => c.name.trim())
+          .map((c) => ({
+            name: c.name.trim(),
+            title: c.title?.trim() || null,
+            phone: c.phone?.trim() || null,
+            mobile: c.mobile?.trim() || null,
+            email: c.email?.trim() || null,
+          })),
       };
       if (form.contactPerson.trim()) payload.contactPerson = form.contactPerson.trim();
       if (form.contactEmail.trim()) payload.contactEmail = form.contactEmail.trim();
@@ -222,17 +340,8 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial
       const saved: any = isEdit
         ? await api.patch(`/masters/overseas-agents/${initial!.id}`, payload)
         : await api.post('/masters/overseas-agents', payload);
-      onSuccess({
-        id: saved?.id || initial?.id || String(Date.now()),
-        name: saved?.name ?? payload.name,
-        countryCode: saved?.countryCode ?? payload.countryCode,
-        city: saved?.city ?? payload.city,
-        contactPerson: saved?.contactPerson ?? payload.contactPerson ?? null,
-        contactEmail: saved?.contactEmail ?? payload.contactEmail ?? null,
-        contactPhone: saved?.contactPhone ?? payload.contactPhone ?? null,
-        specialization: saved?.specialization ?? payload.specialization ?? null,
-        isActive: saved?.isActive !== false,
-      });
+      // The API returns the full agent (with branches + contacts) — pass it through
+      onSuccess(saved as OverseasAgent);
       onClose();
     } catch (err: any) {
       setError(err?.message || 'تعذر حفظ الوكيل — حاول مجدداً');
@@ -242,7 +351,13 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="إضافة وكيل خارجي جديد" maxWidth="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEdit ? 'تعديل بيانات الوكيل الخارجي' : 'إضافة وكيل خارجي جديد'}
+      subtitle="الخدمات المتعددة + شجرة الفروع والمسؤولين في بلد المنشأ"
+      maxWidth="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -281,6 +396,248 @@ const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; initial
         <div>
           <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">التخصص</label>
           <input value={form.specialization} onChange={(e) => setForm({ ...form, specialization: e.target.value })} placeholder="Origin handling / Pre-carriage / Export customs" className="w-full border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-3 text-sm bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+        </div>
+
+        {/* Multi-select services (spec: خدمات متعددة) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">الخدمات المقدمة (اختيار متعدد)</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {AGENT_SERVICE_OPTIONS.map((s) => {
+              const active = services.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleService(s)}
+                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition text-start ${
+                    active
+                      ? 'border-[#FF5E1E] bg-orange-500/10 text-[#FF5E1E]'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                  }`}
+                >
+                  {active ? '✓ ' : '+ '}
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          {services.filter((s) => !AGENT_SERVICE_OPTIONS.includes(s)).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {services
+                .filter((s) => !AGENT_SERVICE_OPTIONS.includes(s))
+                .map((s) => (
+                  <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 text-brand-700 border border-brand-200">
+                    {s}
+                    <button type="button" onClick={() => toggleService(s)} className="text-red-500 hover:text-red-700">✕</button>
+                  </span>
+                ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customService}
+              onChange={(e) => setCustomService(e.target.value)}
+              placeholder="خدمة أخرى..."
+              className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+            />
+            <button
+              type="button"
+              onClick={addCustomService}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            >
+              إضافة
+            </button>
+          </div>
+        </div>
+        {/* Branches tree: Agent Branch → Persons in Charge (spec: الهيكل الشجري) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">فروع الوكيل</span>
+            <button
+              type="button"
+              onClick={addBranch}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 text-xs font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة فرع
+            </button>
+          </div>
+          {branches.length === 0 && (
+            <p className="text-[11px] text-slate-400">لا توجد فروع — يمكن إدارة الوكيل على مستوى الشركة مباشرة</p>
+          )}
+          {branches.map((b, bi) => (
+            <div key={bi} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="اسم الفرع *"
+                  value={b.name}
+                  onChange={(e) => updBranch(bi, { name: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold"
+                />
+                <input
+                  type="text"
+                  placeholder="المدينة"
+                  value={b.city || ''}
+                  onChange={(e) => updBranch(bi, { city: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  maxLength={2}
+                  placeholder="كود الدولة (AE)"
+                  value={b.countryCode || ''}
+                  onChange={(e) => updBranch(bi, { countryCode: e.target.value.toUpperCase() })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="هاتف الفرع"
+                  value={b.phone || ''}
+                  onChange={(e) => updBranch(bi, { phone: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                />
+                <input
+                  type="email"
+                  dir="ltr"
+                  placeholder="branch@agent.com"
+                  value={b.email || ''}
+                  onChange={(e) => updBranch(bi, { email: e.target.value })}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => delBranch(bi)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                >
+                  حذف الفرع
+                </button>
+              </div>
+              <div className="space-y-2 border-t border-dashed border-slate-200 dark:border-slate-700 pt-2">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">مسؤولو الفرع:</span>
+                {(b.contacts || []).map((c, ci) => (
+                  <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+                    <input
+                      type="text"
+                      placeholder="الاسم *"
+                      value={c.name}
+                      onChange={(e) => updBranchContact(bi, ci, { name: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                    <input
+                      type="text"
+                      placeholder="المسمى"
+                      value={c.title || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { title: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="هاتف"
+                      value={c.phone || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { phone: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="موبايل"
+                      value={c.mobile || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { mobile: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                    />
+                    <input
+                      type="email"
+                      dir="ltr"
+                      placeholder="بريد"
+                      value={c.email || ''}
+                      onChange={(e) => updBranchContact(bi, ci, { email: e.target.value })}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => delBranchContact(bi, ci)}
+                      className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addBranchContact(bi)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-brand-600 border border-brand-200 dark:border-brand-800 hover:bg-brand-50 dark:hover:bg-brand-950/40 transition"
+                >
+                  + مسؤول بالفرع
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Agent-level persons in charge (outside branches) */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">الأشخاص المسؤولون (مستوى الوكيل)</span>
+            <button
+              type="button"
+              onClick={addContact}
+              className="px-3 py-1.5 rounded-xl bg-[#FF5E1E]/10 text-[#FF5E1E] border border-[#FF5E1E]/30 text-xs font-bold hover:bg-[#FF5E1E]/20 transition"
+            >
+              + إضافة مسؤول
+            </button>
+          </div>
+          {contacts.map((c, ci) => (
+            <div key={ci} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-center">
+              <input
+                type="text"
+                placeholder="الاسم *"
+                value={c.name}
+                onChange={(e) => updContact(ci, { name: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+              />
+              <input
+                type="text"
+                placeholder="المسمى"
+                value={c.title || ''}
+                onChange={(e) => updContact(ci, { title: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="هاتف"
+                value={c.phone || ''}
+                onChange={(e) => updContact(ci, { phone: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+              />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="موبايل"
+                value={c.mobile || ''}
+                onChange={(e) => updContact(ci, { mobile: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+              />
+              <input
+                type="email"
+                dir="ltr"
+                placeholder="بريد"
+                value={c.email || ''}
+                onChange={(e) => updContact(ci, { email: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => delContact(ci)}
+                className="px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
 
         {error && (
