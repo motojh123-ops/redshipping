@@ -21,11 +21,13 @@
     "@nestjs/microservices": "./scripts/empty.js",
     "class-transformer/storage": "./scripts/empty.js"
   },
+  // ⚠️ Sensitive values MUST be set as encrypted Wrangler secrets — NOT here:
+  //   wrangler secret put DATABASE_URL
+  //   wrangler secret put DIRECT_DATABASE_URL
+  //   wrangler secret put JWT_SECRET
+  //   wrangler secret put JWT_REFRESH_SECRET
+  //   wrangler secret put ALLOWED_ORIGINS   (optional, comma-separated custom domains)
   "vars": {
-    "NODE_ENV": "production",
-    "DATABASE_URL": "postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require",
-    "DIRECT_DATABASE_URL": "postgresql://neondb_owner:npg_H1pBuh6KOkeU@ep-still-tooth-b4o9aesp.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require",
-    "JWT_SECRET": "super-secure-production-jwt-secret-redshipping-banna-2026-xyz",
-    "JWT_REFRESH_SECRET": "super-secure-production-jwt-refresh-secret-redshipping-banna-2026-xyz"
+    "NODE_ENV": "production"
   }
 }
