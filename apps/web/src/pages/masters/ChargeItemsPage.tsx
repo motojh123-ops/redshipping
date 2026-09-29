@@ -7,75 +7,106 @@ import {
   Search,
   Filter,
   Download,
-  DollarSign,
-  Percent,
   Receipt,
-  FileSpreadsheet,
-  TrendingUp,
-  CreditCard,
+  Loader2,
   Edit2,
   Trash2,
-  ShieldCheck,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { Modal } from '../../components/ui/Modal';
 import { exportToCsv } from '../../utils/exportUtils';
-import { StatCard } from '../../components/ui/StatCard';
+
+/** Dynamic library item (units / logistics categories) */
+interface LibraryItem {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string | null;
+  isActive: boolean;
+}
 
 export interface ChargeItemRecord {
   id: string;
   code: string;
   nameAr: string;
   nameEn: string;
-  category: 'freight' | 'terminal_thc' | 'inland_trucking' | 'customs_clearance' | 'port_dues' | 'insurance';
-  defaultCurrency: 'USD' | 'EUR' | 'EGP';
-  defaultPrice?: number;
-  unit: 'container' | 'shipment' | 'ton' | 'cbm';
+  category: string;
+  categoryId: string | null;
+  unitId: string | null;
+  unitLabel?: string | null;
+  categoryLabel?: string | null;
   showInPricing: boolean;
   showInQuotation: boolean;
   showInInvoice: boolean;
   showInDisbursement: boolean;
   showInCommission: boolean;
+  showInOperations: boolean;
   isActive: boolean;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  freight: 'نولون شحن',
-  terminal_thc: 'مناولة موانئ (THC)',
-  inland_trucking: 'نقل وتوزيع بري',
-  customs_clearance: 'تخليص جمركي',
-  port_dues: 'رسوم بوالص وموانئ',
-  insurance: 'تأمين بضائع',
-};
+type ContextField =
+  | 'showInPricing'
+  | 'showInQuotation'
+  | 'showInInvoice'
+  | 'showInDisbursement'
+  | 'showInCommission'
+  | 'showInOperations';
 
-const UNIT_LABELS: Record<string, string> = {
-  container: 'لكل حاوية',
-  shipment: 'لكل شحنة / بوليصة',
-  ton: 'لكل طن',
-  cbm: 'لكل متر مكعب (CBM)',
+const CONTEXT_OPTIONS: Array<{ field: ContextField; label: string; hint: string }> = [
+  { field: 'showInPricing', label: 'يظهر في شاشة التسعير ومكتب النولون', hint: 'Pricing' },
+  { field: 'showInQuotation', label: 'يظهر في عرض السعر الموجه للعميل', hint: 'Quotation' },
+  { field: 'showInInvoice', label: 'ينزل في الفاتورة الضريبية الرسمية', hint: 'Invoice' },
+  { field: 'showInDisbursement', label: 'يظهر في سندات الصرف للموردين والخطوط', hint: 'Disbursement' },
+  { field: 'showInOperations', label: 'يظهر في شاشات العمليات والتشغيل', hint: 'Operations' },
+  { field: 'showInCommission', label: 'يدخل في احتساب عمولة مسؤول المبيعات', hint: 'Sales Commission' },
+];
+
+const EMPTY_FORM = {
+  code: '',
+  nameAr: '',
+  nameEn: '',
+  categoryId: '',
+  unitId: '',
+  showInPricing: true,
+  showInQuotation: true,
+  showInInvoice: true,
+  showInDisbursement: false,
+  showInCommission: false,
+  showInOperations: false,
 };
 
 export const ChargeItemsPage: React.FC = () => {
   const [items, setItems] = useState<ChargeItemRecord[]>([]);
+  const [units, setUnits] = useState<LibraryItem[]>([]);
+  const [cats, setCats] = useState<LibraryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  // Modal Form State
-  const [code, setCode] = useState('');
-  const [nameAr, setNameAr] = useState('');
-  const [nameEn, setNameEn] = useState('');
-  const [category, setCategory] = useState<ChargeItemRecord['category']>('freight');
-  const [defaultCurrency, setDefaultCurrency] = useState<'USD' | 'EUR' | 'EGP'>('USD');
-  const [defaultPrice, setDefaultPrice] = useState('');
-  const [unit, setUnit] = useState<ChargeItemRecord['unit']>('container');
-  const [showInPricing, setShowInPricing] = useState(true);
-  const [showInQuotation, setShowInQuotation] = useState(true);
-  const [showInInvoice, setShowInInvoice] = useState(true);
-  const [showInDisbursement, setShowInDisbursement] = useState(true);
-  const [showInCommission, setShowInCommission] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+
+  const [libModal, setLibModal] = useState<null | 'units' | 'logistics-categories'>(null);
+  const [libDraft, setLibDraft] = useState({ code: '', nameEn: '', nameAr: '' });
+
+  const fetchLibraries = async () => {
+    try {
+      const [u, c]: any[] = await Promise.all([
+        api.get('/masters/libraries/units'),
+        api.get('/masters/libraries/logistics-categories'),
+      ]);
+      setUnits(Array.isArray(u) ? u : []);
+      setCats(Array.isArray(c) ? c : []);
+    } catch {
+      // libraries are optional for rendering — keep empty
+    }
+  };
 
   const fetchItems = async () => {
+    setLoading(true);
     try {
       const data: any = await api.get('/masters/charge-items');
       if (Array.isArray(data)) {
@@ -85,25 +116,30 @@ export const ChargeItemsPage: React.FC = () => {
             code: d.code,
             nameAr: d.nameAr,
             nameEn: d.nameEn,
-            category: d.category || 'freight',
-            defaultCurrency: d.defaultCurrency || 'USD',
-            defaultPrice: d.defaultPrice,
-            unit: d.unit || 'container',
+            category: d.category || 'other',
+            categoryId: d.categoryId,
+            unitId: d.unitId,
+            unitLabel: d.unit?.nameAr || d.unit?.nameEn || null,
+            categoryLabel: d.categoryRef?.nameAr || d.categoryRef?.nameEn || null,
             showInPricing: d.showInPricing ?? true,
             showInQuotation: d.showInQuotation ?? true,
             showInInvoice: d.showInInvoice ?? true,
-            showInDisbursement: d.showInDisbursement ?? true,
+            showInDisbursement: d.showInDisbursement ?? false,
             showInCommission: d.showInCommission ?? false,
+            showInOperations: d.showInOperations ?? false,
             isActive: d.isActive ?? true,
           }))
         );
       }
     } catch {
-      // Fallback state
+      // honest empty state — data loads only when the API is reachable
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
+    fetchLibraries();
     fetchItems();
   }, []);
 
@@ -126,58 +162,102 @@ export const ChargeItemsPage: React.FC = () => {
       { header: 'كود البند', accessor: (i) => i.code },
       { header: 'الاسم بالعربية', accessor: (i) => i.nameAr },
       { header: 'الاسم بالإنجليزية', accessor: (i) => i.nameEn },
-      { header: 'التصنيف', accessor: (i) => CATEGORY_LABELS[i.category] || i.category },
-      { header: 'العملة الافتراضية', accessor: (i) => i.defaultCurrency },
-      { header: 'السعر التقديري', accessor: (i) => i.defaultPrice || 0 },
-      { header: 'الوحدة', accessor: (i) => UNIT_LABELS[i.unit] || i.unit },
-      { header: 'يسمع في التسعير', accessor: (i) => (i.showInPricing ? 'نعم' : 'لا') },
-      { header: 'يسمع في عرض السعر', accessor: (i) => (i.showInQuotation ? 'نعم' : 'لا') },
-      { header: 'يسمع في الفاتورة', accessor: (i) => (i.showInInvoice ? 'نعم' : 'لا') },
-      { header: 'يسمع في سندات الصرف', accessor: (i) => (i.showInDisbursement ? 'نعم' : 'لا') },
-      { header: 'يسمع في العمولة', accessor: (i) => (i.showInCommission ? 'نعم' : 'لا') },
+      { header: 'التصنيف', accessor: (i) => i.categoryLabel || i.category },
+      { header: 'وحدة الحساب', accessor: (i) => i.unitLabel || '—' },
+      ...CONTEXT_OPTIONS.map((o) => ({ header: o.label, accessor: (i: any) => (i[o.field] ? 'نعم' : 'لا') })),
     ]);
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM });
+    setIsFormOpen(true);
+  };
+
+  const openEdit = (it: ChargeItemRecord) => {
+    setEditingId(it.id);
+    setForm({
+      code: it.code,
+      nameAr: it.nameAr,
+      nameEn: it.nameEn,
+      categoryId: it.categoryId || '',
+      unitId: it.unitId || '',
+      showInPricing: it.showInPricing,
+      showInQuotation: it.showInQuotation,
+      showInInvoice: it.showInInvoice,
+      showInDisbursement: it.showInDisbursement,
+      showInCommission: it.showInCommission,
+      showInOperations: it.showInOperations,
+    });
+    setIsFormOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim() || !nameAr.trim()) {
-      alert('يرجى إدخال كود البند واسم البند بالعربية');
+    if (!form.code.trim() || !form.nameAr.trim()) {
+      toast.error('يرجى إدخال كود البند واسم البند بالعربية');
       return;
     }
-
-    const newItem: ChargeItemRecord = {
-      id: `ci-${Date.now()}`,
-      code: code.trim().toUpperCase(),
-      nameAr: nameAr.trim(),
-      nameEn: nameEn.trim() || nameAr.trim(),
-      category,
-      defaultCurrency,
-      defaultPrice: defaultPrice ? Number(defaultPrice) : undefined,
-      unit,
-      showInPricing,
-      showInQuotation,
-      showInInvoice,
-      showInDisbursement,
-      showInCommission,
-      isActive: true,
+    const selectedCat = cats.find((c) => c.id === form.categoryId);
+    const payload = {
+      code: form.code.trim().toUpperCase(),
+      nameAr: form.nameAr.trim(),
+      nameEn: form.nameEn.trim() || form.nameAr.trim(),
+      category: selectedCat?.code || 'other',
+      categoryId: form.categoryId || null,
+      unitId: form.unitId || null,
+      showInPricing: form.showInPricing,
+      showInQuotation: form.showInQuotation,
+      showInInvoice: form.showInInvoice,
+      showInDisbursement: form.showInDisbursement,
+      showInCommission: form.showInCommission,
+      showInOperations: form.showInOperations,
     };
-
-    setItems([newItem, ...items]);
-    setIsCreateOpen(false);
-
-    // Reset Form
-    setCode('');
-    setNameAr('');
-    setNameEn('');
-    setDefaultPrice('');
+    setSaving(true);
+    try {
+      if (editingId) {
+        await api.patch(`/masters/charge-items/${editingId}`, payload);
+        toast.success(`تم تحديث البند "${payload.nameAr}" بنجاح`);
+      } else {
+        await api.post('/masters/charge-items', payload);
+        toast.success(`تمت إضافة البند "${payload.nameAr}" إلى قاعدة البيانات`);
+      }
+      setIsFormOpen(false);
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر حفظ البند — حاول مجدداً');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleItemActive = (id: string) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, isActive: !it.isActive } : it)),
-    );
+  const handleDelete = async (it: ChargeItemRecord) => {
+    if (!confirm(`حذف البند "${it.nameAr}"؟ (سيتم إيقافه — لا يظهر في القوائم بعد الآن)`)) return;
+    try {
+      await api.delete(`/masters/charge-items/${it.id}`);
+      toast.success('تم إيقاف البند');
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر إيقاف البند');
+    }
   };
 
+  const handleAddLibraryItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!libModal || !libDraft.code.trim() || !libDraft.nameEn.trim()) {
+      toast.error('أدخل الكود والاسم الإنجليزي للمكتبة');
+      return;
+    }
+    try {
+      await api.post(`/masters/libraries/${libModal}`, libDraft);
+      toast.success('تمت الإضافة إلى المكتبة');
+      setLibModal(null);
+      setLibDraft({ code: '', nameEn: '', nameAr: '' });
+      fetchLibraries();
+    } catch (err: any) {
+      toast.error(err?.message || 'تعذر إضافة القيمة للمكتبة');
+    }
+  };
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -188,61 +268,25 @@ export const ChargeItemsPage: React.FC = () => {
             <span>دليل البنود والخدمات اللوجستية (Universal Charge Items)</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            تعريف نوالين الشحن والرسوم وتحديد أين ينعكس البند (في التسعير، عروض الأسعار، الفواتير، سندات الصرف، وعمولات المبيعات)
+            تعريف نوالين الشحن والرسوم — التسعير مكانه الطبيعي في موديول التسعير، وهنا نحدد ماهية البند ووحدة احتسابه وأماكن انعكاسه
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleExport}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-semibold transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
           >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>تصدير Excel</span>
+            <Download className="w-4 h-4" />
+            تصدير CSV
           </button>
           <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#FF7034] text-white text-sm font-semibold shadow-md shadow-orange-500/20 transition cursor-pointer"
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-600/30 transition"
           >
             <Plus className="w-4 h-4" />
-            <span>إضافة بند جديد</span>
+            إضافة بند جديد
           </button>
         </div>
-      </div>
-
-      {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="إجمالي البنود المعرفة"
-          value={items.length.toString()}
-          icon={Tag}
-          iconColor="text-[#FF5E1E]"
-          iconBg="bg-orange-500/10 dark:bg-orange-500/15"
-          trend="قابلة للاستدعاء التلقائي"
-        />
-        <StatCard
-          title="بنود نولون وبحرية"
-          value={items.filter((i) => i.category === 'freight' || i.category === 'terminal_thc').length.toString()}
-          icon={TrendingUp}
-          iconColor="text-amber-500"
-          iconBg="bg-amber-500/10 dark:bg-amber-500/15"
-          trend="مرتبطة بخطوط الملاحة"
-        />
-        <StatCard
-          title="بنود تخليص ونقل بري"
-          value={items.filter((i) => i.category === 'customs_clearance' || i.category === 'inland_trucking').length.toString()}
-          icon={CreditCard}
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-50 dark:bg-emerald-950/50"
-          trend="تسمع في سندات الصرف"
-        />
-        <StatCard
-          title="بنود تدخل في عمولة السيلز"
-          value={items.filter((i) => i.showInCommission).length.toString()}
-          icon={Percent}
-          iconColor="text-purple-600"
-          iconBg="bg-purple-50 dark:bg-purple-950/50"
-          trend="حساب ربح المندوب"
-        />
       </div>
 
       {/* Filter and Search Bar */}
@@ -266,12 +310,11 @@ export const ChargeItemsPage: React.FC = () => {
             className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-brand-500"
           >
             <option value="all">جميع التصنيفات اللوجستية</option>
-            <option value="freight">نولون شحن بحري</option>
-            <option value="terminal_thc">مناولة موانئ (THC)</option>
-            <option value="inland_trucking">نقل وتوزيع بري</option>
-            <option value="customs_clearance">تخليص جمركي ونافذة</option>
-            <option value="port_dues">رسوم بوالص وموانئ</option>
-            <option value="insurance">تأمين بضائع</option>
+            {cats.filter((c) => c.isActive).map((c) => (
+              <option key={c.id} value={c.code}>
+                {c.nameAr || c.nameEn}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -285,299 +328,286 @@ export const ChargeItemsPage: React.FC = () => {
                 <th className="py-3.5 px-4 text-start">كود البند</th>
                 <th className="py-3.5 px-4 text-start">اسم البند (عربي)</th>
                 <th className="py-3.5 px-4 text-start">الاسم الإنجليزي</th>
-                <th className="py-3.5 px-4 text-start">التصنيف</th>
-                <th className="py-3.5 px-4 text-start">السعر والوحدة</th>
-                <th className="py-3.5 px-2 text-center" title="يسمع في مكتب التسعير">التسعير</th>
-                <th className="py-3.5 px-2 text-center" title="يسمع في عرض السعر للعميل">عرض السعر</th>
-                <th className="py-3.5 px-2 text-center" title="يسمع في الفاتورة الرسمية">الفاتورة</th>
-                <th className="py-3.5 px-2 text-center" title="يسمع في سند صرف الموردين">سند الصرف</th>
-                <th className="py-3.5 px-2 text-center" title="يدخل في عمولة المبيعات">عمولة السيلز</th>
-                <th className="py-3.5 px-4 text-center">الحالة</th>
+                <th className="py-3.5 px-4 text-start">التصنيف اللوجستي</th>
+                <th className="py-3.5 px-4 text-start">وحدة الحساب</th>
+                {CONTEXT_OPTIONS.map((o) => (
+                  <th key={o.field} className="py-3.5 px-2 text-center" title={o.label}>
+                    {o.hint}
+                  </th>
+                ))}
+                <th className="py-3.5 px-4 text-center">إجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredItems.map((it) => (
-                <tr key={it.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-bold text-brand-600 font-mono">{it.code}</td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">{it.nameAr}</td>
-                  <td className="py-3.5 px-4 text-slate-500 font-medium">{it.nameEn}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium text-[11px]">
-                      {CATEGORY_LABELS[it.category] || it.category}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-semibold text-slate-800 dark:text-slate-200">
-                    {it.defaultPrice ? `${it.defaultCurrency} ${it.defaultPrice.toLocaleString()}` : '—'}
-                    <span className="text-[10px] text-slate-400 font-normal block">{UNIT_LABELS[it.unit]}</span>
-                  </td>
-
-                  {/* 5 Reflection Indicators */}
-                  <td className="py-3.5 px-2 text-center">
-                    {it.showInPricing ? (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-slate-100 text-slate-300 dark:bg-slate-800 items-center justify-center">
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-2 text-center">
-                    {it.showInQuotation ? (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-slate-100 text-slate-300 dark:bg-slate-800 items-center justify-center">
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-2 text-center">
-                    {it.showInInvoice ? (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-slate-100 text-slate-300 dark:bg-slate-800 items-center justify-center">
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-2 text-center">
-                    {it.showInDisbursement ? (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-slate-100 text-slate-300 dark:bg-slate-800 items-center justify-center">
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-2 text-center">
-                    {it.showInCommission ? (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-purple-100 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400 items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex w-5 h-5 rounded-full bg-slate-100 text-slate-300 dark:bg-slate-800 items-center justify-center">
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="py-3.5 px-4 text-center">
-                    <button
-                      onClick={() => toggleItemActive(it.id)}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition cursor-pointer ${
-                        it.isActive
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                      }`}
-                    >
-                      {it.isActive ? 'نشط' : 'معطل'}
-                    </button>
+              {loading ? (
+                <tr>
+                  <td colSpan={12} className="py-16 text-center text-slate-400 text-sm">
+                    جاري تحميل البنود من قاعدة البيانات...
                   </td>
                 </tr>
-              ))}
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="py-16 text-center">
+                    <Receipt className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                      لا توجد بنود مطابقة — أضف أول بند من الزر أعلى الصفحة
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((it) => (
+                  <tr key={it.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 font-mono font-bold text-brand-600 dark:text-brand-400">{it.code}</td>
+                    <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-100">{it.nameAr}</td>
+                    <td className="py-3 px-4 text-slate-500 dark:text-slate-400" dir="ltr">{it.nameEn}</td>
+                    <td className="py-3 px-4">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
+                        {it.categoryLabel || it.category}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300 font-medium">{it.unitLabel || '—'}</td>
+                    {CONTEXT_OPTIONS.map((o) => (
+                      <td key={o.field} className="py-3 px-2 text-center">
+                        {(it[o.field] as boolean) ? (
+                          <Check className="w-4 h-4 text-emerald-500 mx-auto" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-300 dark:text-slate-600 mx-auto" />
+                        )}
+                      </td>
+                    ))}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => openEdit(it)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/50 transition"
+                          title="تعديل البند"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(it)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition"
+                          title="إيقاف البند"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Add Charge Item Modal */}
+      {/* ── Create / Edit Charge Item Modal ── */}
       <Modal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        title="إضافة بند تكلفة / خدمة لوجستية جديد"
-        subtitle="تحديد خصائص البند وأين ينعكس في دورة العمليات والفواتير والعمولات"
-        maxWidth="2xl"
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={editingId ? 'تعديل البند' : 'إضافة بند جديد'}
+        subtitle="حدد هوية البند ووحدة احتسابه وأماكن انعكاسه — المكتبات ديناميكية ويمكن إضافة قيم جديدة فوراً"
       >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                كود البند المختصر *
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">
+                كود البند <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="مثال: OFR-SP, THC-ALEX"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs font-mono uppercase focus:ring-2 focus:ring-brand-500"
+                dir="ltr"
+                placeholder="OCEAN_FREIGHT"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
               />
             </div>
-
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                تصنيف البند اللوجستي
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">
+                الاسم بالعربية <span className="text-red-500">*</span>
               </label>
+              <input
+                type="text"
+                required
+                placeholder="نولون بحري"
+                value={form.nameAr}
+                onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الاسم بالإنجليزية</label>
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="Ocean Freight"
+                value={form.nameEn}
+                onChange={(e) => setForm({ ...form, nameEn: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-600 dark:text-slate-300 font-bold">التصنيف اللوجستي</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLibDraft({ code: '', nameEn: '', nameAr: '' });
+                    setLibModal('logistics-categories');
+                  }}
+                  className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 hover:text-brand-500 font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة تصنيف
+                </button>
+              </div>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as any)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
+                value={form.categoryId}
+                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand-500"
               >
-                <option value="freight">نولون شحن بحري</option>
-                <option value="terminal_thc">مناولة موانئ (THC)</option>
-                <option value="inland_trucking">نقل وتوزيع بري</option>
-                <option value="customs_clearance">تخليص جمركي ونافذة</option>
-                <option value="port_dues">رسوم بوالص وموانئ</option>
-                <option value="insurance">تأمين بضائع</option>
+                <option value="">— بدون تصنيف —</option>
+                {cats.filter((c) => c.isActive).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nameAr || c.nameEn} ({c.code})
+                  </option>
+                ))}
               </select>
             </div>
-
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                اسم البند باللغة العربية *
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: رسوم فحص وتثمين جمركي"
-                value={nameAr}
-                onChange={(e) => setNameAr(e.target.value)}
-                required
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                اسم البند باللغة الإنجليزية
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: Customs Physical Inspection Fee"
-                value={nameEn}
-                onChange={(e) => setNameEn(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  العملة الافتراضية
-                </label>
-                <select
-                  value={defaultCurrency}
-                  onChange={(e) => setDefaultCurrency(e.target.value as any)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-600 dark:text-slate-300 font-bold">وحدة الحساب</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLibDraft({ code: '', nameEn: '', nameAr: '' });
+                    setLibModal('units');
+                  }}
+                  className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 hover:text-brand-500 font-bold"
                 >
-                  <option value="USD">USD ($)</option>
-                  <option value="EGP">EGP (جنيه)</option>
-                  <option value="EUR">EUR (€)</option>
-                </select>
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة وحدة
+                </button>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  السعر الافتراضي
-                </label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={defaultPrice}
-                  onChange={(e) => setDefaultPrice(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs font-mono focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                وحدة احتساب البند
-              </label>
               <select
-                value={unit}
-                onChange={(e) => setUnit(e.target.value as any)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
+                value={form.unitId}
+                onChange={(e) => setForm({ ...form, unitId: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand-500"
               >
-                <option value="container">لكل حاوية (Per Container)</option>
-                <option value="shipment">لكل شحنة كاملة (Per Shipment)</option>
-                <option value="ton">لكل طن متري (Per Ton)</option>
-                <option value="cbm">لكل متر مكعب (Per CBM)</option>
+                <option value="">— بدون وحدة —</option>
+                {units.filter((u) => u.isActive).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nameAr || u.nameEn} ({u.code})
+                  </option>
+                ))}
               </select>
             </div>
           </div>
-
-          {/* Reflection Checkboxes (As stressed in Audio Note) */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-            <label className="block text-xs font-bold text-brand-600 dark:text-brand-400 mb-2">
-              أين ينعكس ويسمع هذا البند في المنظومة؟ (Audio Domain Blueprint)
-            </label>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 p-4 space-y-1.5">
+            <p className="font-bold text-slate-700 dark:text-slate-200 mb-2">أماكن ظهور البند في النظام</p>
+            {CONTEXT_OPTIONS.map((o) => (
+              <label
+                key={o.field}
+                className="flex items-start gap-2.5 cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-slate-900 transition"
+              >
                 <input
                   type="checkbox"
-                  checked={showInPricing}
-                  onChange={(e) => setShowInPricing(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
+                  checked={form[o.field]}
+                  onChange={(e) => setForm({ ...form, [o.field]: e.target.checked } as typeof EMPTY_FORM)}
+                  className="mt-0.5 w-4 h-4 accent-[#FF5E1E] cursor-pointer"
                 />
-                <span>يسمع في شاشة التسعير ومكتب النولون</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showInQuotation}
-                  onChange={(e) => setShowInQuotation(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
-                />
-                <span>يظهر في عرض السعر الموجه للعميل (Offer)</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showInInvoice}
-                  onChange={(e) => setShowInInvoice(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
-                />
-                <span>ينزل في الفاتورة الضريبية الرسمية (Invoice)</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showInDisbursement}
-                  onChange={(e) => setShowInDisbursement(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
-                />
-                <span>يسمع في سندات الصرف للموردين والخطوط</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={showInCommission}
-                  onChange={(e) => setShowInCommission(e.target.checked)}
-                  className="rounded text-brand-600 focus:ring-brand-500"
-                />
-                <span className="text-purple-600 dark:text-purple-400 font-bold">
-                  يدخل في احتساب عمولة مسؤول المبيعات (Sales Commission)
+                <span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100 block leading-tight">{o.label}</span>
+                  <span className="text-[10px] text-slate-400 font-mono" dir="ltr">
+                    {o.hint}
+                  </span>
                 </span>
               </label>
-            </div>
+            ))}
           </div>
 
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
-              onClick={() => setIsCreateOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition cursor-pointer"
+              onClick={() => setIsFormOpen(false)}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
             >
               إلغاء
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-600/30 transition cursor-pointer"
+              disabled={saving}
+              className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer"
             >
-              <Check className="w-4 h-4" />
-              <span>حفظ البند الجديد</span>
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>{saving ? 'جارٍ الحفظ...' : editingId ? 'حفظ التعديلات' : 'حفظ البند'}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+      {/* ── Dynamic Library Add Modal ── */}
+      <Modal
+        isOpen={Boolean(libModal)}
+        onClose={() => setLibModal(null)}
+        title={libModal === 'units' ? 'إضافة وحدة احتساب جديدة' : 'إضافة تصنيف لوجستي جديد'}
+        subtitle="تُحفظ في المكتبة المركزية وتظهر فوراً في كافة القوائم"
+      >
+        <form onSubmit={handleAddLibraryItem} className="space-y-4 text-xs">
+          <div>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">
+              الكود (إنجليزي مختصر) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              dir="ltr"
+              placeholder={libModal === 'units' ? 'cbm' : 'freight'}
+              value={libDraft.code}
+              onChange={(e) => setLibDraft({ ...libDraft, code: e.target.value.toLowerCase().trim() })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">
+              الاسم بالإنجليزية <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              dir="ltr"
+              placeholder={libModal === 'units' ? 'Per CBM' : 'Ocean Freight'}
+              value={libDraft.nameEn}
+              onChange={(e) => setLibDraft({ ...libDraft, nameEn: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-600 dark:text-slate-300 font-bold mb-1">الاسم بالعربية</label>
+            <input
+              type="text"
+              placeholder={libModal === 'units' ? 'بالمتر المكعب' : 'نولون بحري'}
+              value={libDraft.nameAr}
+              onChange={(e) => setLibDraft({ ...libDraft, nameAr: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setLibModal(null)}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] text-white font-bold transition shadow-md shadow-orange-500/20 cursor-pointer"
+            >
+              إضافة للمكتبة
             </button>
           </div>
         </form>
