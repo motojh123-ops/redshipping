@@ -15,7 +15,6 @@ import { ClientDetails } from '../pages/clients/ClientDetails';
 import { InvoiceList } from '../pages/invoices/InvoiceList';
 import { InvoiceDetails } from '../pages/invoices/InvoiceDetails';
 import { ChargeItemsPage } from '../pages/masters/ChargeItemsPage';
-import { CitiesPage } from '../pages/masters/CitiesPage';
 import { PortsPage } from '../pages/masters/PortsPage';
 import { ShippingLinesPage } from '../pages/masters/ShippingLinesPage';
 import { OverseasAgentsPage } from '../pages/masters/OverseasAgentsPage';
@@ -78,7 +77,7 @@ export const AppRoutes: React.FC = () => {
 
         {/* Masters & Tariff Management */}
         <Route path="masters" element={<ChargeItemsPage />} />
-        <Route path="masters/cities" element={<CitiesPage />} />
+        <Route path="masters/cities" element={<Navigate to="/masters/directory" replace />} />
         <Route path="masters/directory" element={<WorldDirectoryPage />} />
         <Route path="directory" element={<WorldDirectoryPage />} />
         <Route path="masters/charge-items" element={<ChargeItemsPage />} />

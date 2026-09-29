@@ -22,8 +22,19 @@ import {
 } from 'lucide-react';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { api } from '../../services/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, Edit2, Trash2, MapPinned } from 'lucide-react';
+import { toast } from 'sonner';
+import { Modal } from '../../components/ui/Modal';
 import { PortDefinition, TradeCorridor, CountryDefinition } from '@banna/shared-types';
+
+/** Managed city row from /masters/cities (Country Atlas drill-down) */
+interface AtlasCity {
+  id: string;
+  countryCode: string;
+  nameEn: string;
+  nameAr: string | null;
+  isActive: boolean;
+}
 
 export const WorldDirectoryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'countries' | 'ports' | 'corridors'>('countries');
@@ -49,6 +60,13 @@ export const WorldDirectoryPage: React.FC = () => {
   const [selectedPort, setSelectedPort] = useState<PortDefinition | null>(null);
   const [selectedCorridor, setSelectedCorridor] = useState<TradeCorridor | null>(null);
 
+  // Country Atlas — user-managed cities (per approved spec: cities live INSIDE the country)
+  const [cities, setCities] = useState<AtlasCity[]>([]);
+  const [cityFormOpen, setCityFormOpen] = useState(false);
+  const [editingCityId, setEditingCityId] = useState<string | null>(null);
+  const [citySaving, setCitySaving] = useState(false);
+  const [cityForm, setCityForm] = useState({ nameEn: '', nameAr: '' });
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -73,6 +91,108 @@ export const WorldDirectoryPage: React.FC = () => {
 
     fetchData();
   }, []);
+
+  /** Load user-managed cities (Country Atlas) — must never break the atlas itself */
+  const refreshCities = async () => {
+    try {
+      const data: any = await api.get('/masters/cities');
+      setCities(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      /* cities stay empty — atlas still renders the static country data */
+    }
+  };
+
+  useEffect(() => {
+    refreshCities();
+  }, []);
+
+  /** city count per country (ISO alpha-2) */
+  const cityCountByCountry = useMemo(() => {
+    const m = new Map<string, number>();
+    cities.forEach((c) => m.set(c.countryCode, (m.get(c.countryCode) || 0) + 1));
+    return m;
+  }, [cities]);
+
+  /** cities of the currently drilled-in country */
+  const selectedCountryCities = useMemo(
+    () =>
+      selectedCountry
+        ? cities.filter((c) => c.countryCode === selectedCountry.cca2.toUpperCase())
+        : [],
+    [cities, selectedCountry],
+  );
+
+  const openAddCity = () => {
+    setEditingCityId(null);
+    setCityForm({ nameEn: '', nameAr: '' });
+    setCityFormOpen(true);
+  };
+
+  const openEditCity = (city: AtlasCity) => {
+    setEditingCityId(city.id);
+    setCityForm({ nameEn: city.nameEn, nameAr: city.nameAr || '' });
+    setCityFormOpen(true);
+  };
+
+  const closeCountryModal = () => {
+    setSelectedCountry(null);
+    setCityFormOpen(false);
+    setEditingCityId(null);
+  };
+
+  const handleSaveCity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCountry) return;
+    const nameEn = cityForm.nameEn.trim();
+    if (!nameEn) {
+      toast.error('اسم المدينة بالإنجليزية مطلوب');
+      return;
+    }
+    setCitySaving(true);
+    try {
+      if (editingCityId) {
+        await api.patch(`/masters/cities/${editingCityId}`, {
+          nameEn,
+          nameAr: cityForm.nameAr.trim() || null,
+        });
+        toast.success('تم تحديث المدينة بنجاح');
+      } else {
+        await api.post('/masters/cities', {
+          countryCode: selectedCountry.cca2.toUpperCase(),
+          nameEn,
+          nameAr: cityForm.nameAr.trim() || undefined,
+        });
+        toast.success('تمت إضافة المدينة بنجاح');
+      }
+      setCityFormOpen(false);
+      setEditingCityId(null);
+      await refreshCities();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'تعذر حفظ المدينة');
+    } finally {
+      setCitySaving(false);
+    }
+  };
+
+  const handleDeleteCity = async (city: AtlasCity) => {
+    if (!window.confirm(`حذف المدينة «${city.nameAr || city.nameEn}» نهائياً؟`)) return;
+    try {
+      await api.delete(`/masters/cities/${city.id}`);
+      toast.success('تم حذف المدينة');
+      await refreshCities();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'تعذر حذف المدينة');
+    }
+  };
+
+  const handleToggleCityActive = async (city: AtlasCity) => {
+    try {
+      await api.patch(`/masters/cities/${city.id}`, { isActive: !city.isActive });
+      await refreshCities();
+    } catch {
+      toast.error('تعذر تحديث حالة المدينة');
+    }
+  };
 
   // Filtered Countries
   const filteredCountries = useMemo(() => {
@@ -296,6 +416,15 @@ export const WorldDirectoryPage: React.FC = () => {
                 </div>
 
                 <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <MapPinned className="w-3 h-3 text-[#FF5E1E]" />
+                      المدن المسجلة:
+                    </span>
+                    <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                      {cityCountByCountry.get(country.cca2) || 0}
+                    </span>
+                  </div>
                   {country.capital && (
                     <div className="flex items-center justify-between">
                       <span>العاصمة:</span>
@@ -563,6 +692,186 @@ export const WorldDirectoryPage: React.FC = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {/* ═══ Country drill-down: manage the cities of the selected country (per approved spec) ═══ */}
+      {selectedCountry && (
+        <Modal
+          isOpen={!!selectedCountry}
+          onClose={closeCountryModal}
+          title={`${selectedCountry.nameAr} — إدارة المدن`}
+          subtitle={`${selectedCountry.nameEn} • ISO ${selectedCountry.cca2}/${selectedCountry.cca3} — المدن المسجلة: ${selectedCountryCities.length}`}
+          maxWidth="lg"
+        >
+          <div className="space-y-5">
+            {/* Country identity summary */}
+            <div className="flex items-center gap-4 p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0E121A] border border-slate-100 dark:border-[#1E2638]">
+              <CountryFlag
+                countryCode={selectedCountry.cca2}
+                className="w-14 h-10 rounded shadow-sm object-cover"
+                title={selectedCountry.nameEn}
+              />
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block">العاصمة</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">{selectedCountry.capital || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">العملة</span>
+                  <span className="font-bold font-mono text-[#FF5E1E]">{selectedCountry.currencies?.join(', ') || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">رمز الاتصال</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-100">{selectedCountry.callingCode || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">المنطقة</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">{selectedCountry.region || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cities manager */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                  <MapPinned className="w-4 h-4 text-[#FF5E1E]" />
+                  مدن {selectedCountry.nameAr}
+                </h4>
+                {!cityFormOpen && (
+                  <button
+                    type="button"
+                    onClick={openAddCity}
+                    className="px-3 py-1.5 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] text-white text-xs font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    إضافة مدينة
+                  </button>
+                )}
+              </div>
+
+              {/* Inline add / edit form */}
+              {cityFormOpen && (
+                <form
+                  onSubmit={handleSaveCity}
+                  className="p-3.5 rounded-2xl bg-orange-50/60 dark:bg-[#0E121A] border border-orange-200/70 dark:border-[#1E2638] space-y-3"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">
+                        المدينة بالإنجليزية <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        dir="ltr"
+                        autoFocus
+                        placeholder="Alexandria"
+                        value={cityForm.nameEn}
+                        onChange={(e) => setCityForm({ ...cityForm, nameEn: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-300 font-bold mb-1">المدينة بالعربية</label>
+                      <input
+                        type="text"
+                        dir="rtl"
+                        placeholder="الإسكندرية"
+                        value={cityForm.nameAr}
+                        onChange={(e) => setCityForm({ ...cityForm, nameAr: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCityFormOpen(false);
+                        setEditingCityId(null);
+                      }}
+                      className="px-4 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 text-xs hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={citySaving}
+                      className="px-4 py-1.5 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {citySaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                      {editingCityId ? 'حفظ التعديلات' : 'إضافة المدينة'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Cities list */}
+              {selectedCountryCities.length === 0 && !cityFormOpen ? (
+                <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-[#1E2638]">
+                  <MapPinned className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">لا توجد مدن مسجلة لهذه الدولة بعد</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    اضغط «إضافة مدينة» لتسجيل أول مدينة — تصبح متاحة فوراً في نماذج النظام
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {selectedCountryCities.map((city) => (
+                    <div
+                      key={city.id}
+                      className="group flex items-center justify-between gap-2 p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638] hover:border-[#FF5E1E]/40 transition"
+                    >
+                      <div className="min-w-0">
+                        <p
+                          className={`text-xs font-bold truncate ${
+                            city.isActive ? 'text-slate-900 dark:text-white' : 'text-slate-400 line-through'
+                          }`}
+                        >
+                          {city.nameAr || city.nameEn}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
+                          {city.nameEn}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          title={city.isActive ? 'تعطيل المدينة' : 'تنشيط المدينة'}
+                          onClick={() => handleToggleCityActive(city)}
+                          className={`w-9 h-7 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                            city.isActive
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {city.isActive ? 'فعّالة' : 'معطّلة'}
+                        </button>
+                        <button
+                          type="button"
+                          title="تعديل"
+                          onClick={() => openEditCity(city)}
+                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-[#FF5E1E] transition flex items-center justify-center cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          title="حذف"
+                          onClick={() => handleDeleteCity(city)}
+                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-red-500 transition flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
