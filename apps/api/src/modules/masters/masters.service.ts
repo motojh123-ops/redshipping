@@ -287,35 +287,36 @@ export class MastersService {
   async updateShippingLine(tenantId: string, id: string, data: any) {
     await this.findShippingLine(tenantId, id);
     const { branches, contacts, companyId: _c, id: _i, ...rest } = data || {};
-    await this.prisma.$transaction(async (tx) => {
-      await tx.shippingLine.update({ where: { id }, data: rest });
-      if (Array.isArray(branches)) {
-        await tx.shippingLineBranch.deleteMany({ where: { shippingLineId: id } });
-        for (const b of branches) {
-          const { contacts: branchContacts, ...branchScalar } = b;
-          await tx.shippingLineBranch.create({
-            data: {
-              ...this.branchFields(branchScalar, { companyId: tenantId, shippingLineId: id }),
-              ...(Array.isArray(branchContacts) && branchContacts.length
-                ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
-                : {}),
-            },
-          });
-        }
+    // Sequential writes (no interactive transaction — the Neon HTTP driver on
+    // Workers does not support transactions). On mid-failure the caller gets
+    // the error and the UI re-saves the full hierarchy.
+    await this.prisma.shippingLine.update({ where: { id }, data: rest });
+    if (Array.isArray(branches)) {
+      await this.prisma.shippingLineBranch.deleteMany({ where: { shippingLineId: id } });
+      for (const b of branches) {
+        const { contacts: branchContacts, ...branchScalar } = b;
+        await this.prisma.shippingLineBranch.create({
+          data: {
+            ...this.branchFields(branchScalar, { companyId: tenantId, shippingLineId: id }),
+            ...(Array.isArray(branchContacts) && branchContacts.length
+              ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
+              : {}),
+          },
+        });
       }
-      if (Array.isArray(contacts)) {
-        await tx.shippingLineContact.deleteMany({ where: { shippingLineId: id, branchId: null } });
-        if (contacts.length) {
-          await tx.shippingLineContact.createMany({
-            data: contacts.map((c: any) => ({
-              ...this.contactFields(tenantId, c),
-              shippingLineId: id,
-              branchId: null,
-            })),
-          });
-        }
+    }
+    if (Array.isArray(contacts)) {
+      await this.prisma.shippingLineContact.deleteMany({ where: { shippingLineId: id, branchId: null } });
+      if (contacts.length) {
+        await this.prisma.shippingLineContact.createMany({
+          data: contacts.map((c: any) => ({
+            ...this.contactFields(tenantId, c),
+            shippingLineId: id,
+            branchId: null,
+          })),
+        });
       }
-    });
+    }
     return this.findShippingLine(tenantId, id);
   }
 
@@ -390,31 +391,32 @@ export class MastersService {
     const { branches, contacts, companyId: _c, id: _i, ...rest } = data || {};
     // Merge with the current record so partial PATCHes (e.g. { isActive }) never wipe fields
     const merged = { ...existing, ...rest };
-    await this.prisma.$transaction(async (tx) => {
-      await tx.vendor.update({ where: { id }, data: this.vendorScalar(tenantId, merged) });
-      if (Array.isArray(branches)) {
-        await tx.vendorBranch.deleteMany({ where: { vendorId: id } });
-        for (const b of branches) {
-          const { contacts: branchContacts, ...branchScalar } = b;
-          await tx.vendorBranch.create({
-            data: {
-              ...this.branchFields(branchScalar, { companyId: tenantId, vendorId: id }),
-              ...(Array.isArray(branchContacts) && branchContacts.length
-                ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
-                : {}),
-            },
-          });
-        }
+    // Sequential writes (no interactive transaction — the Neon HTTP driver on
+    // Workers does not support transactions). On mid-failure the caller gets
+    // the error and the UI re-saves the full hierarchy.
+    await this.prisma.vendor.update({ where: { id }, data: this.vendorScalar(tenantId, merged) });
+    if (Array.isArray(branches)) {
+      await this.prisma.vendorBranch.deleteMany({ where: { vendorId: id } });
+      for (const b of branches) {
+        const { contacts: branchContacts, ...branchScalar } = b;
+        await this.prisma.vendorBranch.create({
+          data: {
+            ...this.branchFields(branchScalar, { companyId: tenantId, vendorId: id }),
+            ...(Array.isArray(branchContacts) && branchContacts.length
+              ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
+              : {}),
+          },
+        });
       }
-      if (Array.isArray(contacts)) {
-        await tx.vendorContact.deleteMany({ where: { vendorId: id, branchId: null } });
-        if (contacts.length) {
-          await tx.vendorContact.createMany({
-            data: contacts.map((c: any) => ({ ...this.contactFields(tenantId, c), vendorId: id, branchId: null })),
-          });
-        }
+    }
+    if (Array.isArray(contacts)) {
+      await this.prisma.vendorContact.deleteMany({ where: { vendorId: id, branchId: null } });
+      if (contacts.length) {
+        await this.prisma.vendorContact.createMany({
+          data: contacts.map((c: any) => ({ ...this.contactFields(tenantId, c), vendorId: id, branchId: null })),
+        });
       }
-    });
+    }
     return this.findVendor(tenantId, id);
   }
   // ═══════════════ OVERSEAS AGENTS (وكلاء الشحن بالخارج — نفس الهيكل الشجري) ═══════════════
@@ -482,31 +484,32 @@ export class MastersService {
     const { branches, contacts, companyId: _c, id: _i, ...rest } = data || {};
     // Merge with the current record so partial PATCHes (e.g. { isActive }) never wipe fields
     const merged = { ...existing, ...rest };
-    await this.prisma.$transaction(async (tx) => {
-      await tx.overseasAgent.update({ where: { id }, data: this.agentScalar(merged) });
-      if (Array.isArray(branches)) {
-        await tx.overseasAgentBranch.deleteMany({ where: { overseasAgentId: id } });
-        for (const b of branches) {
-          const { contacts: branchContacts, ...branchScalar } = b;
-          await tx.overseasAgentBranch.create({
-            data: {
-              ...this.branchFields(branchScalar, { companyId: tenantId, overseasAgentId: id }),
-              ...(Array.isArray(branchContacts) && branchContacts.length
-                ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
-                : {}),
-            },
-          });
-        }
+    // Sequential writes (no interactive transaction — the Neon HTTP driver on
+    // Workers does not support transactions). On mid-failure the caller gets
+    // the error and the UI re-saves the full hierarchy.
+    await this.prisma.overseasAgent.update({ where: { id }, data: this.agentScalar(merged) });
+    if (Array.isArray(branches)) {
+      await this.prisma.overseasAgentBranch.deleteMany({ where: { overseasAgentId: id } });
+      for (const b of branches) {
+        const { contacts: branchContacts, ...branchScalar } = b;
+        await this.prisma.overseasAgentBranch.create({
+          data: {
+            ...this.branchFields(branchScalar, { companyId: tenantId, overseasAgentId: id }),
+            ...(Array.isArray(branchContacts) && branchContacts.length
+              ? { contacts: { create: branchContacts.map((c: any) => this.contactFields(tenantId, c)) } }
+              : {}),
+          },
+        });
       }
-      if (Array.isArray(contacts)) {
-        await tx.overseasAgentContact.deleteMany({ where: { overseasAgentId: id, branchId: null } });
-        if (contacts.length) {
-          await tx.overseasAgentContact.createMany({
-            data: contacts.map((c: any) => ({ ...this.contactFields(tenantId, c), overseasAgentId: id, branchId: null })),
-          });
-        }
+    }
+    if (Array.isArray(contacts)) {
+      await this.prisma.overseasAgentContact.deleteMany({ where: { overseasAgentId: id, branchId: null } });
+      if (contacts.length) {
+        await this.prisma.overseasAgentContact.createMany({
+          data: contacts.map((c: any) => ({ ...this.contactFields(tenantId, c), overseasAgentId: id, branchId: null })),
+        });
       }
-    });
+    }
     return this.findOverseasAgent(tenantId, id);
   }
 
