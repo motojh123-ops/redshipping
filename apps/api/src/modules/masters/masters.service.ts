@@ -93,19 +93,24 @@ export class MastersService {
 
   async getLibrary(tenantId: string, lib: string) {
     const model = this.libraryModel(lib);
-    let items = await model.findMany({
+    const defaults = MastersService.LIBRARY_DEFAULTS[lib] || [];
+    // Ensure the approved defaults exist — idempotent: creates only the
+    // MISSING codes and never touches user-edited or custom items, so the
+    // library self-heals whenever the defaults list is extended.
+    const existing = await model.findMany({
+      where: { companyId: tenantId },
+      select: { code: true },
+    });
+    const existingCodes = new Set(existing.map((e: any) => e.code));
+    const missing = defaults.filter((d) => !existingCodes.has(d.code));
+    if (missing.length) {
+      await model.createMany({ data: missing.map((d) => ({ ...d, companyId: tenantId })) });
+      this.logger.log(`Seeded ${missing.length} missing defaults into "${lib}"`);
+    }
+    return model.findMany({
       where: { companyId: tenantId },
       orderBy: [{ isActive: 'desc' }, { code: 'asc' }],
     });
-    // First use: seed the approved defaults once (idempotent — no manual setup)
-    if (items.length === 0) {
-      await model.createMany({
-        data: MastersService.LIBRARY_DEFAULTS[lib].map((d) => ({ ...d, companyId: tenantId })),
-      });
-      items = await model.findMany({ where: { companyId: tenantId }, orderBy: { code: 'asc' } });
-      this.logger.log(`Seeded default "${lib}" library with ${items.length} items`);
-    }
-    return items;
   }
 
   async createLibraryItem(tenantId: string, lib: string, data: any) {
