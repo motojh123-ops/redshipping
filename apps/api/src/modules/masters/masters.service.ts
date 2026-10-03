@@ -82,6 +82,8 @@ export class MastersService {
       { code: 'transit', nameEn: 'Transit Port', nameAr: 'ميناء ترانزيت' },
       { code: 'river', nameEn: 'River Port', nameAr: 'ميناء نهري' },
       { code: 'logistics', nameEn: 'Logistics Zone', nameAr: 'منطقة لوجستية' },
+      { code: 'land_crossing', nameEn: 'Land Border Crossing', nameAr: 'منفذ بري حدودي' },
+      { code: 'freezone', nameEn: 'Free Zone Port', nameAr: 'ميناء منطقة حرة' },
     ],
   };
 
@@ -712,11 +714,21 @@ export class MastersService {
         ...(countryCode ? { countryCode: countryCode.toUpperCase() } : {}),
       },
       orderBy: { nameEn: 'asc' },
-      include: { portTypeRef: true },
+      include: { portTypeRef: true, cityRef: true },
     });
   }
 
   async createPort(tenantId: string, data: any) {
+    // Optional atlas-city link (من الأطلس: الدولة → المدينة → الميناء)
+    let cityId: string | null = data?.cityId || null;
+    if (cityId) {
+      const city = await this.prisma.city.findFirst({ where: { id: cityId, companyId: tenantId } });
+      if (!city) throw new NotFoundException('Linked city not found in the Country Atlas');
+      // Keep country & city consistent (the city defines the country)
+      if (data?.countryCode && city.countryCode !== String(data.countryCode).toUpperCase()) {
+        throw new BadRequestException('المدينة المختارة لا تتبع الدولة المختارة');
+      }
+    }
     return this.prisma.port.create({
       data: {
         companyId: tenantId,
@@ -726,6 +738,7 @@ export class MastersService {
         countryCode: String(data?.countryCode || '').trim().toUpperCase(),
         portType: String(data?.portType || 'sea').trim(),
         portTypeId: data?.portTypeId || null,
+        cityId,
       },
     });
   }

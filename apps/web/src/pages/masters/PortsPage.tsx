@@ -36,7 +36,11 @@ export const PortsPage: React.FC = () => {
   const [portTypes, setPortTypes] = useState<Array<{ id: string; code: string; nameEn: string; nameAr: string | null; isActive: boolean }>>([]);
   const [customPorts, setCustomPorts] = useState<any[]>([]);
   const [savingPort, setSavingPort] = useState(false);
-  const [portForm, setPortForm] = useState({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '' });
+  const [portForm, setPortForm] = useState({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '', cityId: '' });
+
+  // Atlas countries (the same source powering أطلس الدول) + that country's atlas cities
+  const [atlasCountries, setAtlasCountries] = useState<any[]>([]);
+  const [formCities, setFormCities] = useState<any[]>([]);
 
   // Distance Calculator state
   const [originPort, setOriginPort] = useState('CNNGB');
@@ -53,6 +57,10 @@ export const PortsPage: React.FC = () => {
 
   // Load dynamic port types library + ports registered by this company
   useEffect(() => {
+    api.get('/maritime/countries').then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setAtlasCountries([...list].sort((a: any, b: any) => String(a.nameAr || '').localeCompare(String(b.nameAr || ''), 'ar')));
+    }).catch(() => {});
     api.get('/masters/libraries/port-types').then((res: any) => {
       const list = Array.isArray(res) ? res : res?.data || [];
       setPortTypes(list);
@@ -79,6 +87,18 @@ export const PortsPage: React.FC = () => {
       );
     }).catch(() => {});
   }, []);
+
+  // Cities of the selected country — from the Country Atlas (feeds the port→city link)
+  useEffect(() => {
+    if (!portForm.countryCode) {
+      setFormCities([]);
+      return;
+    }
+    api.get('/masters/cities', { params: { countryCode: portForm.countryCode } }).then((res: any) => {
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setFormCities(list.filter((c: any) => c.isActive));
+    }).catch(() => setFormCities([]));
+  }, [portForm.countryCode]);
 
   const { data: apiPorts, loading } = useApi<any[]>('/maritime/ports');
 
@@ -777,6 +797,7 @@ export const PortsPage: React.FC = () => {
               countryCode: portForm.countryCode.trim().toUpperCase(),
               portType: selectedType?.code || 'sea',
               portTypeId: portForm.portTypeId || null,
+              cityId: portForm.cityId || null,
             };
             setSavingPort(true);
             try {
@@ -798,7 +819,7 @@ export const PortsPage: React.FC = () => {
                   isCustom: true,
                 },
               ]);
-              setPortForm({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '' });
+              setPortForm({ code: '', nameEn: '', nameAr: '', countryCode: 'EG', portTypeId: '', cityId: '' });
               setIsCreateOpen(false);
             } catch (err: any) {
               toast.error(err?.message || 'تعذر حفظ الميناء — قد يكون الكود مستخدماً مسبقاً');
@@ -852,18 +873,22 @@ export const PortsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
-                كود الدولة (حرفان — ISO):
+                الدولة (من أطلس الدول — قائمة كاملة):
               </label>
-              <input
-                type="text"
-                required
-                maxLength={2}
-                dir="ltr"
-                placeholder="EG"
+              <select
                 value={portForm.countryCode}
-                onChange={(e) => setPortForm({ ...portForm, countryCode: e.target.value.toUpperCase() })}
-                className="w-full font-mono uppercase bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
-              />
+                onChange={(e) => setPortForm({ ...portForm, countryCode: e.target.value, cityId: '' })}
+                className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
+              >
+                {atlasCountries.length === 0 && (
+                  <option value={portForm.countryCode}>{portForm.countryCode}</option>
+                )}
+                {atlasCountries.map((c: any) => (
+                  <option key={c.cca2} value={c.cca2}>
+                    {c.nameAr} ({c.cca2})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">نوع الميناء (مكتبة ديناميكية):</label>
@@ -886,6 +911,30 @@ export const PortsPage: React.FC = () => {
                 )}
               </select>
             </div>
+          </div>
+
+          {/* المدينة — ربط الميناء بمدينة من أطلس الدول */}
+          <div>
+            <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+              المدينة (من مدن الأطلس — تربط الميناء بالمدينة):
+            </label>
+            <select
+              value={portForm.cityId}
+              onChange={(e) => setPortForm({ ...portForm, cityId: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-[#0B0E14] border border-slate-200 dark:border-[#1E2638] rounded-xl p-2.5 text-slate-900 dark:text-white"
+            >
+              <option value="">— بدون ربط بمدينة —</option>
+              {formCities.map((c: any) => (
+                <option key={c.id} value={c.id}>
+                  {c.nameAr || c.nameEn}
+                </option>
+              ))}
+            </select>
+            {formCities.length === 0 && (
+              <p className="text-[10px] text-slate-400 mt-1">
+                لا توجد مدن مسجلة لهذه الدولة بعد — أضف مدنها من «أطلس الدول» وستظهر هنا فوراً
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-4">

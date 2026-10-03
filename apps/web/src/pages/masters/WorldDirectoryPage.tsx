@@ -350,7 +350,7 @@ export const WorldDirectoryPage: React.FC = () => {
         coordinates: null,
         portType: p.portType,
         isDryPort: p.portType === 'dry',
-        city: '',
+        city: p.cityRef?.nameAr || p.cityRef?.nameEn || '',
         terminals: [],
         isCustom: true,
         portTypeLabel: p.portTypeRef?.nameAr || p.portTypeRef?.nameEn || null,
@@ -400,6 +400,9 @@ export const WorldDirectoryPage: React.FC = () => {
       { header: 'ملاحظات', accessor: (c: AtlasCity) => c.notes || '' },
     ]);
   };
+
+  /** count of tenant-registered ports linked to an atlas city (الربط بين الموانئ والمدن) */
+  const portsOfCity = (cityId: string) => customPorts.filter((p) => p.cityId === cityId).length;
 
   // Filtered Countries
   const filteredCountries = useMemo(() => {
@@ -1271,6 +1274,9 @@ export const WorldDirectoryPage: React.FC = () => {
                           <p className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
                             {city.nameEn}
                           </p>
+                          {portsOfCity(city.id) > 0 && (
+                            <p className="text-[10px] text-sky-500 font-bold mt-0.5">⚓ {portsOfCity(city.id)} ميناء مرتبط</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button

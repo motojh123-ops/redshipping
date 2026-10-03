@@ -264,6 +264,7 @@ model City {
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ports   Port[]
 
   @@unique([companyId, countryCode, nameEn])
   @@index([companyId, countryCode])
@@ -404,11 +405,13 @@ model Port {
   countryCode String   @map("country_code") @db.VarChar(2)
   portType    String   @default("sea") @map("port_type") @db.VarChar(20)
   portTypeId  String?  @map("port_type_id") @db.Uuid
+  cityId      String?  @map("city_id") @db.Uuid
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   company               Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   portTypeRef           PortType?   @relation(fields: [portTypeId], references: [id])
+  cityRef               City?       @relation(fields: [cityId], references: [id])
   originQuotations      Quotation[] @relation("OriginPort")
   destinationQuotations Quotation[] @relation("DestinationPort")
   originShipments       Shipment[]  @relation("ShipmentOriginPort")
