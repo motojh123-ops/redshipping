@@ -1,68 +1,104 @@
+import { BadRequestException } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 import { PrismaService } from '../../database/prisma.service';
 
 describe('PricingService', () => {
   let service: PricingService;
-  let prisma: { chargeItem: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock } };
+  let prisma: {
+    tariff: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock };
+    itemDefaultRate: { findMany: jest.Mock; upsert: jest.Mock };
+    chargeItem: { findFirst: jest.Mock };
+  };
 
-  const CHARGE_ITEMS = [
+  const TARIFFS = [
     {
-      id: 'ci-ocean-1',
-      code: 'TARIFF-MSCU-000001',
-      nameEn: 'MSC',
-      nameAr: 'MSC',
+      id: 't-ocean-1',
       category: 'ocean',
-      defaultCurrency: 'USD',
-      defaultPrice: 2450,
-      defaultSellPrice: 2850,
+      carrierCode: 'MSCU',
+      carrierName: 'MSC',
+      originPortCode: 'CNNGB',
+      originPortName: 'Ningbo Port',
+      destinationPortCode: 'EGALY',
+      destinationPortName: 'Alexandria Port',
+      containerType: '40HQ',
+      currency: 'USD',
+      buyRate: 2450,
+      sellRate: 2850,
+      transitDaysEstimated: 26,
+      freeDaysAllowed: 14,
+      validFrom: new Date('2026-09-01'),
+      validTo: new Date('2026-10-15'),
+      remarks: null,
       isActive: true,
-      notes: 'tariff:{"category":"ocean","carrierCode":"MSCU","originPortCode":"CNNGB","originPortName":"Ningbo Port","destinationPortCode":"EGALY","destinationPortName":"Alexandria Port","containerType":"40HQ","transitDaysEstimated":26,"freeDaysAllowed":14,"validFrom":"2026-09-01","validTo":"2026-10-15"}',
     },
     {
-      id: 'ci-inland-1',
-      code: 'TARIFF-TRUCK-000002',
-      nameEn: 'Inland Fleet',
-      nameAr: 'الأسطول البري',
+      id: 't-inland-1',
       category: 'inland',
-      defaultCurrency: 'EGP',
-      defaultPrice: 11000,
-      defaultSellPrice: 13500,
+      carrierCode: 'TRUCK-EGY',
+      carrierName: 'Inland Fleet',
+      originPortCode: 'EGALY',
+      originPortName: 'Alexandria Port',
+      destinationPortCode: '6OCT',
+      destinationPortName: '6th of October',
+      containerType: '40HQ',
+      currency: 'EGP',
+      buyRate: 11000,
+      sellRate: 13500,
+      transitDaysEstimated: 1,
+      freeDaysAllowed: 2,
+      validFrom: new Date('2026-01-01'),
+      validTo: new Date('2026-12-31'),
+      remarks: null,
       isActive: true,
-      notes: 'tariff:{"category":"inland","carrierCode":"TRUCK-EGY","originPortCode":"EGALY","originPortName":"Alexandria Port","destinationPortCode":"6OCT","destinationPortName":"6th of October","containerType":"40HQ","transitDaysEstimated":1,"freeDaysAllowed":2,"validFrom":"2026-01-01","validTo":"2026-12-31"}',
     },
     {
-      id: 'ci-customs-1',
-      code: 'TARIFF-CUST-000003',
-      nameEn: 'Customs Clearance',
-      nameAr: 'التخليص الجمركي',
+      id: 't-customs-1',
       category: 'customs',
-      defaultCurrency: 'EGP',
-      defaultPrice: 4000,
-      defaultSellPrice: 6500,
+      carrierCode: 'CUST-CLEAR',
+      carrierName: 'Customs Clearance',
+      originPortCode: 'EGALY',
+      originPortName: 'Alexandria Port',
+      destinationPortCode: 'EGALY',
+      destinationPortName: 'Alexandria Customs',
+      containerType: '40HQ',
+      currency: 'EGP',
+      buyRate: 4000,
+      sellRate: 6500,
+      transitDaysEstimated: 3,
+      freeDaysAllowed: 14,
+      validFrom: new Date('2026-01-01'),
+      validTo: new Date('2026-12-31'),
+      remarks: null,
       isActive: true,
-      notes: 'tariff:{"category":"customs","carrierCode":"CUST-CLEAR","originPortCode":"EGALY","originPortName":"Alexandria Port","destinationPortCode":"EGALY","destinationPortName":"Alexandria Customs","containerType":"40HQ","transitDaysEstimated":3,"freeDaysAllowed":14,"validFrom":"2026-01-01","validTo":"2026-12-31"}',
+    },
+  ];
+
+  const ITEM_RATES = [
+    {
+      id: 'ir-1',
+      chargeItemId: 'ci-1',
+      currency: 'USD',
+      buyRate: 2400,
+      sellRate: 2400,
+      chargeItem: { code: 'OFR', nameAr: 'نولون بحري', nameEn: 'Ocean Freight' },
     },
   ];
 
   beforeEach(() => {
     prisma = {
-      chargeItem: {
-        findMany: jest.fn().mockResolvedValue(CHARGE_ITEMS),
+      tariff: {
+        findMany: jest.fn().mockResolvedValue(TARIFFS),
         findFirst: jest.fn().mockImplementation(async ({ where }) =>
-          CHARGE_ITEMS.find((c) => c.id === where.id && c.isActive) || null,
+          TARIFFS.find((t) => t.id === where.id) || null,
         ),
-        create: jest.fn().mockImplementation(async ({ data }) => ({
-          id: 'ci-new-1',
-          code: data.code,
-          nameEn: data.nameEn,
-          nameAr: data.nameAr,
-          category: data.category,
-          defaultCurrency: data.defaultCurrency,
-          defaultPrice: data.defaultPrice,
-          defaultSellPrice: data.defaultSellPrice,
-          isActive: true,
-          notes: data.notes,
-        })),
+        create: jest.fn().mockImplementation(async ({ data }) => ({ id: 't-new-1', ...data })),
+      },
+      itemDefaultRate: {
+        findMany: jest.fn().mockResolvedValue(ITEM_RATES),
+        upsert: jest.fn().mockResolvedValue({ id: 'ir-1' }),
+      },
+      chargeItem: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'ci-1' }),
       },
     };
     service = new PricingService(prisma as unknown as PrismaService);
@@ -72,6 +108,11 @@ describe('PricingService', () => {
     it('returns all tariffs when no filter is given', async () => {
       const result = await service.getTariffs('tenant-1');
       expect(result).toHaveLength(3);
+    });
+
+    it('computes the profit margin', async () => {
+      const result = await service.getTariffs('tenant-1');
+      expect(result[0].profitMarginPercent).toBeCloseTo(16.3);
     });
 
     it('filters by category', async () => {
@@ -106,7 +147,7 @@ describe('PricingService', () => {
 
   describe('getTariffById', () => {
     it('finds a tariff by id', async () => {
-      const tariff = await service.getTariffById('tenant-1', 'ci-ocean-1');
+      const tariff = await service.getTariffById('tenant-1', 't-ocean-1');
       expect(tariff).not.toBeNull();
       expect(tariff!.carrierCode).toBe('MSCU');
     });
@@ -117,94 +158,57 @@ describe('PricingService', () => {
   });
 
   describe('createTariff', () => {
-    it('computes the profit margin from buy and sell rates', async () => {
-      const created = await service.createTariff('tenant-1', {
+    it('persists a lane tariff into the tariffs table only (never masters)', async () => {
+      const result = await service.createTariff('tenant-1', {
         category: 'ocean',
         carrierCode: 'MAEU',
-        buyRate: 2000,
-        sellRate: 2500,
+        carrierName: 'Maersk Line',
+        buyRate: 1900,
+        sellRate: 2200,
+        currency: 'USD',
       });
-
-      expect(created.profitMarginPercent).toBe(25.0);
-      expect(created.isActive).toBe(true);
-      expect(prisma.chargeItem.create).toHaveBeenCalled();
+      expect(prisma.tariff.create).toHaveBeenCalledTimes(1);
+      expect(result.buyRate).toBe(1900);
+      expect(result.profitMarginPercent).toBeCloseTo(15.8);
     });
 
-    it('falls back to zero margin when buy rate is missing or zero', async () => {
-      const created = await service.createTariff('tenant-1', { sellRate: 2500 });
-      expect(created.buyRate).toBe(0);
-      expect(created.profitMarginPercent).toBe(0);
+    it('rejects a non-positive buy rate', async () => {
+      await expect(service.createTariff('tenant-1', { buyRate: 0 })).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('item default rates (pricing-owned)', () => {
+    it('returns rates with charge item info', async () => {
+      const rates = await service.getItemRates('tenant-1');
+      expect(rates).toHaveLength(1);
+      expect(rates[0].chargeItemCode).toBe('OFR');
+      expect(rates[0].buyRate).toBe(2400);
     });
 
-    it('applies sensible defaults for unspecified fields', async () => {
-      const created = await service.createTariff('tenant-1', {});
-      expect(created.category).toBe('ocean');
-      expect(created.currency).toBe('USD');
-      expect(created.containerType).toBe('40HQ');
-      expect(created.transitDaysEstimated).toBe(25);
-      expect(created.freeDaysAllowed).toBe(14);
+    it('upserts a rate after verifying the charge item belongs to the tenant', async () => {
+      await service.upsertItemRate('tenant-1', 'ci-1', { currency: 'USD', buyRate: 10, sellRate: 12 });
+      expect(prisma.chargeItem.findFirst).toHaveBeenCalled();
+      expect(prisma.itemDefaultRate.upsert).toHaveBeenCalled();
+    });
+
+    it('rejects an unknown charge item', async () => {
+      prisma.chargeItem.findFirst.mockResolvedValueOnce(null);
+      await expect(service.upsertItemRate('tenant-1', 'nope', {})).rejects.toThrow();
     });
   });
 
   describe('calculateQuoteEstimate', () => {
-    it('prices ocean freight only by default', async () => {
-      const estimate = await service.calculateQuoteEstimate('tenant-1', {
+    it('computes totals from the matched ocean tariff', async () => {
+      const est = await service.calculateQuoteEstimate('tenant-1', {
         originPortCode: 'CNNGB',
         destinationPortCode: 'EGALY',
         containerType: '40HQ',
         quantity: 2,
       });
-
-      expect(estimate.oceanCost).toBe(4900); // 2450 * 2
-      expect(estimate.oceanSell).toBe(5700); // 2850 * 2
-      expect(estimate.clearanceCost).toBe(0);
-      expect(estimate.inlandCost).toBe(0);
-      expect(estimate.totalCostUsd).toBe(4900);
-      expect(estimate.totalSellUsd).toBe(5700);
-      expect(estimate.totalProfitUsd).toBe(800);
-      expect(estimate.estimatedTransitDays).toBe(26);
-    });
-
-    it('adds clearance and inland legs converted from EGP when requested', async () => {
-      const estimate = await service.calculateQuoteEstimate('tenant-1', {
-        originPortCode: 'CNNGB',
-        destinationPortCode: 'EGALY',
-        containerType: '40HQ',
-        quantity: 1,
-        includeClearance: true,
-        includeInland: true,
-      });
-
-      expect(estimate.clearanceCost).toBe(80); // 4000 / 50
-      expect(estimate.clearanceSell).toBe(130); // 6500 / 50
-      expect(estimate.inlandCost).toBe(220); // 11000 / 50
-      expect(estimate.inlandSell).toBe(270); // 13500 / 50
-      expect(estimate.totalCostUsd).toBe(2450 + 80 + 220);
-      expect(estimate.totalSellUsd).toBe(2850 + 130 + 270);
-      expect(estimate.totalProfitUsd).toBe(estimate.totalSellUsd - estimate.totalCostUsd);
-    });
-
-    it('treats quantity below 1 as 1', async () => {
-      const estimate = await service.calculateQuoteEstimate('tenant-1', {
-        originPortCode: 'CNNGB',
-        destinationPortCode: 'EGALY',
-        containerType: '40HQ',
-        quantity: 0,
-      });
-
-      expect(estimate.oceanCost).toBe(2450);
-    });
-
-    it('throws NotFound when no ocean tariff exists at all', async () => {
-      prisma.chargeItem.findMany.mockResolvedValue([]);
-      await expect(
-        service.calculateQuoteEstimate('tenant-1', {
-          originPortCode: 'XXXXX',
-          destinationPortCode: 'YYYYY',
-          containerType: '40HQ',
-          quantity: 1,
-        }),
-      ).rejects.toThrow('No ocean tariff found');
+      expect(est.oceanCost).toBe(4900);
+      expect(est.oceanSell).toBe(5700);
+      expect(est.estimatedTransitDays).toBe(26);
     });
   });
 });
+

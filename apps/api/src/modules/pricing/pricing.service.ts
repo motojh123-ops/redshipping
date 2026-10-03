@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 export interface PricingTariff {
@@ -23,81 +23,91 @@ export interface PricingTariff {
   isActive: boolean;
 }
 
-/**
- * Pricing tariffs persisted on the real ChargeItem master (tenant-scoped).
- * Tariff fields that don't map 1:1 onto ChargeItem columns are encoded in
- * the notes column as `tariff:{json}` so pricing stays in PostgreSQL.
- */
-const TARIFF_KEY = 'tariff:';
-
-interface TariffMeta {
-  category: 'ocean' | 'inland' | 'air' | 'customs';
-  carrierCode: string;
-  originPortCode: string;
-  originPortName: string;
-  destinationPortCode: string;
-  destinationPortName: string;
-  containerType: string;
-  transitDaysEstimated: number;
-  freeDaysAllowed: number;
-  validFrom: string;
-  validTo: string;
+export interface ItemRate {
+  id: string;
+  chargeItemId: string;
+  chargeItemCode?: string;
+  chargeItemNameAr?: string | null;
+  chargeItemNameEn?: string;
+  currency: string;
+  buyRate: number;
+  sellRate: number;
 }
 
-function defaultMeta(): TariffMeta {
+/** Map a tariff DB row → API shape */
+function toTariff(t: any): PricingTariff {
+  const buy = Number(t.buyRate) || 0;
+  const sell = Number(t.sellRate) || 0;
   return {
-    category: 'ocean',
-    carrierCode: 'GENERIC',
-    originPortCode: '—',
-    originPortName: '—',
-    destinationPortCode: '—',
-    destinationPortName: '—',
-    containerType: '40HQ',
-    transitDaysEstimated: 25,
-    freeDaysAllowed: 14,
-    validFrom: new Date().toISOString().slice(0, 10),
-    validTo: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
-  };
-}
-
-function toTariff(ci: any): PricingTariff {
-  let meta: TariffMeta = defaultMeta();
-  try {
-    const line = (ci.notes || '').split('\n').find((l: string) => l.startsWith(TARIFF_KEY));
-    if (line) meta = { ...meta, ...JSON.parse(line.slice(TARIFF_KEY.length)) };
-  } catch {
-    // keep defaults
-  }
-  const buy = Number(ci.defaultPrice) || 0;
-  const sell = Number(ci.defaultSellPrice ?? ci.defaultPrice) || 0;
-  return {
-    id: ci.id,
-    category: meta.category,
-    carrierCode: meta.carrierCode || ci.code,
-    carrierName: ci.nameEn,
-    originPortCode: meta.originPortCode,
-    originPortName: meta.originPortName,
-    destinationPortCode: meta.destinationPortCode,
-    destinationPortName: meta.destinationPortName,
-    containerType: meta.containerType as any,
-    currency: (ci.defaultCurrency as 'USD' | 'EUR' | 'EGP') || 'USD',
+    id: t.id,
+    category: t.category,
+    carrierCode: t.carrierCode,
+    carrierName: t.carrierName,
+    originPortCode: t.originPortCode,
+    originPortName: t.originPortName,
+    destinationPortCode: t.destinationPortCode,
+    destinationPortName: t.destinationPortName,
+    containerType: t.containerType,
+    currency: t.currency,
     buyRate: buy,
     sellRate: sell,
     profitMarginPercent: buy > 0 ? Number((((sell - buy) / buy) * 100).toFixed(1)) : 0,
-    transitDaysEstimated: meta.transitDaysEstimated,
-    freeDaysAllowed: meta.freeDaysAllowed,
-    validFrom: meta.validFrom,
-    validTo: meta.validTo,
-    remarks: (ci.notes || '').split('\n').filter((l: string) => l && !l.startsWith(TARIFF_KEY)).join(' '),
-    isActive: ci.isActive,
+    transitDaysEstimated: t.transitDaysEstimated,
+    freeDaysAllowed: t.freeDaysAllowed,
+    validFrom: t.validFrom ? new Date(t.validFrom).toISOString().slice(0, 10) : '',
+    validTo: t.validTo ? new Date(t.validTo).toISOString().slice(0, 10) : '',
+    remarks: t.remarks || undefined,
+    isActive: t.isActive,
   };
 }
 
+/**
+ * Pricing module — the ONLY owner of price data in the system
+ * (المواصفة المعتمدة: "فصل التسعير عن المرجعيات").
+ * Lane tariffs live in the `tariffs` table; per-charge-item default rates
+ * live in `item_default_rates` and prefill quotation/invoice lines.
+ * The masters registry (ChargeItem) holds definitions only — no prices.
+ */
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
 
   constructor(private prisma: PrismaService) {}
+
+  /** Default rates per charge item — the prefill source for quotation lines */
+  async getItemRates(tenantId: string): Promise<ItemRate[]> {
+    const rows = await this.prisma.itemDefaultRate.findMany({
+      where: { companyId: tenantId },
+      include: { chargeItem: { select: { code: true, nameAr: true, nameEn: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r: any) => ({
+      id: r.id,
+      chargeItemId: r.chargeItemId,
+      chargeItemCode: r.chargeItem?.code,
+      chargeItemNameAr: r.chargeItem?.nameAr,
+      chargeItemNameEn: r.chargeItem?.nameEn,
+      currency: r.currency,
+      buyRate: Number(r.buyRate) || 0,
+      sellRate: Number(r.sellRate) || 0,
+    }));
+  }
+
+  /** Create or update the default rate of a charge item (pricing module only) */
+  async upsertItemRate(tenantId: string, chargeItemId: string, dto: any) {
+    const ci = await this.prisma.chargeItem.findFirst({
+      where: { id: chargeItemId, companyId: tenantId },
+    });
+    if (!ci) throw new NotFoundException('Charge item not found');
+    const currency = String(dto?.currency || 'USD').toUpperCase().slice(0, 3);
+    const buyRate = Number(dto?.buyRate) || 0;
+    const sellRate = Number(dto?.sellRate ?? dto?.buyRate) || 0;
+    return this.prisma.itemDefaultRate.upsert({
+      where: { chargeItemId },
+      create: { companyId: tenantId, chargeItemId, currency, buyRate, sellRate },
+      update: { currency, buyRate, sellRate },
+    });
+  }
 
   async getTariffs(tenantId: string, filter?: {
     category?: string;
@@ -106,16 +116,12 @@ export class PricingService {
     destination?: string;
     containerType?: string;
   }): Promise<PricingTariff[]> {
-    const chargeItems = await this.prisma.chargeItem.findMany({
-      where: {
-        companyId: tenantId,
-        isActive: true,
-        category: { in: ['ocean', 'inland', 'air', 'customs'] },
-      },
+    const rows = await this.prisma.tariff.findMany({
+      where: { companyId: tenantId },
       orderBy: { createdAt: 'asc' },
     });
 
-    let tariffs = chargeItems.map(toTariff);
+    let tariffs = rows.map(toTariff);
 
     if (filter?.category) {
       tariffs = tariffs.filter((t) => t.category === filter.category);
@@ -139,50 +145,40 @@ export class PricingService {
   }
 
   async getTariffById(tenantId: string, id: string): Promise<PricingTariff | null> {
-    const ci = await this.prisma.chargeItem.findFirst({
-      where: { id, companyId: tenantId, isActive: true },
+    const row = await this.prisma.tariff.findFirst({
+      where: { id, companyId: tenantId },
     });
-    return ci ? toTariff(ci) : null;
+    return row ? toTariff(row) : null;
   }
 
   async createTariff(tenantId: string, dto: any): Promise<PricingTariff> {
     const buyRate = Number(dto.buyRate) || 0;
-    const sellRate = Number(dto.sellRate) || 0;
-    const profitMargin = buyRate > 0 ? Number((((sellRate - buyRate) / buyRate) * 100).toFixed(1)) : 0;
+    const sellRate = Number(dto.sellRate) || Number(dto.buyRate) || 0;
+    if (buyRate <= 0) throw new BadRequestException('buyRate must be greater than zero');
 
-    const meta: TariffMeta = {
-      category: dto.category || 'ocean',
-      carrierCode: dto.carrierCode || 'GENERIC',
-      originPortCode: dto.originPortCode || '—',
-      originPortName: dto.originPortName || '—',
-      destinationPortCode: dto.destinationPortCode || '—',
-      destinationPortName: dto.destinationPortName || '—',
-      containerType: dto.containerType || '40HQ',
-      transitDaysEstimated: Number(dto.transitDaysEstimated) || 25,
-      freeDaysAllowed: Number(dto.freeDaysAllowed) || 14,
-      validFrom: dto.validFrom || new Date().toISOString().slice(0, 10),
-      validTo: dto.validTo || new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
-    };
-
-    const code = `TARIFF-${meta.carrierCode}-${Date.now().toString().slice(-6)}`;
-    const ci = await this.prisma.chargeItem.create({
+    const row = await this.prisma.tariff.create({
       data: {
         companyId: tenantId,
-        code,
-        nameEn: dto.carrierName || 'Shipping Line',
-        nameAr: dto.carrierName || 'خط ملاحي',
-        category: meta.category,
-        defaultCurrency: dto.currency || 'USD',
-        defaultPrice: buyRate,
-        defaultSellPrice: sellRate,
-        isActive: true,
-        notes: [`${TARIFF_KEY}${JSON.stringify(meta)}`, dto.remarks].filter(Boolean).join('\n'),
+        category: dto.category || 'ocean',
+        carrierCode: dto.carrierCode || 'GENERIC',
+        carrierName: dto.carrierName || dto.carrierCode || 'Carrier',
+        originPortCode: dto.originPortCode || '—',
+        originPortName: dto.originPortName || '—',
+        destinationPortCode: dto.destinationPortCode || '—',
+        destinationPortName: dto.destinationPortName || '—',
+        containerType: dto.containerType || '40HQ',
+        currency: dto.currency || 'USD',
+        buyRate,
+        sellRate,
+        transitDaysEstimated: Number(dto.transitDaysEstimated) || 25,
+        freeDaysAllowed: Number(dto.freeDaysAllowed) || 14,
+        validFrom: dto.validFrom ? new Date(dto.validFrom) : new Date(),
+        validTo: dto.validTo ? new Date(dto.validTo) : new Date(Date.now() + 365 * 86400000),
+        remarks: dto.remarks || null,
+        isActive: dto.isActive === undefined ? true : Boolean(dto.isActive),
       },
     });
-
-    const tariff = toTariff(ci);
-    tariff.profitMarginPercent = profitMargin;
-    return tariff;
+    return toTariff(row);
   }
 
   async calculateQuoteEstimate(tenantId: string, params: {
@@ -219,7 +215,7 @@ export class PricingService {
 
     if (!ocean) {
       throw new NotFoundException(
-        `No ocean tariff found for ${params.originPortCode} → ${params.destinationPortCode} (${params.containerType}). Add tariffs in the pricing masters first.`,
+        `No ocean tariff found for ${params.originPortCode} → ${params.destinationPortCode} (${params.containerType}). Add tariffs in the pricing screen first.`,
       );
     }
 

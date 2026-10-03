@@ -178,31 +178,50 @@ async function main() {
   }
   console.log('✅ Created Local Vendors');
 
-  // 7. Create 15 Standard Charge Items (البنود)
+  // 7. Create 15 Standard Charge Items (البنود — تعريفات فقط، بلا أسعار)
   const chargeItems = [
-    { code: 'OFR', nameEn: 'Ocean Freight (FCL)', nameAr: 'نولون شحن بحري حاويات', category: 'freight', defaultCurrency: 'USD', defaultPrice: 2400 },
-    { code: 'THC-DEST', nameEn: 'Terminal Handling - Destination (THC)', nameAr: 'مصاريف تفريغ ومناولة ميناء الوصول (THC)', category: 'destination_charges', defaultCurrency: 'USD', defaultPrice: 280 },
-    { code: 'THC-ORIG', nameEn: 'Terminal Handling - Origin (THC)', nameAr: 'مصاريف شحن ومناولة ميناء المنشأ', category: 'origin_charges', defaultCurrency: 'USD', defaultPrice: 220 },
-    { code: 'BL-FEE', nameEn: 'Bill of Lading Issuance Fee', nameAr: 'رسم إصدار بوليصة الشحن (B/L)', category: 'origin_charges', defaultCurrency: 'USD', defaultPrice: 75 },
-    { code: 'CUS-CLR', nameEn: 'Customs Clearance Fee', nameAr: 'أتعاب التخليص الجمركي', category: 'customs_clearance', defaultCurrency: 'EGP', defaultPrice: 4500 },
-    { code: 'ACID-REG', nameEn: 'ACID NAFEZA Filing & Registration', nameAr: 'رسوم التسجيل وإصدار رقم نافذة (ACID)', category: 'customs_clearance', defaultCurrency: 'EGP', defaultPrice: 1200 },
-    { code: 'TRUCK-INL', nameEn: 'Inland Container Haulage (Port to Factory)', nameAr: 'نولون نقل بري (ميناء إلى مصنع العميل)', category: 'inland_haulage', defaultCurrency: 'EGP', defaultPrice: 14000 },
-    { code: 'PORT-BOSTA', nameEn: 'Port Dues & Bosta', nameAr: 'رسوم الميناء وحوالة البوسطة', category: 'destination_charges', defaultCurrency: 'EGP', defaultPrice: 1800 },
-    { code: 'INSPECT-46', nameEn: 'Customs Inspection & X-Ray Examination', nameAr: 'مصاريف الكشف والمعاينة وأشعة إكس (استمارة 46)', category: 'customs_clearance', defaultCurrency: 'EGP', defaultPrice: 3200 },
-    { code: 'AGRI-QUAR', nameEn: 'Phytosanitary Inspection (الحجر الزراعي)', nameAr: 'رسوم الحجر الزراعي والبيطري', category: 'customs_clearance', defaultCurrency: 'EGP', defaultPrice: 2100 },
-    { code: 'STEVEDORE', nameEn: 'Port Stevedoring & Labor Fee', nameAr: 'عمالة الميناء وعوائد تفريغ', category: 'destination_charges', defaultCurrency: 'EGP', defaultPrice: 950 },
-    { code: 'DEMURR-GR', nameEn: 'Demurrage Guarantee Deposit', nameAr: 'تأمين حاويات وغرامات أرضيات', category: 'destination_charges', defaultCurrency: 'EGP', defaultPrice: 5000 },
-    { code: 'STORAGE-PT', nameEn: 'Port Yard Storage Charges', nameAr: 'أرضيات ساحة الميناء', category: 'destination_charges', defaultCurrency: 'EGP', defaultPrice: 3400 },
-    { code: 'INSUR-MAR', nameEn: 'Marine Cargo Insurance Policy', nameAr: 'وثيقة تأمين بحري على البضاعة', category: 'freight', defaultCurrency: 'USD', defaultPrice: 350 },
-    { code: 'DOC-FORM46', nameEn: 'Customs Release Certificate Form 46', nameAr: 'رسوم طباعة استمارة 46 إفراج نهائي', category: 'customs_clearance', defaultCurrency: 'EGP', defaultPrice: 850 },
+    { code: 'OFR', nameEn: 'Ocean Freight (FCL)', nameAr: 'نولون شحن بحري حاويات', category: 'freight' },
+    { code: 'THC-DEST', nameEn: 'Terminal Handling - Destination (THC)', nameAr: 'مصاريف تفريغ ومناولة ميناء الوصول (THC)', category: 'destination_charges' },
+    { code: 'THC-ORIG', nameEn: 'Terminal Handling - Origin (THC)', nameAr: 'مصاريف شحن ومناولة ميناء المنشأ', category: 'origin_charges' },
+    { code: 'BL-FEE', nameEn: 'Bill of Lading Issuance Fee', nameAr: 'رسم إصدار بوليصة الشحن (B/L)', category: 'origin_charges' },
+    { code: 'CUS-CLR', nameEn: 'Customs Clearance Fee', nameAr: 'أتعاب التخليص الجمركي', category: 'customs_clearance' },
+    { code: 'ACID-REG', nameEn: 'ACID NAFEZA Filing & Registration', nameAr: 'رسوم التسجيل وإصدار رقم نافذة (ACID)', category: 'customs_clearance' },
+    { code: 'TRUCK-INL', nameEn: 'Inland Container Haulage (Port to Factory)', nameAr: 'نولون نقل بري (ميناء إلى مصنع العميل)', category: 'inland_haulage' },
+    { code: 'PORT-BOSTA', nameEn: 'Port Dues & Bosta', nameAr: 'رسوم الميناء وحوالة البوسطة', category: 'destination_charges' },
+    { code: 'INSPECT-46', nameEn: 'Customs Inspection & X-Ray Examination', nameAr: 'مصاريف الكشف والمعاينة وأشعة إكس (استمارة 46)', category: 'customs_clearance' },
+    { code: 'AGRI-QUAR', nameEn: 'Phytosanitary Inspection (الحجر الزراعي)', nameAr: 'رسوم الحجر الزراعي والبيطري', category: 'customs_clearance' },
+    { code: 'STEVEDORE', nameEn: 'Port Stevedoring & Labor Fee', nameAr: 'عمالة الميناء وعوائد تفريغ', category: 'destination_charges' },
+    { code: 'DEMURR-GR', nameEn: 'Demurrage Guarantee Deposit', nameAr: 'تأمين حاويات وغرامات أرضيات', category: 'destination_charges' },
+    { code: 'STORAGE-PT', nameEn: 'Port Yard Storage Charges', nameAr: 'أرضيات ساحة الميناء', category: 'destination_charges' },
+    { code: 'INSUR-MAR', nameEn: 'Marine Cargo Insurance Policy', nameAr: 'وثيقة تأمين بحري على البضاعة', category: 'freight' },
+    { code: 'DOC-FORM46', nameEn: 'Customs Release Certificate Form 46', nameAr: 'رسوم طباعة استمارة 46 إفراج نهائي', category: 'customs_clearance' },
   ];
 
+  // Default rates — owned by the PRICING module (فصل التسعير عن المرجعيات)
+  const itemRates: Record<string, { currency: string; buy: number }> = {
+    OFR: { currency: 'USD', buy: 2400 },
+    'THC-DEST': { currency: 'USD', buy: 280 },
+    'THC-ORIG': { currency: 'USD', buy: 220 },
+    'BL-FEE': { currency: 'USD', buy: 75 },
+    'CUS-CLR': { currency: 'EGP', buy: 4500 },
+    'ACID-REG': { currency: 'EGP', buy: 1200 },
+    'TRUCK-INL': { currency: 'EGP', buy: 14000 },
+    'PORT-BOSTA': { currency: 'EGP', buy: 1800 },
+    'INSPECT-46': { currency: 'EGP', buy: 3200 },
+    'AGRI-QUAR': { currency: 'EGP', buy: 2100 },
+    STEVEDORE: { currency: 'EGP', buy: 950 },
+    'DEMURR-GR': { currency: 'EGP', buy: 5000 },
+    'STORAGE-PT': { currency: 'EGP', buy: 3400 },
+    'INSUR-MAR': { currency: 'USD', buy: 350 },
+    'DOC-FORM46': { currency: 'EGP', buy: 850 },
+  };
+
   for (const ci of chargeItems) {
-    const existing = await prisma.chargeItem.findFirst({
+    let item = await prisma.chargeItem.findFirst({
       where: { companyId: company.id, code: ci.code },
     });
-    if (!existing) {
-      await prisma.chargeItem.create({
+    if (!item) {
+      item = await prisma.chargeItem.create({
         data: {
           ...ci,
           companyId: company.id,
@@ -210,6 +229,20 @@ async function main() {
           showInQuotation: true,
           showInInvoice: true,
         },
+      });
+    }
+    const rate = itemRates[ci.code];
+    if (rate) {
+      await prisma.itemDefaultRate.upsert({
+        where: { chargeItemId: item.id },
+        create: {
+          companyId: company.id,
+          chargeItemId: item.id,
+          currency: rate.currency,
+          buyRate: rate.buy,
+          sellRate: rate.buy,
+        },
+        update: { currency: rate.currency, buyRate: rate.buy, sellRate: rate.buy },
       });
     }
   }

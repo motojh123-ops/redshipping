@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, UseGuards } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/current-user.decorator';
@@ -34,6 +34,21 @@ export class PricingController {
   @Post('tariffs')
   async createTariff(@TenantId() tenantId: string, @Body() dto: any) {
     return this.pricingService.createTariff(tenantId, dto);
+  }
+
+  // ── Default rates per charge item (prefill source for quotation lines) ──
+  @Get('item-rates')
+  async getItemRates(@TenantId() tenantId: string) {
+    return this.pricingService.getItemRates(tenantId);
+  }
+
+  @Put('item-rates/:chargeItemId')
+  async upsertItemRate(
+    @TenantId() tenantId: string,
+    @Param('chargeItemId') chargeItemId: string,
+    @Body() dto: any,
+  ) {
+    return this.pricingService.upsertItemRate(tenantId, chargeItemId, dto);
   }
 
   @Post('estimate')

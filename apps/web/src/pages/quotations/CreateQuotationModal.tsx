@@ -29,6 +29,7 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
   const [clients, setClients] = useState<any[]>([]);
   const [ports, setPorts] = useState<any[]>([]);
   const [chargeItems, setChargeItems] = useState<any[]>([]);
+  const [itemRates, setItemRates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Form State
@@ -78,6 +79,10 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
       api.get('/masters/charge-items', { params: { context: 'quotation' } }).then((res: any) => {
         setChargeItems(Array.isArray(res) ? res : res?.data || []);
       }).catch(() => {});
+      // Default rates are owned by the PRICING module (فصل التسعير عن المرجعيات)
+      api.get('/pricing/item-rates').then((res: any) => {
+        setItemRates(Array.isArray(res) ? res : res?.data || []);
+      }).catch(() => {});
     }
   }, [isOpen]);
 
@@ -108,14 +113,15 @@ export const CreateQuotationModal: React.FC<CreateQuotationModalProps> = ({
       handleItemChange(index, 'chargeItemId', undefined);
       return;
     }
+    const rate = itemRates.find((r: any) => r.chargeItemId === chargeItemId);
     const updated = [...items];
     updated[index] = {
       ...updated[index],
       chargeItemId,
       description: ci.nameAr || ci.nameEn || updated[index].description,
-      currency: ci.defaultCurrency || updated[index].currency,
-      costRate: Number(ci.defaultPrice ?? 0) || updated[index].costRate,
-      sellRate: Number(ci.defaultSellPrice ?? ci.defaultPrice ?? 0) || updated[index].sellRate,
+      currency: rate?.currency || updated[index].currency,
+      costRate: Number(rate?.buyRate ?? 0) || updated[index].costRate,
+      sellRate: Number(rate?.sellRate ?? rate?.buyRate ?? 0) || updated[index].sellRate,
     };
     setItems(updated);
   };

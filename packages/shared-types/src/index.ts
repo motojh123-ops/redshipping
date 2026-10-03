@@ -135,8 +135,6 @@ export interface ChargeItem extends TenantEntity {
   nameAr: string;
   code: string;
   category: 'freight' | 'origin_charges' | 'destination_charges' | 'customs_clearance' | 'inland_haulage' | 'other';
-  defaultCurrency: string;
-  defaultPrice?: number;
   showInPricing: boolean;
   showInQuotation: boolean;
   showInInvoice: boolean;

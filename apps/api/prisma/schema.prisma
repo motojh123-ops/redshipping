@@ -189,7 +189,58 @@ model Company {
   overseasAgentBranches OverseasAgentBranch[]
   overseasAgentContacts OverseasAgentContact[]
 
+  // ── Pricing module (أسعار وتعرفات — يملكها التسعير حصراً) ──
+  tariffs           Tariff[]
+  itemDefaultRates  ItemDefaultRate[]
+
   @@map("companies")
+}
+
+// ── Pricing module: lane tariffs & per-item default rates ──
+// (الموديول الوحيد الذي يملك أي بيانات أسعار — المواصفة: "فصل التسعير عن المرجعيات")
+model Tariff {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String    @map("company_id") @db.Uuid
+  category            String    @db.VarChar(20) // ocean | inland | air | customs
+  carrierCode         String    @map("carrier_code") @db.VarChar(50)
+  carrierName         String    @map("carrier_name") @db.VarChar(150)
+  originPortCode      String    @map("origin_port_code") @db.VarChar(20)
+  originPortName      String    @map("origin_port_name") @db.VarChar(150)
+  destinationPortCode String    @map("destination_port_code") @db.VarChar(20)
+  destinationPortName String    @map("destination_port_name") @db.VarChar(150)
+  containerType       String    @map("container_type") @db.VarChar(20)
+  currency            String    @db.VarChar(3)
+  buyRate             Decimal   @map("buy_rate") @db.Decimal(14, 2)
+  sellRate            Decimal   @map("sell_rate") @db.Decimal(14, 2)
+  transitDaysEstimated Int      @default(25) @map("transit_days_estimated") @db.Integer
+  freeDaysAllowed     Int       @default(14) @map("free_days_allowed") @db.Integer
+  validFrom           DateTime? @map("valid_from") @db.Date
+  validTo             DateTime? @map("valid_to") @db.Date
+  remarks             String?   @db.Text
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, category])
+  @@map("tariffs")
+}
+
+model ItemDefaultRate {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  chargeItemId String   @unique @map("charge_item_id") @db.Uuid
+  currency     String   @db.VarChar(3)
+  buyRate      Decimal  @map("buy_rate") @db.Decimal(12, 2)
+  sellRate     Decimal  @map("sell_rate") @db.Decimal(12, 2)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chargeItem ChargeItem @relation(fields: [chargeItemId], references: [id], onDelete: Cascade)
+
+  @@map("item_default_rates")
 }
 
 // ── Master Data: reference libraries & cities ──
@@ -579,9 +630,6 @@ model ChargeItem {
   category           String   @db.VarChar(50)
   categoryId         String?  @map("category_id") @db.Uuid
   unitId             String?  @map("unit_id") @db.Uuid
-  defaultCurrency    String   @default("USD") @map("default_currency") @db.VarChar(3)
-  defaultPrice       Decimal? @map("default_price") @db.Decimal(12, 2)
-  defaultSellPrice   Decimal? @map("default_sell_price") @db.Decimal(12, 2)
   notes              String?  @db.Text
   showInPricing      Boolean  @default(true) @map("show_in_pricing")
   showInQuotation    Boolean  @default(true) @map("show_in_quotation")
@@ -595,6 +643,7 @@ model ChargeItem {
   company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   unit           MeasurementUnit?   @relation(fields: [unitId], references: [id])
   categoryRef    LogisticsCategory? @relation(fields: [categoryId], references: [id])
+  defaultRate    ItemDefaultRate?
   quotationItems QuotationItem[]
   invoiceItems   InvoiceItem[]
   shipmentCosts  ShipmentCost[]

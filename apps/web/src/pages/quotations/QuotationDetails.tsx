@@ -21,12 +21,19 @@ export const QuotationDetails: React.FC = () => {
   const navigate = useNavigate();
   const { data: quotation, loading, refetch } = useApi<any>(`/quotations/${id}`);
   const { data: chargeItemsData } = useApi<any[]>('/masters/charge-items', { context: 'quotation' });
+  const { data: pricingRatesData } = useApi<any[]>('/pricing/item-rates');
 
   const chargeItems: any[] = useMemo(() => {
     if (Array.isArray(chargeItemsData)) return chargeItemsData;
     if (Array.isArray((chargeItemsData as any)?.data)) return (chargeItemsData as any).data;
     return [];
   }, [chargeItemsData]);
+
+  const pricingRates: any[] = useMemo(() => {
+    if (Array.isArray(pricingRatesData)) return pricingRatesData;
+    if (Array.isArray((pricingRatesData as any)?.data)) return (pricingRatesData as any).data;
+    return [];
+  }, [pricingRatesData]);
 
   const [showConvertConfirm, setShowConvertConfirm] = useState(false);
   const [showCloneConfirm, setShowCloneConfirm] = useState(false);
@@ -48,13 +55,17 @@ export const QuotationDetails: React.FC = () => {
 
   const q = quotation;
 
-  // Reset add-item form defaults when charge selection changes
+  // Prefill from the pricing module's default rate for this charge item
+  // (الأسعار ملك موديول التسعير — المرجعيات بلا أسعار)
   useEffect(() => {
     if (selectedCharge) {
-      setNewItemCost(String(selectedCharge.defaultPrice ?? selectedCharge.defaultSellPrice ?? 0));
-      setNewItemCurrency(selectedCharge.standardCurrency || 'USD');
+      const rate = pricingRates.find((r: any) => r.chargeItemId === selectedCharge.id);
+      setNewItemCost(String(rate?.buyRate ?? 0));
+      setNewItemSell(String(rate?.sellRate ?? rate?.buyRate ?? 0));
+      setNewItemCurrency(rate?.currency || 'USD');
     }
-  }, [selectedCharge]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCharge, pricingRates]);
 
   if (loading) return <LoadingSpinner fullPage label="جاري تحميل عرض السعر من قاعدة البيانات..." />;
 
