@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Truck, Plus, Phone, Mail, Building2, ShieldCheck, Download,
-  Search, Eye, Loader2, AlertCircle, Warehouse, Anchor, Bug, ClipboardCheck, Pencil, Power
+  Search, Eye, Loader2, AlertCircle, Warehouse, Anchor, Bug, ClipboardCheck, Pencil, Power,
+  Paperclip, FileText, Trash2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
@@ -468,6 +470,95 @@ const CreateVendorModal: React.FC<{
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!initial;
+
+  // ── المرفقات: صور السجل التجاري / البطاقة الضريبية ──
+  const [docs, setDocs] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docCategory, setDocCategory] = useState('commercial_reg');
+
+  const DOC_CATEGORIES: Array<{ value: string; label: string }> = [
+    { value: 'commercial_reg', label: 'السجل التجاري' },
+    { value: 'tax_card', label: 'البطاقة الضريبية' },
+    { value: 'other', label: 'أخرى' },
+  ];
+
+  const loadDocs = async () => {
+    if (!initial?.id) return;
+    try {
+      const res: any = await api.get('/masters/documents', {
+        params: { entityType: 'vendor', entityId: initial.id },
+      });
+      setDocs(Array.isArray(res) ? res : res?.data || []);
+    } catch {
+      setDocs([]);
+    }
+  };
+
+  useEffect(() => {
+    loadDocs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial?.id]);
+
+  const handleUploadDoc = async () => {
+    if (!docFile || !initial?.id) return;
+    setUploading(true);
+    try {
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(docFile);
+      });
+      await api.post('/masters/documents', {
+        entityType: 'vendor',
+        entityId: initial.id,
+        category: docCategory,
+        fileName: docFile.name,
+        mimeType: docFile.type || 'application/octet-stream',
+        dataBase64,
+      });
+      setDocFile(null);
+      const el = document.getElementById('vendor-doc-file') as HTMLInputElement | null;
+      if (el) el.value = '';
+      toast.success('تم رفع المرفق بنجاح');
+      await loadDocs();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'تعذر رفع المرفق');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDownloadDoc = async (docId: string) => {
+    try {
+      const res: any = await api.get(`/masters/documents/${docId}/download`);
+      const payload = res?.data || res;
+      const binary = atob(payload.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: payload.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = payload.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'تعذر تحميل المرفق');
+    }
+  };
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!window.confirm('حذف هذا المرفق؟')) return;
+    try {
+      await api.delete(`/masters/documents/${docId}`);
+      toast.success('تم حذف المرفق');
+      await loadDocs();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'تعذر حذف المرفق');
+    }
+  };
 
   const toggleService = (s: string) =>
     setServices((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -988,6 +1079,89 @@ const CreateVendorModal: React.FC<{
             />
           </div>
         </div>
+
+        {isEdit && initial && (
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0E121A] border border-slate-100 dark:border-[#1E2638] space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+              <Paperclip className="w-4 h-4 text-[#FF5E1E]" />
+              المرفقات والسجلات الرسمية
+            </h4>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="vendor-doc-file"
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                className="flex-1 min-w-52 text-[11px] text-slate-500 dark:text-slate-300 file:ms-2 file:rounded-lg file:border-0 file:px-2.5 file:py-1.5 file:bg-slate-200 dark:file:bg-slate-700 file:text-[11px] file:font-bold file:cursor-pointer"
+              />
+              <select
+                value={docCategory}
+                onChange={(e) => setDocCategory(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold"
+              >
+                {DOC_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleUploadDoc}
+                disabled={uploading || !docFile}
+                className="px-3 py-1.5 rounded-lg bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-50 text-white text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Paperclip className="w-3 h-3" />}
+                {uploading ? 'جارٍ الرفع...' : 'رفع المرفق'}
+              </button>
+            </div>
+            {docs.length === 0 ? (
+              <p className="text-[11px] text-slate-400">
+                لا توجد مرفقات — ارفع صورة السجل التجاري أو البطاقة الضريبية (حتى 4 ميجابايت)
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {docs.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638]"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate" dir="ltr">
+                        {d.fileName}
+                      </span>
+                      <span className="text-[10px] text-slate-400 shrink-0">
+                        {Math.max(1, Math.round((d.fileSize || 0) / 1024))} KB
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 shrink-0">
+                        {DOC_CATEGORIES.find((c) => c.value === d.category)?.label || d.category}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        title="تحميل"
+                        onClick={() => handleDownloadDoc(d.id)}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-sky-500 transition flex items-center justify-center cursor-pointer"
+                      >
+                        <Download className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="حذف"
+                        onClick={() => handleDeleteDoc(d.id)}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-red-500 transition flex items-center justify-center cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">

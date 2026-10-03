@@ -137,6 +137,8 @@ enum DocumentCategory {
   delivery_order
   disbursement_receipt
   other
+  commercial_reg
+  tax_card
 }
 
 model Company {
@@ -1010,6 +1012,8 @@ model EntityDocument {
   mimeType         String           @map("mime_type") @db.VarChar(100)
   storageKey       String           @map("storage_key") @db.Text
   publicUrl        String?          @map("public_url") @db.Text
+  /// base64 payload for direct DB storage (Workers have no filesystem)
+  data             String?          @map("data") @db.Text
   expiryDate       DateTime?        @map("expiry_date") @db.Date
   ocrExtractedText String?          @map("ocr_extracted_text") @db.Text
   uploadedById     String           @map("uploaded_by_id") @db.Uuid

@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MastersService } from './masters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantId } from '../../common/decorators/current-user.decorator';
+import { TenantId, CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Masters — المرجعيات (dynamic libraries, cities, hierarchy & alerts)')
 @UseGuards(JwtAuthGuard)
@@ -76,8 +76,9 @@ export class MastersController {
   async getPorts(
     @TenantId() tenantId: string,
     @Query('includeInactive') includeInactive?: string,
+    @Query('countryCode') countryCode?: string,
   ) {
-    return this.mastersService.getPorts(tenantId, includeInactive === 'true');
+    return this.mastersService.getPorts(tenantId, includeInactive === 'true', countryCode);
   }
 
   @Post('ports')
@@ -89,6 +90,38 @@ export class MastersController {
   @Patch('ports/:id')
   async updatePort(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
     return this.mastersService.updatePort(tenantId, id, data);
+  }
+
+  // ── Entity documents (مرفقات السجلات الرسمية — سجل تجاري / بطاقة ضريبية / رخص...) ──
+  @Get('documents')
+  @ApiOperation({ summary: 'List documents attached to a vendor / shipping line / overseas agent / driver' })
+  async getEntityDocuments(
+    @TenantId() tenantId: string,
+    @Query('entityType') entityType: string,
+    @Query('entityId') entityId: string,
+  ) {
+    return this.mastersService.getEntityDocuments(tenantId, entityType, entityId);
+  }
+
+  @Post('documents')
+  @ApiOperation({ summary: 'Attach a document (base64 payload ≤ 4MB)' })
+  async uploadEntityDocument(
+    @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.uploadEntityDocument(tenantId, userId, data);
+  }
+
+  @Get('documents/:id/download')
+  @ApiOperation({ summary: 'Fetch a document payload for download' })
+  async downloadEntityDocument(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.mastersService.downloadEntityDocument(tenantId, id);
+  }
+
+  @Delete('documents/:id')
+  async deleteEntityDocument(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.mastersService.deleteEntityDocument(tenantId, id);
   }
 
   // ── Shipping lines (multi-level hierarchy) ──

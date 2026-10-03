@@ -53,6 +53,16 @@ type ContextField =
   | 'showInCommission'
   | 'showInOperations';
 
+/** Arabic labels for legacy category codes (shown until the item is linked to the library) */
+const CATEGORY_AR: Record<string, string> = {
+  freight: 'نولون بحري',
+  origin_charges: 'مصاريف ميناء المنشأ',
+  destination_charges: 'مصاريف ميناء الوصول',
+  customs_clearance: 'تخليص جمركي',
+  inland_haulage: 'نقل بري داخلي',
+  other: 'أخرى',
+};
+
 const CONTEXT_OPTIONS: Array<{ field: ContextField; label: string; hint: string }> = [
   { field: 'showInPricing', label: 'يظهر في شاشة التسعير ومكتب النولون', hint: 'Pricing' },
   { field: 'showInQuotation', label: 'يظهر في عرض السعر الموجه للعميل', hint: 'Quotation' },
@@ -362,7 +372,7 @@ export const ChargeItemsPage: React.FC = () => {
                     <td className="py-3 px-4 text-slate-500 dark:text-slate-400" dir="ltr">{it.nameEn}</td>
                     <td className="py-3 px-4">
                       <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
-                        {it.categoryLabel || it.category}
+                        {it.categoryLabel || CATEGORY_AR[it.category] || it.category}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-600 dark:text-slate-300 font-medium">{it.unitLabel || '—'}</td>

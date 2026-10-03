@@ -231,6 +231,16 @@ async function main() {
         },
       });
     }
+    // Link the item to its logistics category in the masters library
+    if (!item.categoryId) {
+      const cat = await prisma.logisticsCategory.findFirst({
+        where: { companyId: company.id, code: ci.category },
+      });
+      if (cat) {
+        await prisma.chargeItem.update({ where: { id: item.id }, data: { categoryId: cat.id } });
+        item = { ...item, categoryId: cat.id };
+      }
+    }
     const rate = itemRates[ci.code];
     if (rate) {
       await prisma.itemDefaultRate.upsert({

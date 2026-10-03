@@ -104,6 +104,7 @@ export const WorldDirectoryPage: React.FC = () => {
 
   // Country Atlas — user-managed cities (per approved spec: cities live INSIDE the country)
   const [cities, setCities] = useState<AtlasCity[]>([]);
+  const [customPorts, setCustomPorts] = useState<any[]>([]);
   const [cityFormOpen, setCityFormOpen] = useState(false);
   const [editingCityId, setEditingCityId] = useState<string | null>(null);
   const [citySaving, setCitySaving] = useState(false);
@@ -162,6 +163,22 @@ export const WorldDirectoryPage: React.FC = () => {
 
   useEffect(() => {
     refreshCities();
+  }, []);
+
+  /** Custom ports added by the user in the ports registry (companyId set) —
+   *  they are linked to the atlas country and shown inside its drill-down. */
+  const refreshCustomPorts = async () => {
+    try {
+      const data: any = await api.get('/masters/ports');
+      const arr = Array.isArray(data) ? data : data?.data || [];
+      setCustomPorts(arr.filter((p: any) => p.companyId));
+    } catch {
+      setCustomPorts([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshCustomPorts();
   }, []);
 
   /** city count per country (ISO alpha-2) */
@@ -317,11 +334,30 @@ export const WorldDirectoryPage: React.FC = () => {
     }
   };
 
-  /** ports of the drilled-in country (static maritime registry) */
-  const selectedCountryPorts = useMemo(
-    () => (selectedCountry ? ports.filter((p) => p.countryCode === selectedCountry.cca2) : []),
-    [ports, selectedCountry],
-  );
+  /** ports of the drilled-in country — customs (tenant) + static maritime registry */
+  const selectedCountryPorts = useMemo(() => {
+    if (!selectedCountry) return [];
+    const cc = selectedCountry.cca2.toUpperCase();
+    const custom: any[] = customPorts
+      .filter((p) => (p.countryCode || '').toUpperCase() === cc)
+      .map((p: any) => ({
+        unlocode: p.code,
+        name: p.nameEn,
+        nameAr: p.nameAr || p.nameEn,
+        country: selectedCountry.nameEn,
+        countryCode: cc,
+        flagEmoji: '🏴',
+        coordinates: null,
+        portType: p.portType,
+        isDryPort: p.portType === 'dry',
+        city: '',
+        terminals: [],
+        isCustom: true,
+        portTypeLabel: p.portTypeRef?.nameAr || p.portTypeRef?.nameEn || null,
+      }));
+    const statik = ports.filter((p) => p.countryCode === selectedCountry.cca2);
+    return [...custom, ...statik];
+  }, [ports, customPorts, selectedCountry]);
 
   /** city stats for the drilled-in country */
   const selectedCountryStats = useMemo(() => {
@@ -1316,9 +1352,16 @@ export const WorldDirectoryPage: React.FC = () => {
                     {selectedCountryPorts.map((port) => (
                       <div key={port.unlocode} className="p-3 rounded-xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#1E2638]">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-orange-50 dark:bg-orange-500/10 text-[#FF5E1E] border border-orange-200 dark:border-orange-500/20">
-                            {port.unlocode}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-orange-50 dark:bg-orange-500/10 text-[#FF5E1E] border border-orange-200 dark:border-orange-500/20">
+                              {port.unlocode}
+                            </span>
+                            {port.isCustom && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/10 text-[#FF5E1E] border border-orange-500/20">
+                                مخصص
+                              </span>
+                            )}
+                          </div>
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                               port.portType === 'land_crossing'
@@ -1328,13 +1371,14 @@ export const WorldDirectoryPage: React.FC = () => {
                                 : 'bg-sky-500/10 text-sky-500 border border-sky-500/20'
                             }`}
                           >
-                            {port.portType === 'land_crossing'
-                              ? 'منفذ بري'
-                              : port.isDryPort || port.portType === 'dry'
-                              ? 'ميناء جاف'
-                              : port.portType === 'air'
-                              ? 'مطار'
-                              : 'ميناء بحري'}
+                            {(port as any).portTypeLabel ||
+                              (port.portType === 'land_crossing'
+                                ? 'منفذ بري'
+                                : port.isDryPort || port.portType === 'dry'
+                                ? 'ميناء جاف'
+                                : port.portType === 'air'
+                                ? 'مطار'
+                                : 'ميناء بحري')}
                           </span>
                         </div>
                         <p className="text-xs font-bold text-slate-900 dark:text-white mt-1.5 truncate">{port.nameAr}</p>

@@ -44,6 +44,10 @@ export class MastersService {
       { code: 'clearance', nameEn: 'Customs Clearance', nameAr: 'تخليص جمركي' },
       { code: 'documentation', nameEn: 'Documentation', nameAr: 'مستندات' },
       { code: 'storage', nameEn: 'Storage & Warehousing', nameAr: 'تخزين وخدمات' },
+      { code: 'origin_charges', nameEn: 'Origin Charges', nameAr: 'مصاريف ميناء المنشأ' },
+      { code: 'destination_charges', nameEn: 'Destination Charges', nameAr: 'مصاريف ميناء الوصول' },
+      { code: 'customs_clearance', nameEn: 'Customs Clearance', nameAr: 'تخليص جمركي' },
+      { code: 'inland_haulage', nameEn: 'Inland Haulage', nameAr: 'نقل بري داخلي' },
       { code: 'insurance', nameEn: 'Insurance', nameAr: 'تأمين' },
       { code: 'commission', nameEn: 'Commission', nameAr: 'عمولة' },
       { code: 'other', nameEn: 'Other', nameAr: 'أخرى' },
@@ -672,9 +676,13 @@ export class MastersService {
 
   // ═══════════════ PORTS (سجل الموانئ — مع مكتبة أنواع الموانئ) ═══════════════
 
-  async getPorts(tenantId: string, includeInactive = false) {
+  async getPorts(tenantId: string, includeInactive = false, countryCode?: string) {
     return this.prisma.port.findMany({
-      where: { OR: [{ companyId: null }, { companyId: tenantId }], ...(includeInactive ? {} : { isActive: true }) },
+      where: {
+        OR: [{ companyId: null }, { companyId: tenantId }],
+        ...(includeInactive ? {} : { isActive: true }),
+        ...(countryCode ? { countryCode: countryCode.toUpperCase() } : {}),
+      },
       orderBy: { nameEn: 'asc' },
       include: { portTypeRef: true },
     });
@@ -700,5 +708,100 @@ export class MastersService {
     const { id: _i, companyId: _c, ...rest } = data || {};
     if (rest.portType === undefined) delete rest.portType;
     return this.prisma.port.update({ where: { id }, data: rest });
+  }
+
+  // ═══════════════ ENTITY DOCUMENTS (مرفقات السجلات الرسمية) ═══════════════
+  // Attach scans of commercial registrations, tax cards, licenses… to any
+  // master entity. Files are stored as base64 directly in PostgreSQL because
+  // Cloudflare Workers have no filesystem (4MB practical limit per file).
+
+  private static readonly DOC_CATEGORIES = new Set([
+    'commercial_reg', 'tax_card', 'bl', 'packing_list', 'commercial_invoice',
+    'acid_cert', 'cert_of_origin', 'eur1', 'customs_declaration',
+    'delivery_order', 'disbursement_receipt', 'other',
+  ]);
+
+  private static readonly DOC_ENTITY_TYPES: Record<string, string> = {
+    vendor: 'vendor',
+    shipping_line: 'shippingLine',
+    overseas_agent: 'overseasAgent',
+    driver: 'driver',
+  };
+
+  private async assertDocEntity(tenantId: string, entityType: string, entityId: string) {
+    const model = MastersService.DOC_ENTITY_TYPES[entityType];
+    if (!model) throw new BadRequestException(`Unsupported entityType: ${entityType}`);
+    const found = await (this.prisma as any)[model].findFirst({ where: { id: entityId, companyId: tenantId } });
+    if (!found) throw new NotFoundException('Target entity not found');
+    return found;
+  }
+
+  async getEntityDocuments(tenantId: string, entityType: string, entityId: string) {
+    await this.assertDocEntity(tenantId, entityType, entityId);
+    return this.prisma.entityDocument.findMany({
+      where: { companyId: tenantId, entityType, entityId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, entityType: true, entityId: true, category: true,
+        fileName: true, fileSize: true, mimeType: true,
+        expiryDate: true, createdAt: true,
+      },
+    });
+  }
+
+  async uploadEntityDocument(tenantId: string, userId: string, data: any) {
+    const entityType = String(data?.entityType || '').trim();
+    const entityId = String(data?.entityId || '').trim();
+    const category = String(data?.category || 'other').trim();
+    const fileName = String(data?.fileName || '').trim();
+    const mimeType = String(data?.mimeType || 'application/octet-stream').trim();
+    const b64 = String(data?.dataBase64 || '').replace(/^data:[^,]+,/, '');
+
+    await this.assertDocEntity(tenantId, entityType, entityId);
+    if (!MastersService.DOC_CATEGORIES.has(category)) {
+      throw new BadRequestException('Invalid document category');
+    }
+    if (!fileName) throw new BadRequestException('fileName is required');
+    if (!b64) throw new BadRequestException('dataBase64 is required');
+
+    const sizeBytes = Math.floor((b64.length * 3) / 4);
+    if (sizeBytes > 4 * 1024 * 1024) {
+      throw new BadRequestException('الملف أكبر من الحد المسموح (4 ميجابايت)');
+    }
+
+    return this.prisma.entityDocument.create({
+      data: {
+        companyId: tenantId,
+        entityType,
+        entityId,
+        category: category as any,
+        fileName: fileName.slice(0, 250),
+        fileSize: sizeBytes,
+        mimeType: mimeType.slice(0, 95),
+        storageKey: 'db:base64',
+        data: b64,
+        expiryDate: data?.expiryDate ? new Date(data.expiryDate) : null,
+        uploadedById: userId,
+      },
+      select: {
+        id: true, entityType: true, entityId: true, category: true,
+        fileName: true, fileSize: true, mimeType: true,
+        expiryDate: true, createdAt: true,
+      },
+    });
+  }
+
+  async downloadEntityDocument(tenantId: string, id: string) {
+    const doc = await this.prisma.entityDocument.findFirst({ where: { id, companyId: tenantId } });
+    if (!doc) throw new NotFoundException('Document not found');
+    if (!doc.data) throw new NotFoundException('Document payload is not stored in the database');
+    return { fileName: doc.fileName, mimeType: doc.mimeType, data: doc.data };
+  }
+
+  async deleteEntityDocument(tenantId: string, id: string) {
+    const doc = await this.prisma.entityDocument.findFirst({ where: { id, companyId: tenantId } });
+    if (!doc) throw new NotFoundException('Document not found');
+    await this.prisma.entityDocument.delete({ where: { id } });
+    return { success: true };
   }
 }

@@ -185,6 +185,7 @@ export const Sidebar: React.FC = () => {
       items: [
         { to: '/masters/directory', labelAr: 'أطلس الدول — اضغط على الدولة لإدارة مدنها', labelEn: 'Countries Atlas (cities inside)', icon: Globe2, badge: '250+' },
         { to: '/masters/charge-items', labelAr: 'البنود العامة (Charges)', labelEn: 'Charge Items', icon: Tag },
+        { to: '/masters/logistics-categories', labelAr: 'التصنيف اللوجستي (مكتبة)', labelEn: 'Logistics Categories', icon: Layers },
         { to: '/masters/ports', labelAr: 'سجل الموانئ (UN/LOCODE)', labelEn: 'Ports & Terminals', icon: MapPin, badge: 'Global' },
         { to: '/masters/shipping-lines', labelAr: 'خطوط الملاحة والاتصالات', labelEn: 'Shipping Lines', icon: Ship },
         { to: '/masters/vendors', labelAr: 'الموردين (نقل وتخليص)', labelEn: 'Vendors & Fleet', icon: Truck },
