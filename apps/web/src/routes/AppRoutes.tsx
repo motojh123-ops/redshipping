@@ -16,6 +16,7 @@ import { InvoiceList } from '../pages/invoices/InvoiceList';
 import { InvoiceDetails } from '../pages/invoices/InvoiceDetails';
 import { ChargeItemsPage } from '../pages/masters/ChargeItemsPage';
 import { LogisticsCategoriesPage } from '../pages/masters/LogisticsCategoriesPage';
+import { UnitsPage } from '../pages/masters/UnitsPage';
 import { PortsPage } from '../pages/masters/PortsPage';
 import { ShippingLinesPage } from '../pages/masters/ShippingLinesPage';
 import { OverseasAgentsPage } from '../pages/masters/OverseasAgentsPage';
@@ -83,6 +84,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="directory" element={<WorldDirectoryPage />} />
         <Route path="masters/charge-items" element={<ChargeItemsPage />} />
         <Route path="masters/logistics-categories" element={<LogisticsCategoriesPage />} />
+        <Route path="masters/units" element={<UnitsPage />} />
         <Route path="masters/ports" element={<PortsPage />} />
         <Route path="masters/shipping-lines" element={<ShippingLinesPage />} />
         <Route path="masters/overseas-agents" element={<OverseasAgentsPage />} />
