@@ -92,6 +92,11 @@ export class MastersController {
     return this.mastersService.updatePort(tenantId, id, data);
   }
 
+  @Delete('ports/:id')
+  async deletePort(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.mastersService.deletePort(tenantId, id);
+  }
+
   // ── Entity documents (مرفقات السجلات الرسمية — سجل تجاري / بطاقة ضريبية / رخص...) ──
   @Get('documents')
   @ApiOperation({ summary: 'List documents attached to a vendor / shipping line / overseas agent / driver' })

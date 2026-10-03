@@ -751,6 +751,13 @@ export class MastersService {
     return this.prisma.port.update({ where: { id }, data: rest });
   }
 
+  async deletePort(tenantId: string, id: string) {
+    const port = await this.prisma.port.findFirst({ where: { id, companyId: tenantId } });
+    if (!port) throw new NotFoundException('Port not found');
+    await this.prisma.port.delete({ where: { id } });
+    return { success: true };
+  }
+
   // ═══════════════ ENTITY DOCUMENTS (مرفقات السجلات الرسمية) ═══════════════
   // Attach scans of commercial registrations, tax cards, licenses… to any
   // master entity. Files are stored as base64 directly in PostgreSQL because
