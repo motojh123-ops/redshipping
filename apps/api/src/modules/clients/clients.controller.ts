@@ -92,4 +92,14 @@ export class ClientsController {
   ) {
     return this.clientsService.addActivity(tenantId, id, userId, data);
   }
+
+  @Patch(':id/activities/:activityId')
+  async updateActivity(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Param('activityId') activityId: string,
+    @Body() data: any,
+  ) {
+    return this.clientsService.updateActivity(tenantId, id, activityId, data);
+  }
 }

@@ -77,18 +77,12 @@ export class ClientsService {
 
       const finByClient = new Map<string, { billed: number; paid: number }>();
       for (const inv of invoices) {
-        const rate = Number(inv.exchangeRate || 1) > 1
-          ? Number(inv.exchangeRate)
-          : inv.currency === 'USD'
-          ? 50
-          : 1;
-        const amountEgp = Math.round(Number(inv.total || 0) * rate);
+        const rate = Number(inv.exchangeRate || 1) > 0 ? Number(inv.exchangeRate || 1) : 1;
+        const amount = Math.round(Number(inv.total || 0) * rate);
         const cur = finByClient.get(inv.clientId) || { billed: 0, paid: 0 };
-        cur.billed += amountEgp;
+        cur.billed += amount;
         if (inv.status === 'paid') {
-          cur.paid += amountEgp;
-        } else if (inv.status === 'partially_paid') {
-          cur.paid += Math.round(amountEgp * 0.5);
+          cur.paid += amount;
         }
         finByClient.set(inv.clientId, cur);
       }
@@ -136,6 +130,7 @@ export class ClientsService {
             originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
             destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
             shippingLine: true,
+            containers: { select: { id: true, containerNumber: true, containerType: true } },
           },
         },
         invoices: {
@@ -167,17 +162,11 @@ export class ClientsService {
     let totalRevenue = 0;
     let totalPaid = 0;
     for (const inv of activeInvoices) {
-      const rate = Number(inv.exchangeRate || 1) > 1
-        ? Number(inv.exchangeRate)
-        : inv.currency === 'USD'
-        ? 50
-        : 1;
-      const amountEgp = Math.round(Number(inv.total || 0) * rate);
-      totalRevenue += amountEgp;
+      const rate = Number(inv.exchangeRate || 1) > 0 ? Number(inv.exchangeRate || 1) : 1;
+      const amount = Math.round(Number(inv.total || 0) * rate);
+      totalRevenue += amount;
       if (inv.status === 'paid') {
-        totalPaid += amountEgp;
-      } else if (inv.status === 'partially_paid') {
-        totalPaid += Math.round(amountEgp * 0.5);
+        totalPaid += amount;
       }
     }
     const outstandingBalance = Math.max(0, totalRevenue - totalPaid);
@@ -616,11 +605,37 @@ export class ClientsService {
     await this.assertClient(tenantId, clientId);
     return this.prisma.crmActivity.create({
       data: {
-        ...data,
+        activityType: data.activityType,
+        subject: data.subject ?? null,
+        body: data.body ?? null,
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        completedAt: data.completedAt ? new Date(data.completedAt) : null,
         clientId,
         userId,
         companyId: tenantId,
       },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  }
+
+  async updateActivity(tenantId: string, clientId: string, activityId: string, data: any) {
+    const act = await this.prisma.crmActivity.findFirst({
+      where: { id: activityId, clientId, companyId: tenantId },
+    });
+    if (!act) throw new NotFoundException('Activity not found for this client');
+    const payload: any = {};
+    if (data?.subject !== undefined) payload.subject = data.subject;
+    if (data?.body !== undefined) payload.body = data.body;
+    if (data?.scheduledAt !== undefined) {
+      payload.scheduledAt = data.scheduledAt ? new Date(data.scheduledAt) : null;
+    }
+    if (data?.completedAt !== undefined) {
+      payload.completedAt = data.completedAt ? new Date(data.completedAt) : null;
+    }
+    return this.prisma.crmActivity.update({
+      where: { id: activityId },
+      data: payload,
+      include: { user: { select: { id: true, name: true } } },
     });
   }
 }

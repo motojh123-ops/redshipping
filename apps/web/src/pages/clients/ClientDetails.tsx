@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Building2, Phone, Mail, MapPin, FileText, Users, Calendar,
   MessageSquare, PhoneCall, Globe, Clock, Plus, ArrowUpRight,
-  CreditCard, Briefcase, Star, ChevronLeft, Shield, FileSpreadsheet, Ship,
-  Bell, CheckCircle2, AlertCircle, Trash2, ArrowRight, Check, Pencil
+  CreditCard, Briefcase, Star, Shield, FileSpreadsheet, Ship,
+  Bell, CheckCircle2, AlertCircle, Trash2, Check, Pencil, RefreshCw
 } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
@@ -17,19 +18,36 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { NewOfferModal } from './NewOfferModal';
 import { DocsSection, ActiveClientProfileModal, computeClientCompliance } from '../masters/ClientsMasterPage';
 
+type TabKey =
+  | 'shipments'
+  | 'financials'
+  | 'contacts'
+  | 'branches'
+  | 'calls'
+  | 'meetings'
+  | 'reminders'
+  | 'offers'
+  | 'attachments';
+
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { data: client, loading, refetch } = useApi<any>(`/clients/${id}`);
+  const { data: client, loading, error, refetch } = useApi<any>(`/clients/${id}`);
   const { user: authUser } = useAuthStore();
   const [c, setC] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'branches' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
+  const [activeTab, setActiveTab] = useState<TabKey>('shipments');
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Modal states (MUST be declared before any conditional early return!)
   const [showLogModal, setShowLogModal] = useState(false);
   const [logType, setLogType] = useState<'call' | 'meeting' | 'reminder'>('call');
-  const [logForm, setLogForm] = useState({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
-  const [convertedToast] = useState(false);
+  const [logForm, setLogForm] = useState({
+    title: '',
+    notes: '',
+    date: '',
+    contact: '',
+    duration: '',
+    priority: 'medium' as 'high' | 'medium' | 'low',
+  });
   const [savingLog, setSavingLog] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
 
@@ -40,27 +58,23 @@ export const ClientDetails: React.FC = () => {
       const rawShipments: any[] = client.shipments || [];
       const rawInvoices: any[] = client.invoices || [];
       const mappedInvoices = rawInvoices.map((inv: any) => {
-        const rate =
-          Number(inv.exchangeRate || 1) > 1
-            ? Number(inv.exchangeRate)
-            : inv.currency === 'USD'
-            ? 50
-            : 1;
+        // Only use the stored exchangeRate on the invoice (never invent a hardcoded USD rate)
+        const storedRate = Number(inv.exchangeRate || 1);
+        const rate = storedRate > 0 ? storedRate : 1;
         const rawTotal = Number(inv.total ?? inv.amount ?? 0);
         const amountEgp = Math.round(rawTotal * rate);
-        const paidEgp =
-          inv.status === 'paid'
-            ? amountEgp
-            : inv.status === 'partially_paid'
-            ? Math.round(amountEgp * 0.5)
-            : 0;
+        const isPaid = inv.status === 'paid';
+        const isPartial = inv.status === 'partially_paid';
+        const paidEgp = isPaid ? amountEgp : 0;
         const remainingEgp = inv.status === 'cancelled' ? 0 : Math.max(0, amountEgp - paidEgp);
         return {
           ...inv,
           amount: amountEgp,
           rawTotal,
+          exchangeRate: rate,
           currency: inv.currency || 'EGP',
           paid: paidEgp,
+          isPartial,
           remaining: remainingEgp,
           dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '—',
           issueDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : String(inv.createdAt || '').slice(0, 10),
@@ -81,62 +95,93 @@ export const ClientDetails: React.FC = () => {
           ? Number(client.outstandingBalance)
           : Math.max(0, calcRevenue - calcPaid);
 
+      const parsedCreditLimit =
+        client.creditLimit !== null && client.creditLimit !== undefined && Number(client.creditLimit) > 0
+          ? Number(client.creditLimit)
+          : null;
+
       setC({
         ...client,
         nameAr: client.nameAr || client.tradeName || '',
         salesPerson: client.salesRep?.name || client.salesPerson || '—',
         createdAt: client.createdAt ? String(client.createdAt).slice(0, 10) : '—',
-        creditLimit: Number(client.creditLimit || 500000),
-        paymentTerms: client.paymentTerms || 'Net 30',
+        creditLimit: parsedCreditLimit,
+        paymentTerms: client.paymentTerms || null,
         totalRevenue: calcRevenue,
         totalPaid: calcPaid,
         outstandingBalance: calcOutstanding,
         contacts: client.contacts || [],
         branches: client.branches || [],
         entityDocuments: client.entityDocuments || [],
-        shipments: rawShipments.map((s: any) => ({
-          ...s,
-          jobNo: s.jobFileNumber || s.jobNo || '—',
-          type: String(s.shipmentType || s.type || 'FCL').toUpperCase(),
-          status: s.currentStage || s.status || 'in_transit',
-          pol: s.originPort?.nameEn || s.pol || s.vesselName || '—',
-          pod: s.destinationPort?.nameEn || s.pod || s.voyageNumber || '—',
-          line: s.shippingLine?.nameEn || s.shippingLine?.name || s.vesselName || s.line || '—',
-          containerNo: s.cargoDescription || s.containerNo || '—',
-          eta: s.eta ? String(s.eta).slice(0, 10) : '—',
-        })),
+        shipments: rawShipments.map((s: any) => {
+          const containerList = Array.isArray(s.containers)
+            ? s.containers
+                .map((ct: any) => ct.containerNumber || ct.containerType)
+                .filter(Boolean)
+                .join(', ')
+            : '';
+          return {
+            ...s,
+            jobNo: s.jobFileNumber || s.jobNo || '—',
+            type: String(s.shipmentType || s.type || 'FCL').toUpperCase(),
+            status: s.currentStage || s.status || 'booking_confirmed',
+            pol: s.originPort?.nameAr || s.originPort?.nameEn || s.originPort?.code || s.pol || '—',
+            pod: s.destinationPort?.nameAr || s.destinationPort?.nameEn || s.destinationPort?.code || s.pod || '—',
+            line: s.shippingLine?.name || s.line || '—',
+            containerNo: containerList || s.containerNo || '—',
+            eta: s.eta ? String(s.eta).slice(0, 10) : '—',
+          };
+        }),
         invoices: mappedInvoices,
         offers: client.quotations || client.offers || [],
         calls: acts
           .filter((a) => a.activityType === 'call')
-          .map((a) => ({
-            id: a.id,
-            date: String(a.completedAt || a.createdAt || '').replace('T', ' ').slice(0, 16),
-            contact: a.subject || '—',
-            duration: '—',
-            user: a.user?.name || '—',
-            summary: a.body || '',
-          })),
+          .map((a) => {
+            const rawSub = String(a.subject || '');
+            const [parsedContact, parsedDur] = rawSub.includes(' ||| ')
+              ? rawSub.split(' ||| ')
+              : [rawSub || '—', '—'];
+            return {
+              id: a.id,
+              date: String(a.completedAt || a.createdAt || '').replace('T', ' ').slice(0, 16),
+              contact: parsedContact || '—',
+              duration: parsedDur || '—',
+              user: a.user?.name || '—',
+              summary: a.body || '',
+            };
+          }),
         meetings: acts
           .filter((a) => a.activityType === 'meeting')
-          .map((a) => ({
-            id: a.id,
-            date: String(a.completedAt || a.scheduledAt || a.createdAt || '').slice(0, 10),
-            location: a.subject || '—',
-            attendees: a.body || '—',
-            user: a.user?.name || '—',
-            notes: a.body || '',
-          })),
+          .map((a) => {
+            const rawBody = String(a.body || '');
+            const attMatch = rawBody.match(/^\[attendees:([^\]]*)\]\n?/);
+            const attendees = attMatch ? attMatch[1] || '—' : '—';
+            const notes = attMatch ? rawBody.slice(attMatch[0].length) : rawBody;
+            return {
+              id: a.id,
+              date: String(a.completedAt || a.scheduledAt || a.createdAt || '').slice(0, 10),
+              location: a.subject || '—',
+              attendees,
+              user: a.user?.name || '—',
+              notes,
+            };
+          }),
         reminders: acts
-          .filter((a) => a.activityType === 'note' && !a.completedAt)
-          .map((a) => ({
-            id: a.id,
-            dueDate: String(a.scheduledAt || a.createdAt || '').slice(0, 10),
-            title: a.subject || a.body || 'متابعة',
-            priority: 'medium',
-            completed: false,
-            assignedTo: a.user?.name || '—',
-          })),
+          .filter((a) => a.activityType === 'note')
+          .map((a) => {
+            const rawSub = String(a.subject || a.body || 'متابعة');
+            const prioMatch = rawSub.match(/^\[priority:(high|medium|low)\]\s*/);
+            const priority = (prioMatch ? prioMatch[1] : 'medium') as 'high' | 'medium' | 'low';
+            const title = prioMatch ? rawSub.slice(prioMatch[0].length) || 'متابعة' : rawSub;
+            return {
+              id: a.id,
+              dueDate: String(a.scheduledAt || a.createdAt || '').slice(0, 10),
+              title,
+              priority,
+              completed: Boolean(a.completedAt),
+              assignedTo: a.user?.name || '—',
+            };
+          }),
         attachments: client.attachments || [],
       });
     }
@@ -144,6 +189,32 @@ export const ClientDetails: React.FC = () => {
 
   if (loading || (client && !c)) {
     return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل من قاعدة البيانات..." />;
+  }
+
+  if (error && !c) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 rounded-3xl border border-rose-200 dark:border-rose-900/50 bg-white dark:bg-[#121620] shadow-sm">
+        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">تعذر تحميل بيانات العميل</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{error}</p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            إعادة المحاولة
+          </button>
+          <Link
+            to="/clients"
+            className="px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm transition"
+          >
+            قائمة العملاء
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (!c) {
@@ -159,7 +230,7 @@ export const ClientDetails: React.FC = () => {
     );
   }
 
-  const tabs = [
+  const tabs: { key: TabKey; label: string; icon: React.FC<any> }[] = [
     { key: 'shipments', label: `الشحنات (${c.shipments?.length || 0})`, icon: Ship },
     { key: 'financials', label: `الماليات والحد الائتماني (${c.invoices?.length || 0})`, icon: CreditCard },
     { key: 'contacts', label: `جهات الاتصال (${c.contacts?.length || 0})`, icon: Users },
@@ -172,11 +243,26 @@ export const ClientDetails: React.FC = () => {
   ];
 
   const compliance = computeClientCompliance(c);
-  const creditLimitVal = Number(c.creditLimit || 500000);
+  const hasCreditLimit = c.creditLimit !== null && c.creditLimit !== undefined && Number(c.creditLimit) > 0;
+  const creditLimitVal = hasCreditLimit ? Number(c.creditLimit) : 0;
   const usedCreditVal = Number(c.outstandingBalance || 0);
-  const availableCreditVal = Math.max(0, creditLimitVal - usedCreditVal);
-  const creditUsedPct = creditLimitVal > 0 ? Math.min(100, Math.round((usedCreditVal / creditLimitVal) * 100)) : 0;
-  const creditAvailPct = Math.max(0, 100 - creditUsedPct);
+  const availableCreditVal = hasCreditLimit ? Math.max(0, creditLimitVal - usedCreditVal) : 0;
+  const creditUsedPct = hasCreditLimit ? Math.min(100, Math.round((usedCreditVal / creditLimitVal) * 100)) : 0;
+  const creditAvailPct = hasCreditLimit ? Math.max(0, 100 - creditUsedPct) : 0;
+
+  const openLogModal = (type: 'call' | 'meeting' | 'reminder') => {
+    const defaultContact = c.contacts?.[0]?.name || '';
+    setLogType(type);
+    setLogForm({
+      title: '',
+      notes: '',
+      date: '',
+      contact: defaultContact,
+      duration: '',
+      priority: 'medium',
+    });
+    setShowLogModal(true);
+  };
 
   const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,16 +271,26 @@ export const ClientDetails: React.FC = () => {
     const when = logForm.date ? new Date(logForm.date) : new Date();
     const whenIso = when.toISOString();
 
+    const encodedSubject =
+      logType === 'reminder'
+        ? `[priority:${logForm.priority || 'medium'}] ${logForm.title || logForm.notes || 'متابعة'}`
+        : logType === 'meeting'
+        ? logForm.title || '—'
+        : logForm.duration.trim()
+        ? `${logForm.contact || '—'} ||| ${logForm.duration.trim()}`
+        : logForm.contact || '—';
+
+    const encodedBody =
+      logType === 'meeting' && logForm.contact.trim()
+        ? `[attendees:${logForm.contact.trim()}]\n${logForm.notes}`
+        : logForm.notes;
+
     setSavingLog(true);
     try {
-      // Persist the activity on the client through the real API (CrmActivity row)
       const created: any = await api.post(`/clients/${id}/activities`, {
         activityType: logType === 'reminder' ? 'note' : logType,
-        subject:
-          logType === 'reminder'
-            ? logForm.title || logForm.notes || 'متابعة'
-            : logForm.contact || logForm.title || '—',
-        body: logForm.notes,
+        subject: encodedSubject,
+        body: encodedBody,
         scheduledAt: whenIso,
         completedAt: logType === 'reminder' ? null : whenIso,
       });
@@ -207,8 +303,8 @@ export const ClientDetails: React.FC = () => {
             {
               id: created.id,
               date: whenIso.replace('T', ' ').slice(0, 16),
-              contact: logForm.contact || prev?.contacts?.[0]?.name || '—',
-              duration: '—',
+              contact: logForm.contact || '—',
+              duration: logForm.duration.trim() || '—',
               user: userName,
               summary: logForm.notes,
             },
@@ -247,47 +343,79 @@ export const ClientDetails: React.FC = () => {
         }));
       }
       setShowLogModal(false);
-      setLogForm({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
+      setLogForm({ title: '', notes: '', date: '', contact: '', duration: '', priority: 'medium' });
+      toast.success('تم حفظ النشاط بنجاح');
     } catch (err: any) {
-      alert(err?.message || 'تعذر حفظ النشاط على الخادم — حاول مجدداً');
+      toast.error(err?.message || 'تعذر حفظ النشاط على الخادم — حاول مجدداً');
     } finally {
       setSavingLog(false);
     }
   };
 
-  const toggleReminder = (rId: string) => {
-    setC({
-      ...c,
-      reminders: c.reminders.map((r: any) =>
-        r.id === rId ? { ...r, completed: !r.completed } : r,
+  const toggleReminder = async (rId: string) => {
+    const target = (c.reminders || []).find((r: any) => r.id === rId);
+    if (!target) return;
+    const nextCompleted = !target.completed;
+
+    setC((prev: any) => ({
+      ...prev,
+      reminders: (prev?.reminders || []).map((r: any) =>
+        r.id === rId ? { ...r, completed: nextCompleted } : r,
       ),
-    });
+    }));
+
+    try {
+      await api.patch(`/clients/${id}/activities/${rId}`, {
+        completedAt: nextCompleted ? new Date().toISOString() : null,
+      });
+    } catch (err: any) {
+      setC((prev: any) => ({
+        ...prev,
+        reminders: (prev?.reminders || []).map((r: any) =>
+          r.id === rId ? { ...r, completed: !nextCompleted } : r,
+        ),
+      }));
+      toast.error(err?.message || 'تعذر تحديث حالة التذكير على الخادم');
+    }
   };
 
-  // ── Clients & Ops (جلسة 3 §3): العرض يُنشأ من ملف العميل،
+  // ── Clients & Ops: العرض يُنشأ من ملف العميل،
   // والترقية إلى «فعلي» تتم تلقائياً عند قبول أول عرض (quotations/:id/accept)
   const handleAcceptOffer = async (offerId: string) => {
     if (!window.confirm('قبول العرض وتحويله إلى ملف عملية (Job File)؟ سيُرقّى العميل تلقائياً إلى «فعلي».')) return;
     try {
       await api.post(`/quotations/${offerId}/accept`, {});
-      window.location.reload();
+      toast.success('تم قبول العرض وفتح ملف العملية وترقية العميل');
+      await refetch();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'تعذر قبول العرض');
+      toast.error(err?.message || 'تعذر قبول العرض');
     }
+  };
+
+  const handleOpenWhatsApp = () => {
+    const primaryContact =
+      (c.contacts || []).find((ct: any) => ct.isPrimary && (ct.mobile || ct.phone)) ||
+      (c.contacts || []).find((ct: any) => ct.mobile || ct.phone);
+    const rawPhone = primaryContact?.mobile || primaryContact?.phone || c.phone || '';
+    const digits = String(rawPhone).replace(/[^\d]/g, '');
+    if (!digits) {
+      toast.error('لا يوجد رقم هاتف أو موبايل مسجل لهذا العميل أو لمسؤول التواصل');
+      return;
+    }
+    const intlDigits = digits.startsWith('00')
+      ? digits.slice(2)
+      : digits.startsWith('0')
+      ? `2${digits}`
+      : digits;
+    const contactName = primaryContact?.name || c.personInCharge || c.name || '';
+    const greeting = contactName
+      ? `مرحباً ${contactName}، بخصوص ملفكم لدى شركة بنا اللوجستية...`
+      : 'مرحباً، بخصوص ملفكم لدى شركة بنا اللوجستية...';
+    window.open(`https://wa.me/${intlDigits}?text=${encodeURIComponent(greeting)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
     <div className="space-y-6">
-      {/* Toast Alert */}
-      {convertedToast && (
-        <div className="p-4 rounded-xl bg-emerald-500 text-white flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="font-semibold text-sm">تم تحويل العميل بنجاح إلى "عميل فعلي" وفتح كامل سجلاته في الحسابات والعمليات!</span>
-          </div>
-        </div>
-      )}
-
       <PageHeader
         title={c.name}
         subtitle={c.nameAr}
@@ -352,7 +480,13 @@ export const ClientDetails: React.FC = () => {
               iconBg="bg-emerald-50 dark:bg-emerald-950/50"
             />
             <StatCard title="عروض نشطة" value={(c.offers || []).filter((o: any) => !['accepted', 'rejected', 'expired'].includes(o.status)).length} icon={FileSpreadsheet} iconColor="text-amber-600" iconBg="bg-amber-50 dark:bg-amber-950/50" />
-            <StatCard title="حد الائتمان" value={`${(creditLimitVal / 1000).toFixed(0)}K ج.م`} icon={Shield} iconColor="text-purple-600" iconBg="bg-purple-50 dark:bg-purple-950/50" />
+            <StatCard
+              title="حد الائتمان"
+              value={hasCreditLimit ? `${(creditLimitVal / 1000).toFixed(0)}K ج.م` : 'غير محدد'}
+              icon={Shield}
+              iconColor="text-purple-600"
+              iconBg="bg-purple-50 dark:bg-purple-950/50"
+            />
           </div>
 
           {/* ── Legal & Operational Profile Compliance Progress Bar (مؤشر اكتمال الملف القانوني §4) ── */}
@@ -446,7 +580,7 @@ export const ClientDetails: React.FC = () => {
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
+                  onClick={() => setActiveTab(tab.key)}
                   className={`flex items-center gap-2 px-4 py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-all ${
                     activeTab === tab.key
                       ? 'border-brand-600 text-brand-600 dark:text-brand-400 bg-brand-50/20 dark:bg-brand-950/20'
@@ -466,7 +600,7 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2">
                     <span className="text-xs font-medium text-slate-500">كافة الشحنات الملاحية والبرية المرتبطة بالعميل</span>
                     <Link
-                      to="/shipments"
+                      to={`/shipments?clientId=${c.id}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF5E1E] hover:bg-[#EA580C] text-white text-xs font-semibold shadow-sm transition"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -480,7 +614,7 @@ export const ClientDetails: React.FC = () => {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-mono font-bold text-[#FF5E1E]">{shp.jobNo}</span>
-                            <span className="text-xs text-slate-400 font-mono">• B/L: {shp.blNumber}</span>
+                            <span className="text-xs text-slate-400 font-mono">• B/L: {shp.blNumber || '—'}</span>
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                               {shp.type}
                             </span>
@@ -518,11 +652,13 @@ export const ClientDetails: React.FC = () => {
                     <div>
                       <span className="text-xs font-bold text-slate-900 dark:text-white block">كشف الحساب والفواتير الصادرة</span>
                       <span className="text-[11px] text-slate-400">
-                        تسهيل ائتماني معتمد {c.paymentTerms || 'Net 30'} بحد أقصى {creditLimitVal.toLocaleString()} ج.م
+                        {hasCreditLimit
+                          ? `تسهيل ائتماني معتمد (${c.paymentTerms || 'غير محدد'}) بحد أقصى ${creditLimitVal.toLocaleString()} ج.م`
+                          : `شروط السداد: ${c.paymentTerms || 'غير محدد'} • حد الائتمان: غير محدد`}
                       </span>
                     </div>
                     <Link
-                      to="/statement-of-account"
+                      to={`/statement-of-account?clientId=${c.id}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -579,15 +715,17 @@ export const ClientDetails: React.FC = () => {
 
                           <div className="text-end shrink-0">
                             <span className="text-xs font-bold font-mono text-slate-900 dark:text-white block">
-                              {Number(inv.amount || 0).toLocaleString()} ج.م
-                              {inv.currency && inv.currency !== 'EGP' && (
+                              {Number(inv.amount || 0).toLocaleString()} {inv.currency && inv.currency !== 'EGP' && Number(inv.exchangeRate || 1) === 1 ? inv.currency : 'ج.م'}
+                              {inv.currency && inv.currency !== 'EGP' && Number(inv.exchangeRate || 1) > 1 && (
                                 <span className="text-[10px] text-slate-400 ms-1">
-                                  ({Number(inv.rawTotal || 0).toLocaleString()} {inv.currency})
+                                  ({Number(inv.rawTotal || 0).toLocaleString()} {inv.currency} × {inv.exchangeRate})
                                 </span>
                               )}
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">
-                              مسدد: {Number(inv.paid || 0).toLocaleString()} ج.م • متبقي: {Number(inv.remaining || 0).toLocaleString()} ج.م
+                              {inv.isPartial
+                                ? 'حالة التحصيل: سداد جزئي (يرجى مراجعة إيصالات التحصيل)'
+                                : `مسدد: ${Number(inv.paid || 0).toLocaleString()} ج.م • متبقي: ${Number(inv.remaining || 0).toLocaleString()} ج.م`}
                             </span>
                           </div>
                         </div>
@@ -617,14 +755,22 @@ export const ClientDetails: React.FC = () => {
 
                   {c.contacts?.map((contact: any) => {
                     const linkedBranch = (c.branches || []).find((b: any) => b.id === contact.branchId);
+                    const safeName = String(contact?.name || '—').trim();
+                    const initials =
+                      safeName
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .map((w: string) => w[0])
+                        .join('')
+                        .slice(0, 2) || '—';
                     return (
                       <div key={contact.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-start gap-4">
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center text-sm font-bold shrink-0">
-                          {contact.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
+                          {initials}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-semibold text-slate-900 dark:text-white text-sm">{contact.name}</h4>
+                            <h4 className="font-semibold text-slate-900 dark:text-white text-sm">{safeName}</h4>
                             {contact.isDecisionMaker && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
                                 <Star className="w-3 h-3" />صانع قرار
@@ -654,8 +800,7 @@ export const ClientDetails: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 2: Phone Calls Log */}
-              {/* TAB: Branches & Loading Addresses (الفروع وعناوين التحميل §5ب) */}
+              {/* TAB: Branches & Loading Addresses */}
               {activeTab === 'branches' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2 flex-wrap gap-2">
@@ -697,9 +842,10 @@ export const ClientDetails: React.FC = () => {
                               if (!window.confirm(`حذف الفرع «${b.name}»؟`)) return;
                               try {
                                 await api.delete(`/clients/${c.id}/branches/${b.id}`);
+                                toast.success('تم حذف الفرع');
                                 refetch();
                               } catch (err: any) {
-                                alert(err?.response?.data?.message || 'تعذر حذف الفرع');
+                                toast.error(err?.message || 'تعذر حذف الفرع');
                               }
                             }}
                             className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
@@ -739,11 +885,8 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2">
                     <span className="text-xs font-medium text-slate-500">سجل الاتصالات والمكالمات البيعية والتشغيلية</span>
                     <button
-                      onClick={() => {
-                        setLogType('call');
-                        setShowLogModal(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-sm transition"
+                      onClick={() => openLogModal('call')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
                     >
                       <PhoneCall className="w-3.5 h-3.5" />
                       تسجيل مكالمة هاتفية
@@ -758,7 +901,9 @@ export const ClientDetails: React.FC = () => {
                             <PhoneCall className="w-3.5 h-3.5" />
                           </div>
                           <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{call.contact}</span>
-                          <span className="text-[11px] text-slate-400">({call.duration})</span>
+                          {call.duration && call.duration !== '—' && (
+                            <span className="text-[11px] text-slate-400">({call.duration})</span>
+                          )}
                         </div>
                         <span className="text-[11px] text-slate-400 font-mono">{call.date}</span>
                       </div>
@@ -775,11 +920,8 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2">
                     <span className="text-xs font-medium text-slate-500">سجل المقابلات الميدانية وجلسات التفاوض</span>
                     <button
-                      onClick={() => {
-                        setLogType('meeting');
-                        setShowLogModal(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition"
+                      onClick={() => openLogModal('meeting')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
                     >
                       <Calendar className="w-3.5 h-3.5" />
                       تسجيل اجتماع جديد
@@ -813,11 +955,8 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2">
                     <span className="text-xs font-medium text-slate-500">مواعيد المتابعة وتذكيرات المهام</span>
                     <button
-                      onClick={() => {
-                        setLogType('reminder');
-                        setShowLogModal(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm transition"
+                      onClick={() => openLogModal('reminder')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
                     >
                       <Bell className="w-3.5 h-3.5" />
                       إضافة تذكير
@@ -836,7 +975,7 @@ export const ClientDetails: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => toggleReminder(reminder.id)}
-                          className={`w-6 h-6 rounded-lg border flex items-center justify-center transition ${
+                          className={`w-6 h-6 rounded-lg border flex items-center justify-center transition cursor-pointer ${
                             reminder.completed
                               ? 'bg-emerald-500 border-emerald-500 text-white'
                               : 'border-slate-300 dark:border-slate-700 hover:border-emerald-500'
@@ -862,17 +1001,23 @@ export const ClientDetails: React.FC = () => {
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           reminder.priority === 'high'
                             ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+                            : reminder.priority === 'low'
+                            ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300'
                             : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                         }`}
                       >
-                        {reminder.priority === 'high' ? 'عالية الأهمية' : 'عادية'}
+                        {reminder.priority === 'high'
+                          ? 'عالية الأهمية'
+                          : reminder.priority === 'low'
+                          ? 'منخفضة'
+                          : 'متوسطة'}
                       </span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* TAB 5: Offers & Quotations History (دورة العرض §3) */}
+              {/* TAB 5: Offers & Quotations History */}
               {activeTab === 'offers' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2">
@@ -903,7 +1048,6 @@ export const ClientDetails: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          {/* Line Summary (§5): Qty x Container | From: POL -> To: POD | Pickup */}
                           <p className="text-[11px] text-slate-500 dark:text-slate-400">
                             {offer.containerQty ? `${Number(offer.containerQty)}x${offer.containerType || ''}` : ''}
                             {offer.originPort ? ` | من: ${offer.originPort.nameEn}` : ''}
@@ -971,30 +1115,36 @@ export const ClientDetails: React.FC = () => {
                 <span>الحد الائتماني والمديونية</span>
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
-                {c.paymentTerms || 'Net 30'}
+                {c.paymentTerms || 'غير محدد'}
               </span>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500 font-medium font-mono">
-                  المستهلك: {usedCreditVal.toLocaleString()} ج.م
-                </span>
-                <span className="font-bold text-slate-900 dark:text-white font-mono">
-                  {creditLimitVal.toLocaleString()} ج.م
-                </span>
+            {hasCreditLimit ? (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 font-medium font-mono">
+                    المستهلك: {usedCreditVal.toLocaleString()} ج.م
+                  </span>
+                  <span className="font-bold text-slate-900 dark:text-white font-mono">
+                    {creditLimitVal.toLocaleString()} ج.م
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-[#FF5E1E] rounded-full transition-all duration-500"
+                    style={{ width: `${creditUsedPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-400 font-mono">
+                  <span>المتاح: {availableCreditVal.toLocaleString()} ج.م ({creditAvailPct}%)</span>
+                  <span>الاستهلاك: {creditUsedPct}%</span>
+                </div>
               </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-purple-500 to-[#FF5E1E] rounded-full transition-all duration-500"
-                  style={{ width: `${creditUsedPct}%` }}
-                />
+            ) : (
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                لم يتم تحديد سقف ائتماني لهذا العميل بعد.
               </div>
-              <div className="flex justify-between text-[11px] text-slate-400 font-mono">
-                <span>المتاح: {availableCreditVal.toLocaleString()} ج.م ({creditAvailPct}%)</span>
-                <span>الاستهلاك: {creditUsedPct}%</span>
-              </div>
-            </div>
+            )}
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <span className="text-xs text-slate-500">المديونية المستحقة حالياً:</span>
@@ -1004,7 +1154,7 @@ export const ClientDetails: React.FC = () => {
             </div>
 
             <Link
-              to="/statement-of-account"
+              to={`/statement-of-account?clientId=${c.id}`}
               className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-xs font-bold transition"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -1015,16 +1165,16 @@ export const ClientDetails: React.FC = () => {
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">بيانات الشركة والتصنيف</h3>
             <div className="space-y-3 text-xs">
-              <InfoRow icon={Building2} label="الاسم التجاري" value={c.nameAr} />
-              <InfoRow icon={CreditCard} label="البطاقة الضريبية" value={c.taxCardNumber || c.taxNumber} mono />
-              <InfoRow icon={FileText} label="السجل التجاري" value={c.commercialReg || c.commercialRegister} mono />
-              <InfoRow icon={Users} label="مسؤول المبيعات المباشر" value={c.salesPerson} />
-              <InfoRow icon={Mail} label="البريد الإلكتروني" value={c.email} />
-              <InfoRow icon={Phone} label="الهاتف" value={c.phone} dir="ltr" />
-              <InfoRow icon={MapPin} label="العنوان الجغرافي" value={c.address} />
-              <InfoRow icon={Globe} label="الموقع الإلكتروني" value={c.website} />
-              <InfoRow icon={CreditCard} label="شروط السداد" value={c.paymentTerms} />
-              <InfoRow icon={Calendar} label="تاريخ التسجيل بالمنظومة" value={c.createdAt} />
+              <InfoRow icon={Building2} label="الاسم التجاري" value={c.nameAr || '—'} />
+              <InfoRow icon={CreditCard} label="البطاقة الضريبية" value={c.taxCardNumber || c.taxNumber || '—'} mono />
+              <InfoRow icon={FileText} label="السجل التجاري" value={c.commercialReg || c.commercialRegister || '—'} mono />
+              <InfoRow icon={Users} label="مسؤول المبيعات المباشر" value={c.salesPerson || '—'} />
+              <InfoRow icon={Mail} label="البريد الإلكتروني" value={c.email || '—'} />
+              <InfoRow icon={Phone} label="الهاتف" value={c.phone || '—'} dir="ltr" />
+              <InfoRow icon={MapPin} label="العنوان الجغرافي" value={c.address || '—'} />
+              <InfoRow icon={Globe} label="الموقع الإلكتروني" value={c.website || '—'} />
+              <InfoRow icon={CreditCard} label="شروط السداد" value={c.paymentTerms || 'غير محدد'} />
+              <InfoRow icon={Calendar} label="تاريخ التسجيل بالمنظومة" value={c.createdAt || '—'} />
             </div>
           </div>
 
@@ -1032,17 +1182,25 @@ export const ClientDetails: React.FC = () => {
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">إجراءات سريعة</h3>
             <div className="space-y-2 text-xs">
-              <Link to="/quotations" className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium">
+              <button
+                type="button"
+                onClick={() => setShowOfferModal(true)}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium cursor-pointer"
+              >
                 <FileSpreadsheet className="w-4 h-4 text-brand-500" />
                 إنشاء عرض سعر مخصص
-              </Link>
-              <Link to="/shipments" className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium">
+              </button>
+              <Link
+                to={`/shipments?clientId=${c.id}`}
+                className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium"
+              >
                 <Ship className="w-4 h-4 text-emerald-500" />
                 فتح ملف شحنة جديدة
               </Link>
               <button
-                onClick={() => window.open(`https://wa.me/201001234567?text=${encodeURIComponent('مرحباً أستاذ أحمد، بخصوص شحنتكم القادمة عبر بنا اللوجستية...')}`)}
-                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium"
+                type="button"
+                onClick={handleOpenWhatsApp}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-slate-700 dark:text-slate-200 font-medium cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4 text-green-500" />
                 مراسلة العميل عبر WhatsApp
@@ -1052,7 +1210,7 @@ export const ClientDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* New Offer Modal (دورة العرض §3/§4) */}
+      {/* New Offer Modal */}
       <NewOfferModal
         isOpen={showOfferModal}
         onClose={() => setShowOfferModal(false)}
@@ -1124,8 +1282,12 @@ export const ClientDetails: React.FC = () => {
                 onChange={(e) => setLogForm({ ...logForm, contact: e.target.value })}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
               >
+                <option value="">— اختر جهة الاتصال —</option>
                 {c.contacts?.map((ct: any) => (
-                  <option key={ct.id} value={ct.name}>{ct.name} — {ct.title}</option>
+                  <option key={ct.id} value={ct.name}>
+                    {ct.name}
+                    {ct.title ? ` — ${ct.title}` : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1141,12 +1303,25 @@ export const ClientDetails: React.FC = () => {
                 />
               </div>
 
+              {logType === 'call' && (
+                <div>
+                  <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">مدة المكالمة</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: 10 دقائق"
+                    value={logForm.duration}
+                    onChange={(e) => setLogForm({ ...logForm, duration: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                </div>
+              )}
+
               {logType === 'reminder' && (
                 <div>
                   <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">درجة الأهمية</label>
                   <select
                     value={logForm.priority}
-                    onChange={(e) => setLogForm({ ...logForm, priority: e.target.value })}
+                    onChange={(e) => setLogForm({ ...logForm, priority: e.target.value as 'high' | 'medium' | 'low' })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                   >
                     <option value="high">عالية جداً (High)</option>
@@ -1179,9 +1354,10 @@ export const ClientDetails: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-md shadow-brand-600/20 transition"
+                disabled={savingLog}
+                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white font-semibold shadow-md shadow-brand-600/20 transition"
               >
-                حفظ السجل
+                {savingLog ? 'جارٍ الحفظ...' : 'حفظ السجل'}
               </button>
             </div>
           </form>
@@ -1203,7 +1379,7 @@ const InfoRow: React.FC<{ icon: React.FC<any>; label: string; value: string; mon
   </div>
 );
 
-/** إضافة فرع / عنوان تحميل (§5ب) — زر + نافذة إدخال سريعة */
+/** إضافة فرع / عنوان تحميل — زر + نافذة إدخال سريعة */
 const AddBranchButton: React.FC<{ clientId: string; onSaved: () => void }> = ({ clientId, onSaved }) => {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1211,7 +1387,7 @@ const AddBranchButton: React.FC<{ clientId: string; onSaved: () => void }> = ({ 
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) { alert('اسم الفرع مطلوب'); return; }
+    if (!form.name.trim()) { toast.error('اسم الفرع مطلوب'); return; }
     setSaving(true);
     try {
       await api.post(`/clients/${clientId}/branches`, {
@@ -1223,9 +1399,10 @@ const AddBranchButton: React.FC<{ clientId: string; onSaved: () => void }> = ({ 
       });
       setOpen(false);
       setForm({ name: '', address: '', city: '', phone: '', isLoadingAddress: false });
+      toast.success('تمت إضافة الفرع بنجاح');
       onSaved();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'تعذر إضافة الفرع');
+      toast.error(err?.message || 'تعذر إضافة الفرع');
     } finally {
       setSaving(false);
     }
