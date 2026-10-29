@@ -4,7 +4,7 @@ import {
   Building2, Phone, Mail, MapPin, FileText, Users, Calendar,
   MessageSquare, PhoneCall, Globe, Clock, Plus, ArrowUpRight,
   CreditCard, Briefcase, Star, ChevronLeft, Shield, FileSpreadsheet, Ship,
-  Bell, CheckCircle2, AlertCircle, Trash2, ArrowRight, UserCheck, Check
+  Bell, CheckCircle2, AlertCircle, Trash2, ArrowRight, Check, Pencil
 } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
@@ -14,13 +14,16 @@ import { useApi } from '../../hooks/useApi';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { NewOfferModal } from './NewOfferModal';
+import { DocsSection, ActiveClientProfileModal } from '../masters/ClientsMasterPage';
 
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { data: client, loading } = useApi<any>(`/clients/${id}`);
+  const { data: client, loading, refetch } = useApi<any>(`/clients/${id}`);
   const { user: authUser } = useAuthStore();
   const [c, setC] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
+  const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'branches' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   React.useEffect(() => {
     if (client) {
@@ -29,6 +32,8 @@ export const ClientDetails: React.FC = () => {
       setC({
         ...client,
         contacts: client.contacts || [],
+        branches: client.branches || [],
+        entityDocuments: client.entityDocuments || [],
         shipments: client.shipments || [],
         invoices: client.invoices || [],
         offers: client.quotations || client.offers || [],
@@ -71,7 +76,7 @@ export const ClientDetails: React.FC = () => {
   const [showLogModal, setShowLogModal] = useState(false);
   const [logType, setLogType] = useState<'call' | 'meeting' | 'reminder'>('call');
   const [logForm, setLogForm] = useState({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
-  const [convertedToast, setConvertedToast] = useState(false);
+  const [convertedToast] = useState(false);
 
   if (loading) return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل من قاعدة البيانات..." />;
 
@@ -92,11 +97,12 @@ export const ClientDetails: React.FC = () => {
     { key: 'shipments', label: `الشحنات (${c.shipments?.length || 0})`, icon: Ship },
     { key: 'financials', label: 'الماليات والحد الائتماني', icon: CreditCard },
     { key: 'contacts', label: `جهات الاتصال (${c.contacts?.length || 0})`, icon: Users },
+    { key: 'branches', label: `الفروع وعناوين التحميل (${c.branches?.length || 0})`, icon: MapPin },
     { key: 'offers', label: `عروض الأسعار (${c.offers?.length || 0})`, icon: FileSpreadsheet },
     { key: 'calls', label: `المكالمات (${c.calls?.length || 0})`, icon: PhoneCall },
     { key: 'meetings', label: `الاجتماعات (${c.meetings?.length || 0})`, icon: Calendar },
     { key: 'reminders', label: `المتابعات (${c.reminders?.filter((r: any) => !r.completed).length || 0})`, icon: Bell },
-    { key: 'attachments', label: `الوثائق والتراخيص (${c.attachments?.length || 0})`, icon: FileText },
+    { key: 'attachments', label: `الوثائق والتراخيص (${(c.entityDocuments || c.attachments || []).length})`, icon: FileText },
   ];
 
   const [savingLog, setSavingLog] = useState(false);
@@ -187,10 +193,18 @@ export const ClientDetails: React.FC = () => {
     });
   };
 
-  const handleConvertToActual = () => {
-    setC({ ...c, clientCategory: 'actual', status: 'active' });
-    setConvertedToast(true);
-    setTimeout(() => setConvertedToast(false), 4000);
+  // ── Clients & Ops (جلسة 3 §3): العرض يُنشأ من ملف العميل،
+  // والترقية إلى «فعلي» تتم تلقائياً عند قبول أول عرض (quotations/:id/accept)
+  const [showOfferModal, setShowOfferModal] = useState(false);
+
+  const handleAcceptOffer = async (offerId: string) => {
+    if (!window.confirm('قبول العرض وتحويله إلى ملف عملية (Job File)؟ سيُرقّى العميل تلقائياً إلى «فعلي».')) return;
+    try {
+      await api.post(`/quotations/${offerId}/accept`, {});
+      window.location.reload();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'تعذر قبول العرض');
+    }
   };
 
   return (
@@ -213,20 +227,41 @@ export const ClientDetails: React.FC = () => {
           { label: c.name },
         ]}
         actions={
-          <div className="flex items-center gap-3">
-            {c.clientCategory === 'lead' ? (
-              <button
-                onClick={handleConvertToActual}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition"
-              >
-                <UserCheck className="w-4 h-4" />
-                تحويل إلى عميل فعلي (Convert)
-              </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {c.status === 'prospect' ? (
+              <>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-700">
+                  عميل مستهدف — يُرقّى تلقائياً عند قبول أول عرض أو يدوياً
+                </span>
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  اعتماد وتحويل لعميل فعلي
+                </button>
+              </>
             ) : (
-              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-300 dark:ring-emerald-700">
-                عميل فعلي معتمد ✅
-              </span>
+              <>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-300 dark:ring-emerald-700">
+                  عميل فعلي معتمد ✅
+                </span>
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-brand-500" />
+                  تعديل الفروع والمسؤولين والمرفقات
+                </button>
+              </>
             )}
+            <button
+              onClick={() => setShowOfferModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-md shadow-brand-600/20 transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              عرض سعر جديد
+            </button>
             <StatusBadge status={c.type} />
             <StatusBadge status={c.status} />
           </div>
@@ -239,10 +274,10 @@ export const ClientDetails: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
           {/* KPI Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard title="إجمالي الشحنات" value={c.totalShipments} icon={Briefcase} iconColor="text-brand-600" iconBg="bg-brand-50 dark:bg-brand-950/50" />
-            <StatCard title="إجمالي الإيرادات" value={`${(c.totalRevenue / 1000).toFixed(0)}K EGP`} icon={CreditCard} iconColor="text-emerald-600" iconBg="bg-emerald-50 dark:bg-emerald-950/50" />
-            <StatCard title="عروض نشطة" value={c.activeQuotations} icon={FileSpreadsheet} iconColor="text-amber-600" iconBg="bg-amber-50 dark:bg-amber-950/50" />
-            <StatCard title="حد الائتمان" value={`${(c.creditLimit / 1000).toFixed(0)}K`} icon={Shield} iconColor="text-purple-600" iconBg="bg-purple-50 dark:bg-purple-950/50" />
+            <StatCard title="إجمالي الشحنات" value={c.totalShipments ?? (c.shipments?.length || 0)} icon={Briefcase} iconColor="text-brand-600" iconBg="bg-brand-50 dark:bg-brand-950/50" />
+            <StatCard title="إجمالي الإيرادات" value={c.totalRevenue ? `${(c.totalRevenue / 1000).toFixed(0)}K EGP` : '—'} icon={CreditCard} iconColor="text-emerald-600" iconBg="bg-emerald-50 dark:bg-emerald-950/50" />
+            <StatCard title="عروض نشطة" value={(c.offers || []).filter((o: any) => !['accepted', 'rejected', 'expired'].includes(o.status)).length} icon={FileSpreadsheet} iconColor="text-amber-600" iconBg="bg-amber-50 dark:bg-amber-950/50" />
+            <StatCard title="حد الائتمان" value={c.creditLimit ? `${(c.creditLimit / 1000).toFixed(0)}K` : '—'} icon={Shield} iconColor="text-purple-600" iconBg="bg-purple-50 dark:bg-purple-950/50" />
           </div>
 
           {/* Tab Navigation */}
@@ -322,7 +357,7 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                     <div>
                       <span className="text-xs font-bold text-slate-900 dark:text-white block">كشف الحساب والفواتير الصادرة</span>
-                      <span className="text-[11px] text-slate-400">تسهيل ائتماني معتمد {c.paymentTerms} بحد أقصى {c.creditLimit.toLocaleString()} ج.م</span>
+                      <span className="text-[11px] text-slate-400">تسهيل ائتماني معتمد {c.paymentTerms || '—'} بحد أقصى {c.creditLimit ? c.creditLimit.toLocaleString() : '—'} ج.م</span>
                     </div>
                     <Link
                       to="/statement-of-account"
@@ -344,7 +379,7 @@ export const ClientDetails: React.FC = () => {
                     </div>
                     <div className="p-3.5 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-800/30">
                       <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300 block">المديونية المتبقية المستحقة</span>
-                      <span className="text-base font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-1 block">{c.outstandingBalance.toLocaleString()} ج.م</span>
+                      <span className="text-base font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-1 block">{c.outstandingBalance ? c.outstandingBalance.toLocaleString() : '—'} ج.م</span>
                     </div>
                   </div>
 
@@ -361,10 +396,10 @@ export const ClientDetails: React.FC = () => {
 
                         <div className="text-end">
                           <span className="text-xs font-bold font-mono text-slate-900 dark:text-white block">
-                            {inv.amount.toLocaleString()} ج.م
+                            {Number(inv.amount || 0).toLocaleString()} ج.م
                           </span>
                           <span className="text-[10px] text-slate-400">
-                            متبقي: {inv.remaining.toLocaleString()} ج.م
+                            متبقي: {Number(inv.remaining || 0).toLocaleString()} ج.م
                           </span>
                         </div>
                       </div>
@@ -377,48 +412,135 @@ export const ClientDetails: React.FC = () => {
               {activeTab === 'contacts' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2">
-                    <span className="text-xs font-medium text-slate-500">مسؤولي التواصل وصناع القرار</span>
+                    <span className="text-xs font-medium text-slate-500">مسؤولي التواصل وصناع القرار (Person in Charge — يمكن إضافة أكثر من مسؤول)</span>
                     <button
-                      onClick={() => {
-                        setLogType('call');
-                        setShowLogModal(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/50 dark:hover:bg-brand-900/50 text-brand-700 dark:text-brand-300 text-xs font-semibold transition"
+                      onClick={() => setShowProfileModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/50 dark:hover:bg-brand-900/50 text-brand-700 dark:text-brand-300 text-xs font-semibold transition cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      إضافة جهة اتصال
+                      إضافة / تعديل جهات الاتصال
                     </button>
                   </div>
 
-                  {c.contacts?.map((contact: any) => (
-                    <div key={contact.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center text-sm font-bold shrink-0">
-                        {contact.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm">{contact.name}</h4>
-                          {contact.isDecisionMaker && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-                              <Star className="w-3 h-3" />صانع قرار
-                            </span>
-                          )}
-                          {contact.isPrimary && (
-                            <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">رئيسي</span>
-                          )}
+                  {c.contacts?.map((contact: any) => {
+                    const linkedBranch = (c.branches || []).find((b: any) => b.id === contact.branchId);
+                    return (
+                      <div key={contact.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center text-sm font-bold shrink-0">
+                          {contact.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{contact.title}</p>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">
-                          <span className="flex items-center gap-1"><Phone className="w-3 h-3" /><span dir="ltr">{contact.phone}</span></span>
-                          <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-semibold text-slate-900 dark:text-white text-sm">{contact.name}</h4>
+                            {contact.isDecisionMaker && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                                <Star className="w-3 h-3" />صانع قرار
+                              </span>
+                            )}
+                            {contact.isPrimary && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">رئيسي</span>
+                            )}
+                            {linkedBranch && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                <MapPin className="w-3 h-3" />{linkedBranch.name}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {contact.title}{contact.department ? ` • ${contact.department}` : ''}
+                          </p>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">
+                            {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /><span dir="ltr">{contact.phone}</span></span>}
+                            {contact.mobile && <span className="flex items-center gap-1"><PhoneCall className="w-3 h-3" /><span dir="ltr">{contact.mobile}</span></span>}
+                            {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
               {/* TAB 2: Phone Calls Log */}
+              {/* TAB: Branches & Loading Addresses (الفروع وعناوين التحميل §5ب) */}
+              {activeTab === 'branches' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 flex-wrap gap-2">
+                    <span className="text-xs font-medium text-slate-500">
+                      المقر الرئيسي / المخازن / أماكن التحميل ومسؤولي الفروع — تُستدعى مباشرة في العروض وأوامر التحميل
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowProfileModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        إدارة الفروع ومسؤولي الفروع
+                      </button>
+                      <AddBranchButton clientId={c.id} onSaved={() => refetch()} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {c.branches?.length ? c.branches.map((b: any) => (
+                      <div key={b.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">{b.name}</span>
+                              {b.isLoadingAddress && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                  مكان تحميل
+                                </span>
+                              )}
+                              {!b.isActive && <span className="text-[10px] text-slate-400">(غير مفعّل)</span>}
+                            </div>
+                            {b.address && <p className="text-[11px] text-slate-500 dark:text-slate-400">{b.address}</p>}
+                            <p className="text-[10px] text-slate-400">
+                              {b.city || b.cityRef?.nameEn || '—'}{b.countryCode ? ` (${b.countryCode})` : ''}{b.phone ? ` — ${b.phone}` : ''}
+                            </p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`حذف الفرع «${b.name}»؟`)) return;
+                              try {
+                                await api.delete(`/clients/${c.id}/branches/${b.id}`);
+                                refetch();
+                              } catch (err: any) {
+                                alert(err?.response?.data?.message || 'تعذر حذف الفرع');
+                              }
+                            }}
+                            className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
+                            title="حذف الفرع"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {(b.contacts || []).length > 0 && (
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1.5">
+                            <div className="text-[10px] font-bold text-slate-500">مسؤولو الفرع ({b.contacts.length}):</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {b.contacts.map((ct: any) => (
+                                <div key={ct.id} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-[11px] flex items-center justify-between gap-2">
+                                  <div>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{ct.name}</span>
+                                    {ct.title && <span className="text-slate-400"> — {ct.title}</span>}
+                                  </div>
+                                  <span dir="ltr" className="text-slate-500 font-mono">{ct.mobile || ct.phone || ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )) : (
+                      <p className="text-xs text-slate-400 py-6 text-center">
+                        لا توجد فروع مسجلة — أضف المقر الرئيسي وأماكن التحميل ليستخدمها الـ Operations في أوامر التحميل.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'calls' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2">
@@ -557,37 +679,69 @@ export const ClientDetails: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 5: Offers & Quotations History */}
+              {/* TAB 5: Offers & Quotations History (دورة العرض §3) */}
               {activeTab === 'offers' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2">
-                    <span className="text-xs font-medium text-slate-500">عروض الأسعار التاريخية المقدمة للعميل</span>
-                    <Link
-                      to="/quotations"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition"
+                    <span className="text-xs font-medium text-slate-500">
+                      دورة العرض: طلب ← تسعير (Completed) ← قبول ← فتح ملف العملية وترقية العميل
+                    </span>
+                    <button
+                      onClick={() => setShowOfferModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      إنشاء عرض سعر جديد
-                    </Link>
+                      عرض سعر جديد (New Offer)
+                    </button>
                   </div>
 
                   <div className="space-y-2">
                     {c.offers?.map((offer: any) => (
-                      <div key={offer.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-center justify-between">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold font-mono text-brand-600 dark:text-brand-400">{offer.quoteNumber}</span>
-                            <span className="text-xs text-slate-700 dark:text-slate-200 font-medium">({offer.service})</span>
+                      <div key={offer.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-center justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Link to={`/quotations/${offer.id}`} className="text-xs font-bold font-mono text-brand-600 dark:text-brand-400 hover:underline">
+                              {offer.quotationNumber}
+                            </Link>
+                            <StatusBadge status={offer.status} />
+                            {(offer.serviceTypes || []).length > 0 && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                {(offer.serviceTypes || []).map((s: string) => ({ shipping: 'شحن', clearance: 'تخليص', transport: 'نقل' } as any)[s] || s).join(' + ')}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-slate-400">{offer.origin} ➔ {offer.destination}</p>
-                          <span className="text-[10px] text-slate-400 block font-mono">صالح حتى: {offer.validUntil}</span>
+                          {/* Line Summary (§5): Qty x Container | From: POL -> To: POD | Pickup */}
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {offer.containerQty ? `${Number(offer.containerQty)}x${offer.containerType || ''}` : ''}
+                            {offer.originPort ? ` | من: ${offer.originPort.nameEn}` : ''}
+                            {offer.destinationPort ? ` ← إلى: ${offer.destinationPort.nameEn}` : ''}
+                            {offer.pickupBranch ? ` | تحميل: ${offer.pickupBranch.name}` : ''}
+                          </p>
+                          {offer.goodsDescription && (
+                            <p className="text-[11px] text-slate-400">{offer.goodsDescription}</p>
+                          )}
                         </div>
 
-                        <div className="text-end space-y-1">
+                        <div className="text-end space-y-1 shrink-0">
                           <span className="text-xs font-bold font-mono text-slate-900 dark:text-white block">
-                            {offer.totalAmount.toLocaleString()} {offer.currency}
+                            {Number(offer.totalSell || 0).toLocaleString()} {offer.currency}
                           </span>
-                          <StatusBadge status={offer.status} />
+                          <div className="flex items-center gap-2 justify-end">
+                            {offer.pdfUrl && (
+                              <a href={offer.pdfUrl} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:underline">
+                                View PDF
+                              </a>
+                            )}
+                            {offer.status !== 'accepted' && (
+                              <button
+                                onClick={() => handleAcceptOffer(offer.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow-sm transition cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                قبول العرض
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -599,48 +753,15 @@ export const ClientDetails: React.FC = () => {
               {activeTab === 'attachments' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2">
-                    <span className="text-xs font-medium text-slate-500">المستندات الرسمية وتواريخ انتهاء الصلاحية</span>
-                    <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 transition">
-                      <Plus className="w-3.5 h-3.5" />
-                      رفع وثيقة جديدة
-                    </button>
+                    <span className="text-xs font-medium text-slate-500">
+                      المستندات الرسمية (سجل تجاري / بطاقة ضريبية / سجل مستوردين / أخرى) — مع إمكانية تسمية وتعديل اسم الأتاتش وتحديد تاريخ انتهاء الصلاحية
+                    </span>
                   </div>
-
-                  <div className="space-y-3">
-                    {c.attachments?.map((att: any) => {
-                      const expDate = new Date(att.expiresAt);
-                      const daysLeft = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                      const isExpired = daysLeft <= 0;
-                      const isExpiringSoon = daysLeft > 0 && daysLeft <= 60;
-
-                      return (
-                        <div key={att.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-red-50 dark:bg-red-950/50 text-red-600 flex items-center justify-center shrink-0">
-                              <FileText className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900 dark:text-white text-xs">{att.name}</h4>
-                              <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                                <span>{att.size}</span>
-                                <span className={`flex items-center gap-1 font-mono ${
-                                  isExpired ? 'text-red-600 font-bold' : isExpiringSoon ? 'text-amber-600 font-bold' : 'text-slate-500'
-                                }`}>
-                                  <Calendar className="w-3 h-3" />
-                                  تاريخ الانتهاء: {att.expiresAt}
-                                  {isExpired && ' (منتهية الصلاحية ❌)'}
-                                  {isExpiringSoon && ` (متبقي ${daysLeft} يوم ⚠️)`}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <button className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                            <ArrowUpRight className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <DocsSection
+                    clientId={c.id}
+                    docs={c.entityDocuments || []}
+                    onRefresh={refetch}
+                  />
                 </div>
               )}
             </div>
@@ -693,8 +814,8 @@ export const ClientDetails: React.FC = () => {
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">بيانات الشركة والتصنيف</h3>
             <div className="space-y-3 text-xs">
               <InfoRow icon={Building2} label="الاسم التجاري" value={c.nameAr} />
-              <InfoRow icon={CreditCard} label="البطاقة الضريبية" value={c.taxCardNumber} mono />
-              <InfoRow icon={FileText} label="السجل التجاري" value={c.commercialRegister} mono />
+              <InfoRow icon={CreditCard} label="البطاقة الضريبية" value={c.taxCardNumber || c.taxNumber} mono />
+              <InfoRow icon={FileText} label="السجل التجاري" value={c.commercialReg || c.commercialRegister} mono />
               <InfoRow icon={Users} label="مسؤول المبيعات المباشر" value={c.salesPerson} />
               <InfoRow icon={Mail} label="البريد الإلكتروني" value={c.email} />
               <InfoRow icon={Phone} label="الهاتف" value={c.phone} dir="ltr" />
@@ -728,6 +849,28 @@ export const ClientDetails: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* New Offer Modal (دورة العرض §3/§4) */}
+      <NewOfferModal
+        isOpen={showOfferModal}
+        onClose={() => setShowOfferModal(false)}
+        onSuccess={() => refetch()}
+        clientId={c.id}
+        clientName={c.name}
+        branches={c.branches || []}
+      />
+
+      {showProfileModal && (
+        <ActiveClientProfileModal
+          client={c}
+          mode={c.status === 'prospect' ? 'convert' : 'edit'}
+          onClose={() => setShowProfileModal(false)}
+          onSaved={() => {
+            setShowProfileModal(false);
+            refetch();
+          }}
+        />
+      )}
 
       {/* Log Activity / Meeting / Reminder Modal */}
       {showLogModal && (
@@ -857,3 +1000,97 @@ const InfoRow: React.FC<{ icon: React.FC<any>; label: string; value: string; mon
     </div>
   </div>
 );
+
+/** إضافة فرع / عنوان تحميل (§5ب) — زر + نافذة إدخال سريعة */
+const AddBranchButton: React.FC<{ clientId: string; onSaved: () => void }> = ({ clientId, onSaved }) => {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', city: '', phone: '', isLoadingAddress: false });
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) { alert('اسم الفرع مطلوب'); return; }
+    setSaving(true);
+    try {
+      await api.post(`/clients/${clientId}/branches`, {
+        name: form.name.trim(),
+        address: form.address.trim() || undefined,
+        city: form.city.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        isLoadingAddress: form.isLoadingAddress,
+      });
+      setOpen(false);
+      setForm({ name: '', address: '', city: '', phone: '', isLoadingAddress: false });
+      onSaved();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'تعذر إضافة الفرع');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">
+        <Plus className="w-3.5 h-3.5" />
+        إضافة فرع / عنوان تحميل
+      </button>
+    );
+  }
+
+  return (
+    <Modal
+      isOpen={true}
+      onClose={() => setOpen(false)}
+      title="إضافة فرع / عنوان تحميل جديد"
+      subtitle="المقر الرئيسي أو المخازن أو أماكن التحميل — تظهر مباشرة في نافذة عرض السعر وأوامر التحميل"
+    >
+      <form onSubmit={submit} className="space-y-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">اسم الفرع *</label>
+            <input dir="rtl" required placeholder="مثال: المقر الرئيسي / مخزن أكتوبر" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+          </div>
+          <div>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">المدينة</label>
+            <input dir="rtl" placeholder="مثال: مدينة 6 أكتوبر" value={form.city}
+              onChange={(e) => setForm({ ...form, city: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+          </div>
+          <div>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">رقم الهاتف</label>
+            <input dir="ltr" placeholder="+20 2 000 0000" value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isLoadingAddress}
+                onChange={(e) => setForm({ ...form, isLoadingAddress: e.target.checked })} />
+              <span className="font-semibold text-slate-600 dark:text-slate-300">مكان تحميل (Loading Address)</span>
+            </label>
+          </div>
+        </div>
+        <div>
+          <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">العنوان التفصيلي</label>
+          <textarea rows={2} dir="rtl" placeholder="المنطقة الصناعية، شارع ...، مبنى ..." value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" onClick={() => setOpen(false)}
+            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+            إلغاء
+          </button>
+          <button type="submit" disabled={saving}
+            className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] disabled:opacity-60 text-white font-bold transition shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer">
+            {saving ? 'جارٍ الحفظ...' : 'إضافة الفرع'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};

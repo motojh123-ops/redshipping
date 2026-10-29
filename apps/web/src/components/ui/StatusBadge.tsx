@@ -32,6 +32,9 @@ const STATUS_CONFIG: Record<string, { label: string; variant: BadgeVariant }> = 
   // Quotation statuses
   draft: { label: 'مسودة', variant: 'neutral' },
   sent: { label: 'مُرسل للعميل', variant: 'info' },
+  completed: { label: 'تسعير مكتمل (Completed)', variant: 'success' },
+  accepted: { label: 'مقبول — عملية مفتوحة', variant: 'success' },
+  rejected: { label: 'مرفوض', variant: 'danger' },
   negotiation: { label: 'قيد التفاوض', variant: 'warning' },
   won: { label: 'مقبول (Won)', variant: 'success' },
   lost: { label: 'مرفوض', variant: 'danger' },
@@ -55,6 +58,8 @@ const STATUS_CONFIG: Record<string, { label: string; variant: BadgeVariant }> = 
   // Generic
   active: { label: 'نشط', variant: 'success' },
   inactive: { label: 'غير نشط', variant: 'neutral' },
+  prospect: { label: 'مستهدف (Prospect)', variant: 'warning' },
+  blacklisted: { label: 'قائمة سوداء', variant: 'danger' },
 };
 
 const VARIANT_CONFIG: Record<BadgeVariant, { pill: string; dot: string }> = {

@@ -29,30 +29,50 @@ import {
   Table as TableIcon,
   Briefcase,
   Layers,
+  Pencil,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { CreateClientModal } from './CreateClientModal';
+import { ActiveClientProfileModal } from '../masters/ClientsMasterPage';
 import { exportToCsv } from '../../utils/exportUtils';
 
 export interface ClientItem {
   id: string;
   name: string;
-  tradeName?: string;
-  type: 'actual' | 'lead';
-  category: string;
-  status: 'active' | 'inactive' | 'qualified' | 'prospect';
-  commercialReg?: string;
-  taxNumber?: string;
-  city: string;
-  country: string;
-  phone?: string;
-  email?: string;
-  contactName?: string;
-  contactTitle?: string;
-  commodityInterest?: string;
-  salesRep?: string;
+  nameAr?: string | null;
+  tradeName?: string | null;
+  /** legacy UI flag — the real source of truth is `status` (جلسة 3) */
+  type?: 'actual' | 'lead';
+  category?: string | null;
+  status: 'active' | 'inactive' | 'prospect' | 'blacklisted';
+  commercialReg?: string | null;
+  taxNumber?: string | null;
+  city?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contactName?: string | null;
+  contactTitle?: string | null;
+  commodityInterest?: string | null;
+
   totalShipments?: number;
   totalRevenue?: number;
+  notes?: string | null;
+  /** from API include (الشكل الحقيقي القادم من الـ backend) */
+  companyType?: { id: string; code: string; nameEn: string; nameAr?: string | null } | null;
+  industrySector?: { id: string; code: string; nameEn: string; nameAr?: string | null } | null;
+  contacts?: Array<{
+    id: string;
+    name: string;
+    title?: string | null;
+    phone?: string | null;
+    mobile?: string | null;
+    email?: string | null;
+    isPrimary?: boolean;
+  }>;
+  /** الـ API بيرجع object مش string */
+  salesRep?: { id: string; name: string; email?: string } | null;
+  _count?: { quotations?: number; shipments?: number; branches?: number };
   createdAt: string;
 }
 
@@ -64,18 +84,15 @@ export const ClientList: React.FC = () => {
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'actual' | 'lead'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'prospect' | 'active'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  // Conversion modal states
+  // Conversion / Full Profile modal state (شجرة الفروع والمسؤولين + المرفقات وتواريخ الانتهاء)
   const [convertingLead, setConvertingLead] = useState<ClientItem | null>(null);
-  const [taxNumber, setTaxNumber] = useState('');
-  const [commercialReg, setCommercialReg] = useState('');
-  const [city, setCity] = useState('');
-  const [isConverting, setIsConverting] = useState(false);
+  const [editingActiveClient, setEditingActiveClient] = useState<ClientItem | null>(null);
 
   const fetchClients = async () => {
     setLoading(true);
@@ -102,9 +119,9 @@ export const ClientList: React.FC = () => {
   // Filtered Clients
   const filteredClients = useMemo(() => {
     return clients.filter((c) => {
-      if (activeTab === 'actual' && c.type !== 'actual') return false;
-      if (activeTab === 'lead' && c.type !== 'lead') return false;
-      if (categoryFilter !== 'all' && !c.category.includes(categoryFilter)) return false;
+      if (activeTab === 'prospect' && c.status !== 'prospect') return false;
+      if (activeTab === 'active' && c.status !== 'active') return false;
+      if (categoryFilter !== 'all' && !String(c.category || '').includes(categoryFilter)) return false;
 
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
@@ -112,7 +129,7 @@ export const ClientList: React.FC = () => {
         const matchTrade = c.tradeName?.toLowerCase().includes(term);
         const matchTax = c.taxNumber?.toLowerCase().includes(term);
         const matchCR = c.commercialReg?.toLowerCase().includes(term);
-        const matchCity = c.city.toLowerCase().includes(term);
+        const matchCity = String(c.city || '').toLowerCase().includes(term);
         const matchPhone = c.phone?.toLowerCase().includes(term);
         const matchContact = c.contactName?.toLowerCase().includes(term);
         if (!matchName && !matchTrade && !matchTax && !matchCR && !matchCity && !matchPhone && !matchContact) {
@@ -124,45 +141,13 @@ export const ClientList: React.FC = () => {
   }, [clients, activeTab, categoryFilter, searchTerm]);
 
   // Statistics
-  const actualCount = clients.filter((c) => c.type === 'actual').length;
-  const leadCount = clients.filter((c) => c.type === 'lead').length;
+  const actualCount = clients.filter((c) => c.status === 'active').length;
+  const leadCount = clients.filter((c) => c.status === 'prospect').length;
   const totalRevenue = clients.reduce((acc, c) => acc + (c.totalRevenue || 0), 0);
 
   // Conversion Handler
   const handleStartConversion = (lead: ClientItem) => {
     setConvertingLead(lead);
-    setCity(lead.city || 'مدينة 6 أكتوبر');
-    setTaxNumber(lead.taxNumber || '');
-    setCommercialReg(lead.commercialReg || '');
-  };
-
-  const handleConfirmConversion = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!convertingLead) return;
-    if (!taxNumber.trim() || !commercialReg.trim()) {
-      alert('الرجاء إدخال الرقم الضريبي ورقم السجل التجاري لتحويل العميل إلى عميل رسمي معتمد');
-      return;
-    }
-
-    setIsConverting(true);
-    setTimeout(() => {
-      setClients((prev) =>
-        prev.map((c) =>
-          c.id === convertingLead.id
-            ? {
-                ...c,
-                type: 'actual',
-                status: 'active',
-                taxNumber: taxNumber.trim(),
-                commercialReg: commercialReg.trim(),
-                city: city.trim(),
-              }
-            : c,
-        ),
-      );
-      setIsConverting(false);
-      setConvertingLead(null);
-    }, 400);
   };
 
   // Excel Export
@@ -171,15 +156,15 @@ export const ClientList: React.FC = () => {
       { header: 'كود المنشأة', accessor: (c) => c.id },
       { header: 'اسم الشركة', accessor: (c) => c.name },
       { header: 'الاسم التجاري', accessor: (c) => c.tradeName || '—' },
-      { header: 'النوع والوضعية', accessor: (c) => (c.type === 'actual' ? 'عميل فعلي رسمي' : 'ليد محتمل (Prospect)') },
-      { header: 'التصنيف التجاري', accessor: (c) => c.category },
+      { header: 'النوع والوضعية', accessor: (c) => (c.status === 'active' ? 'عميل فعلي (Actual)' : c.status === 'prospect' ? 'عميل مستهدف (Prospect)' : c.status) },
+      { header: 'التصنيف التجاري', accessor: (c) => c.category || '—' },
       { header: 'الحالة', accessor: (c) => c.status },
       { header: 'السجل التجاري', accessor: (c) => c.commercialReg || '—' },
       { header: 'الرقم الضريبي', accessor: (c) => c.taxNumber || '—' },
       { header: 'المحافظة / المدينة', accessor: (c) => c.city },
-      { header: 'مسؤول التواصل', accessor: (c) => c.contactName || '—' },
+      { header: 'مسؤول التواصل', accessor: (c) => c.contactName || c.contacts?.[0]?.name || '—' },
       { header: 'رقم الهاتف', accessor: (c) => c.phone || '—' },
-      { header: 'مسؤول المبيعات', accessor: (c) => c.salesRep || '—' },
+      { header: 'مسؤول المبيعات', accessor: (c) => (typeof c.salesRep === 'object' ? c.salesRep?.name : c.salesRep) || '—' },
       { header: 'إجمالي الشحنات', accessor: (c) => c.totalShipments || 0 },
       { header: 'إجمالي الإيرادات (EGP)', accessor: (c) => c.totalRevenue || 0 },
     ]);
@@ -336,26 +321,26 @@ export const ClientList: React.FC = () => {
             جميع الحسابات ({clients.length})
           </button>
           <button
-            onClick={() => setActiveTab('actual')}
+            onClick={() => setActiveTab('active')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'actual'
+              activeTab === 'active'
                 ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>عملاء رسميين ({actualCount})</span>
+            <span>العملاء الفعليون ({actualCount})</span>
           </button>
           <button
-            onClick={() => setActiveTab('lead')}
+            onClick={() => setActiveTab('prospect')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'lead'
+              activeTab === 'prospect'
                 ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>ليدز ومحتملين ({leadCount})</span>
+            <span>المستهدفون / Prospects ({leadCount})</span>
           </button>
         </div>
 
@@ -439,7 +424,7 @@ export const ClientList: React.FC = () => {
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
           {filteredClients.map((client) => {
-            const isActual = client.type === 'actual';
+            const isActual = client.status === 'active';
 
             return (
               <div
@@ -476,7 +461,7 @@ export const ClientList: React.FC = () => {
                           </span>
                         )}
                         <span className="text-xs text-brand-600 dark:text-brand-400 font-bold block mt-1">
-                          {client.category}
+                          {client.category || client.companyType?.nameAr || client.companyType?.nameEn || '—'}
                         </span>
                       </div>
                     </div>
@@ -486,22 +471,22 @@ export const ClientList: React.FC = () => {
                       {isActual ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>معتمد ✓</span>
+                          <span>عميل فعلي ✓</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                           <Sparkles className="w-3.5 h-3.5" />
-                          <span>ليد محتمل</span>
+                          <span>مستهدف (Prospect)</span>
                         </span>
                       )}
                     </div>
                   </div>
 
                   {/* Commodity / Demand for Leads */}
-                  {!isActual && client.commodityInterest && (
+                  {!isActual && (client.commodityInterest || client.notes) && (
                     <div className="p-3 rounded-2xl bg-amber-100/50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-xs leading-relaxed border border-amber-200/60 dark:border-amber-800/40">
                       <span className="font-bold block mb-0.5">الاهتمام التشغيلي للشحنات:</span>
-                      <span>{client.commodityInterest}</span>
+                      <span>{client.commodityInterest || client.notes}</span>
                     </div>
                   )}
 
@@ -524,14 +509,23 @@ export const ClientList: React.FC = () => {
 
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span>{client.city}</span>
+                      <span>{client.city || '—'}</span>
                     </div>
 
-                    {client.contactName && (
+                    {client.contacts && client.contacts.length > 0 && (
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-slate-400 shrink-0" />
                         <span>
-                          {client.contactName} ({client.contactTitle || 'مسؤول الاتصال'})
+                          {client.contacts[0].name} ({client.contacts[0].title || 'مسؤول الاتصال'})
+                          {client.contacts.length > 1 && ` +${client.contacts.length - 1} مسؤول`}
+                        </span>
+                      </div>
+                    )}
+                    {(client._count?.branches || 0) > 0 && (
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Layers className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>
+                          {client._count?.branches} فرع • {client.contacts?.length || 0} مسؤول اتصال
                         </span>
                       </div>
                     )}
@@ -562,14 +556,23 @@ export const ClientList: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {!isActual && (
+                    {!isActual ? (
                       <button
                         onClick={() => handleStartConversion(client)}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                        title="تحويل الليد إلى عميل رسمي معتمد"
+                        title="تحويل الليد إلى عميل رسمي معتمد مع الفروع والمسؤولين والمرفقات"
                       >
                         <FileCheck2 className="w-3.5 h-3.5" />
                         <span>اعتماد كعميل رسمي</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingActiveClient(client)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-[#FF5E1E]/10 text-slate-700 dark:text-slate-300 hover:text-[#FF5E1E] text-xs font-bold transition cursor-pointer"
+                        title="تعديل الفروع والمسؤولين والمرفقات"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>الفروع والمرفقات</span>
                       </button>
                     )}
 
@@ -616,17 +619,17 @@ export const ClientList: React.FC = () => {
                       {c.tradeName && <div className="text-[10px] text-slate-400 font-mono">{c.tradeName}</div>}
                     </td>
                     <td className="py-3.5 px-4">
-                      {c.type === 'actual' ? (
+                      {c.status === 'active' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          معتمد ✓
+                          فعلي ✓
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-                          ليد محتمل
+                          مستهدف
                         </span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">{c.category}</td>
+                    <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">{c.category || '—'}</td>
                     <td className="py-3.5 px-4 font-mono text-slate-700 dark:text-slate-300">
                       {c.commercialReg ? (
                         <div>
@@ -637,12 +640,12 @@ export const ClientList: React.FC = () => {
                         <span className="text-amber-600 dark:text-amber-400 text-[11px]">غير مستكمل</span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{c.city}</td>
+                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{c.city || '—'}</td>
                     <td className="py-3.5 px-4 text-slate-800 dark:text-slate-200">
                       <div>{c.contactName || '—'}</div>
                       {c.phone && <div className="text-[10px] text-slate-400 font-mono">{c.phone}</div>}
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{c.salesRep || 'أحمد الشريف'}</td>
+                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{(typeof c.salesRep === 'object' ? c.salesRep?.name : c.salesRep) || '—'}</td>
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
                       {c.totalRevenue ? `${(c.totalRevenue / 1000).toLocaleString()}K EGP` : '—'}
                     </td>
@@ -665,89 +668,29 @@ export const ClientList: React.FC = () => {
         </div>
       )}
 
-      {/* ── 5. Convert Lead to Actual Client Modal ── */}
+      {/* ── 5. Convert Lead to Actual Client / Edit Active Client Modal ── */}
       {convertingLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div className="flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400">
-                <FileCheck2 className="w-6 h-6" />
-                <h3 className="text-lg font-black">تحويل الليد إلى عميل رسمي معتمد</h3>
-              </div>
-              <button
-                onClick={() => setConvertingLead(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold transition cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+        <ActiveClientProfileModal
+          client={convertingLead as any}
+          mode="convert"
+          onClose={() => setConvertingLead(null)}
+          onSaved={() => {
+            setConvertingLead(null);
+            fetchClients();
+          }}
+        />
+      )}
 
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 text-xs text-emerald-900 dark:text-emerald-300 leading-relaxed font-medium">
-              تحويل <strong className="font-bold">{convertingLead.name}</strong> إلى عميل رسمي سيمكنك من إصدار عروض أسعار رسمية وفواتير ضريبية وفتح ملفات شحن وربط نظام نافذة ACI.
-            </div>
-
-            <form onSubmit={handleConfirmConversion} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  الرقم الضريبي (Tax ID) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: 102-993-882"
-                  value={taxNumber}
-                  onChange={(e) => setTaxNumber(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-xs font-mono focus:ring-2 focus:ring-[#FF5E1E]/50 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  رقم السجل التجاري (Commercial Reg) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: CR-88219"
-                  value={commercialReg}
-                  onChange={(e) => setCommercialReg(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-xs font-mono focus:ring-2 focus:ring-[#FF5E1E]/50 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  المدينة والمقر الرئيسي
-                </label>
-                <input
-                  type="text"
-                  placeholder="مثال: المنطقة الصناعية، مدينة 6 أكتوبر"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-xs focus:ring-2 focus:ring-[#FF5E1E]/50 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setConvertingLead(null)}
-                  className="px-5 py-2.5 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={isConverting}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{isConverting ? 'جاري التحويل...' : 'اعتماد وتحويل العميل'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {editingActiveClient && (
+        <ActiveClientProfileModal
+          client={editingActiveClient as any}
+          mode="edit"
+          onClose={() => setEditingActiveClient(null)}
+          onSaved={() => {
+            setEditingActiveClient(null);
+            fetchClients();
+          }}
+        />
       )}
 
       {/* ── 6. Create Client Modal ── */}

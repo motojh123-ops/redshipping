@@ -22,6 +22,8 @@ export class MastersService {
     units: 'measurementUnit',
     'logistics-categories': 'logisticsCategory',
     'port-types': 'portType',
+    'company-types': 'companyType',
+    'industry-sectors': 'industrySector',
   };
 
   private static readonly LIBRARY_DEFAULTS: Record<string, Array<{ code: string; nameEn: string; nameAr: string }>> = {
@@ -85,11 +87,33 @@ export class MastersService {
       { code: 'land_crossing', nameEn: 'Land Border Crossing', nameAr: 'منفذ بري حدودي' },
       { code: 'freezone', nameEn: 'Free Zone Port', nameAr: 'ميناء منطقة حرة' },
     ],
+    // ── Clients & Ops (جلسة 3 — وثيقة العملاء والعمليات §2) ──
+    'company-types': [
+      { code: 'factory', nameEn: 'Factory', nameAr: 'مصنع' },
+      { code: 'trader', nameEn: 'Trader', nameAr: 'تاجر' },
+      { code: 'distributor', nameEn: 'Distributor', nameAr: 'موزع' },
+      { code: 'importer', nameEn: 'Importer', nameAr: 'مستورد' },
+      { code: 'exporter', nameEn: 'Exporter', nameAr: 'مصدر' },
+      { code: 'service_provider', nameEn: 'Service Provider', nameAr: 'مقدم خدمات' },
+    ],
+    'industry-sectors': [
+      { code: 'food', nameEn: 'Food & Beverages', nameAr: 'مواد غذائية' },
+      { code: 'engineering', nameEn: 'Engineering', nameAr: 'هندسي' },
+      { code: 'chemical', nameEn: 'Chemicals', nameAr: 'كيميائي' },
+      { code: 'textile', nameEn: 'Textiles', nameAr: 'منسوجات' },
+      { code: 'electronics', nameEn: 'Electronics', nameAr: 'إلكترونيات' },
+      { code: 'pharma', nameEn: 'Pharmaceuticals', nameAr: 'أدوية ومستلزمات طبية' },
+      { code: 'agriculture', nameEn: 'Agriculture', nameAr: 'زراعي' },
+      { code: 'construction', nameEn: 'Construction & Building Materials', nameAr: 'بناء ومواد إنشاءات' },
+      { code: 'automotive', nameEn: 'Automotive', nameAr: 'سيارات وقطع غيار' },
+      { code: 'retail', nameEn: 'Retail', nameAr: 'تجارة تجزئة' },
+      { code: 'other', nameEn: 'Other', nameAr: 'أخرى' },
+    ],
   };
 
   private libraryModel(lib: string): any {
     const model = MastersService.LIBRARY_MODELS[lib];
-    if (!model) throw new BadRequestException(`Unknown library "${lib}" — expected units | logistics-categories | port-types`);
+    if (!model) throw new BadRequestException(`Unknown library "${lib}" — expected units | logistics-categories | port-types | company-types | industry-sectors`);
     return (this.prisma as any)[model];
   }
 
@@ -657,7 +681,7 @@ export class MastersService {
   // ═══════════════ EXPIRY ALERTS FEED (محرك تنبيهات تواريخ الانتهاء — Alarms) ═══════════════
 
   async getExpiryAlerts(tenantId: string) {
-    const [vendors, drivers] = await Promise.all([
+    const [vendors, drivers, clients, clientDocs] = await Promise.all([
       this.prisma.vendor.findMany({
         where: { companyId: tenantId, isActive: true },
         select: { id: true, name: true, commercialReg: true, crExpiry: true, taxCardNumber: true, taxCardExpiry: true },
@@ -665,6 +689,21 @@ export class MastersService {
       this.prisma.driver.findMany({
         where: { companyId: tenantId, isActive: true },
         select: { id: true, name: true, licenseNumber: true, licenseExpiry: true, truckPlate: true },
+      }),
+      // ── Clients & Ops (جلسة 3 §5): سجل تجاري / بطاقة ضريبية / سجل مستوردين ──
+      this.prisma.client.findMany({
+        where: { companyId: tenantId, status: { notIn: ['inactive', 'blacklisted'] } },
+        select: {
+          id: true, name: true,
+          commercialReg: true, commercialRegExpiry: true,
+          taxCardNumber: true, taxCardExpiry: true,
+          importerRegistryNumber: true, importerRegistryExpiry: true,
+        },
+      }),
+      // Uploaded official documents carrying an expiry date (مرفقات بتاريخ انتهاء)
+      this.prisma.entityDocument.findMany({
+        where: { companyId: tenantId, entityType: 'client', expiryDate: { not: null } },
+        select: { id: true, entityId: true, category: true, fileName: true, expiryDate: true },
       }),
     ]);
 
@@ -700,6 +739,42 @@ export class MastersService {
           extra: d.truckPlate || undefined,
         });
       }
+    }
+    const clientNameOf = new Map(clients.map((c: any) => [c.id, c.name]));
+    for (const c of clients) {
+      if (c.commercialRegExpiry) {
+        const days = daysOf(c.commercialRegExpiry);
+        alerts.push({
+          type: 'client_commercial_reg', entityType: 'client', entityId: c.id, entityName: c.name,
+          labelAr: 'انتهاء السجل التجاري', labelEn: 'Commercial Registration Expiry',
+          reference: c.commercialReg, expiryDate: c.commercialRegExpiry, daysRemaining: days, level: levelOf(days),
+        });
+      }
+      if (c.taxCardExpiry) {
+        const days = daysOf(c.taxCardExpiry);
+        alerts.push({
+          type: 'client_tax_card', entityType: 'client', entityId: c.id, entityName: c.name,
+          labelAr: 'انتهاء البطاقة الضريبية', labelEn: 'Tax Card Expiry',
+          reference: c.taxCardNumber, expiryDate: c.taxCardExpiry, daysRemaining: days, level: levelOf(days),
+        });
+      }
+      if (c.importerRegistryExpiry) {
+        const days = daysOf(c.importerRegistryExpiry);
+        alerts.push({
+          type: 'client_importer_registry', entityType: 'client', entityId: c.id, entityName: c.name,
+          labelAr: 'انتهاء سجل المستوردين / المصدرين', labelEn: 'Importer/Exporter Registry Expiry',
+          reference: c.importerRegistryNumber, expiryDate: c.importerRegistryExpiry, daysRemaining: days, level: levelOf(days),
+        });
+      }
+    }
+    for (const doc of clientDocs) {
+      const days = daysOf(doc.expiryDate as Date);
+      alerts.push({
+        type: `client_doc_${doc.category}`, entityType: 'client', entityId: doc.entityId,
+        entityName: clientNameOf.get(doc.entityId) || '—',
+        labelAr: 'انتهاء صلاحية مستند رسمي', labelEn: 'Official Document Expiry',
+        reference: doc.fileName, expiryDate: doc.expiryDate, daysRemaining: days, level: levelOf(days),
+      });
     }
     return alerts.sort((a, b) => a.daysRemaining - b.daysRemaining);
   }
@@ -764,7 +839,8 @@ export class MastersService {
   // Cloudflare Workers have no filesystem (4MB practical limit per file).
 
   private static readonly DOC_CATEGORIES = new Set([
-    'commercial_reg', 'tax_card', 'bl', 'packing_list', 'commercial_invoice',
+    'commercial_reg', 'tax_card', 'importer_registry', 'exporter_registry',
+    'bl', 'packing_list', 'commercial_invoice',
     'acid_cert', 'cert_of_origin', 'eur1', 'customs_declaration',
     'delivery_order', 'disbursement_receipt', 'other',
   ]);
@@ -774,6 +850,7 @@ export class MastersService {
     shipping_line: 'shippingLine',
     overseas_agent: 'overseasAgent',
     driver: 'driver',
+    client: 'client',
   };
 
   private async assertDocEntity(tenantId: string, entityType: string, entityId: string) {
@@ -844,6 +921,38 @@ export class MastersService {
     if (!doc) throw new NotFoundException('Document not found');
     if (!doc.data) throw new NotFoundException('Document payload is not stored in the database');
     return { fileName: doc.fileName, mimeType: doc.mimeType, data: doc.data };
+  }
+
+  async updateEntityDocument(tenantId: string, id: string, data: any) {
+    const doc = await this.prisma.entityDocument.findFirst({ where: { id, companyId: tenantId } });
+    if (!doc) throw new NotFoundException('Document not found');
+
+    const payload: any = {};
+    if (data?.fileName !== undefined) {
+      const name = String(data.fileName || '').trim();
+      if (!name) throw new BadRequestException('اسم المرفق مطلوب');
+      payload.fileName = name.slice(0, 250);
+    }
+    if (data?.category !== undefined) {
+      const cat = String(data.category || '').trim();
+      if (!MastersService.DOC_CATEGORIES.has(cat)) {
+        throw new BadRequestException('Invalid document category');
+      }
+      payload.category = cat as any;
+    }
+    if (data?.expiryDate !== undefined) {
+      payload.expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+    }
+
+    return this.prisma.entityDocument.update({
+      where: { id },
+      data: payload,
+      select: {
+        id: true, entityType: true, entityId: true, category: true,
+        fileName: true, fileSize: true, mimeType: true,
+        expiryDate: true, createdAt: true,
+      },
+    });
   }
 
   async deleteEntityDocument(tenantId: string, id: string) {

@@ -42,6 +42,7 @@ export enum Incoterm {
 export enum QuotationStatus {
   DRAFT = 'draft',
   SENT = 'sent',
+  COMPLETED = 'completed',
   ACCEPTED = 'accepted',
   REJECTED = 'rejected',
   EXPIRED = 'expired',

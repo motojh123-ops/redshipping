@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '../../components/ui/Modal';
-import { Check, Building2, User, Sparkles, Phone, FileText } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import { api } from '../../services/api';
 
 interface CreateClientModalProps {
@@ -9,348 +9,198 @@ interface CreateClientModalProps {
   onSuccess: () => void;
 }
 
-export const CreateClientModal: React.FC<CreateClientModalProps> = ({
-  isOpen,
-  onClose,
-  onSuccess,
-}) => {
+const COUNTRIES = [
+  { code: 'EG', nameAr: 'مصر' },
+  { code: 'SA', nameAr: 'السعودية' },
+  { code: 'AE', nameAr: 'الإمارات' },
+  { code: 'TR', nameAr: 'تركيا' },
+  { code: 'CN', nameAr: 'الصين' },
+  { code: 'IN', nameAr: 'الهند' },
+  { code: 'JO', nameAr: 'الأردن' },
+  { code: 'LB', nameAr: 'لبنان' },
+];
+
+/** الإضافة السريعة الموحدة (وثيقة العملاء والعمليات §1/§2) —
+ *  كل إدخال يبدأ «مستهدف (Prospect)» بدون سجل تجاري أو بطاقة ضريبية،
+ *  والترقية إلى «عميل فعلي» تتم تلقائياً عند قبول أول عرض سعر. */
+export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
-  const [clientType, setClientType] = useState<'actual' | 'lead'>('actual');
+  const [companyTypes, setCompanyTypes] = useState<any[]>([]);
+  const [sectors, setSectors] = useState<any[]>([]);
+  const [cities, setCities] = useState<any[]>([]);
 
-  // Client Company
-  const [name, setName] = useState('');
-  const [tradeName, setTradeName] = useState('');
-  const [taxNumber, setTaxNumber] = useState('');
-  const [commercialReg, setCommercialReg] = useState('');
-  const [category, setCategory] = useState('مصنع ومستورد خامات');
-  const [city, setCity] = useState('مدينة 6 أكتوبر / الجيزة');
-  const [address, setAddress] = useState('');
-  const [commodityInterest, setCommodityInterest] = useState('');
-  const [notes, setNotes] = useState('');
+  const [form, setForm] = useState({
+    name: '', nameAr: '', companyTypeId: '', industrySectorId: '',
+    countryCode: 'EG', cityId: '', cityManual: '',
+    phone: '', email: '', website: '', personInCharge: '', personMobile: '', notes: '',
+  });
 
-  // Primary Contact
-  const [contactName, setContactName] = useState('');
-  const [contactTitle, setContactTitle] = useState('مدير المشتريات واللوجستيات');
-  const [contactMobile, setContactMobile] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
+  useEffect(() => {
+    if (!isOpen) return;
+    api.get('/masters/libraries/company-types').then((r: any) => setCompanyTypes(Array.isArray(r) ? r : r?.data || [])).catch(() => {});
+    api.get('/masters/libraries/industry-sectors').then((r: any) => setSectors(Array.isArray(r) ? r : r?.data || [])).catch(() => {});
+  }, [isOpen]);
 
-  const resetForm = () => {
-    setName('');
-    setTradeName('');
-    setTaxNumber('');
-    setCommercialReg('');
-    setCategory('مصنع ومستورد خامات');
-    setCity('مدينة 6 أكتوبر / الجيزة');
-    setAddress('');
-    setCommodityInterest('');
-    setNotes('');
-    setContactName('');
-    setContactTitle('مدير المشتريات واللوجستيات');
-    setContactMobile('');
-    setContactEmail('');
-  };
+  useEffect(() => {
+    setCities([]);
+    if (!isOpen) return;
+    api.get('/masters/cities', { params: { countryCode: form.countryCode } })
+      .then((r: any) => setCities(Array.isArray(r) ? r : r?.data || []))
+      .catch(() => {});
+  }, [form.countryCode, isOpen]);
+
+  const reset = () => setForm({
+    name: '', nameAr: '', companyTypeId: '', industrySectorId: '',
+    countryCode: 'EG', cityId: '', cityManual: '',
+    phone: '', email: '', website: '', personInCharge: '', personMobile: '', notes: '',
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      alert('برجاء كتابة اسم الشركة / العميل');
-      return;
-    }
-
-    if (clientType === 'actual' && (!taxNumber.trim() || !commercialReg.trim())) {
-      if (!confirm('لم تقم بإدخال الرقم الضريبي أو السجل التجاري، هل ترغب في حفظه كليد محتمل بدلاً من عميل رسمي؟')) {
-        return;
-      }
-    }
-
+    if (!form.name.trim() || !form.nameAr.trim()) { alert('اسم الشركة / المنشأة مطلوب بالعربي والإنجليزي'); return; }
+    if (!form.companyTypeId || !form.industrySectorId) { alert('نوع الشركة وقطاع النشاط مطلوبان (من المرجعيات)'); return; }
     setLoading(true);
     try {
       await api.post('/clients', {
-        name,
-        tradeName: tradeName || undefined,
-        type: clientType,
-        taxNumber: taxNumber || undefined,
-        commercialReg: commercialReg || undefined,
-        category,
-        city,
-        address,
-        notes: commodityInterest ? `[اهتمام الشحن]: ${commodityInterest}\n${notes}` : notes,
-        contacts: contactName || contactMobile
-          ? [
-              {
-                name: contactName || name,
-                title: contactTitle,
-                mobile: contactMobile,
-                email: contactEmail,
-                isPrimary: true,
-              },
-            ]
-          : undefined,
+        name: form.name.trim(),
+        nameAr: form.nameAr.trim(),
+        companyTypeId: form.companyTypeId,
+        industrySectorId: form.industrySectorId,
+        countryCode: form.countryCode,
+        cityId: form.cityId || undefined,
+        city: form.cityId ? undefined : (form.cityManual.trim() || undefined),
+        country: COUNTRIES.find((c) => c.code === form.countryCode)?.nameAr,
+        phone: form.phone || undefined,
+        email: form.email || undefined,
+        website: form.website || undefined,
+        personInCharge: form.personInCharge || undefined,
+        contactName: form.personInCharge || undefined,
+        contactMobile: form.personMobile || undefined,
+        notes: form.notes || undefined,
+        type: 'lead',
       });
-
-      resetForm();
+      reset();
       onSuccess();
       onClose();
     } catch (err: any) {
-      alert(err?.message || 'تم حفظ بيانات العميل في الجلسة المحلية بنجاح');
-      resetForm();
-      onSuccess();
-      onClose();
+      alert(err?.response?.data?.message || 'تعذر حفظ العميل — حاول مجدداً');
     } finally {
       setLoading(false);
     }
   };
 
+  const inputCls = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white';
+  const labelCls = 'block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1';
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="تسجيل عميل أو ليد مبيعات جديد"
-      subtitle="إضافة مستورد أو مصنع إما كعميل رسمي معتمد أو كليد سريع أثناء المكالمة الهاتفية"
-      maxWidth="2xl"
+      title="إضافة عميل / ليد جديد"
+      subtitle="الإدخال السريع الموحد — بدون سجل تجاري أو بطاقة ضريبية، ويُرقّى تلقائياً إلى «عميل فعلي» عند قبول أول عرض سعر"
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Mode Selector */}
-        <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
-          <button
-            type="button"
-            onClick={() => setClientType('actual')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-              clientType === 'actual'
-                ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>عميل رسمي معتمد (Full Client)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setClientType('lead')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-              clientType === 'lead'
-                ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>ليد سريع (Quick Prospect)</span>
-          </button>
-        </div>
-
-        {/* Section 1: Company Profile */}
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-brand-600 dark:text-brand-400 mb-3 pb-1 border-b border-slate-100 dark:border-slate-800">
-            <Building2 className="w-4 h-4" />
-            <span>بيانات المنشأة والنشاط</span>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>اسم الشركة (إنجليزي) <span className="text-red-500">*</span></label>
+            <input dir="ltr" required placeholder="Delta Food Industries" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                اسم الشركة أو المنشأة *
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: شركة النيل للتجارة الدولية ش.م.م"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                الاسم التجاري / الشهرة بالإنجليزية
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: Nile International Trading S.A.E"
-                value={tradeName}
-                onChange={(e) => setTradeName(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
-              />
-            </div>
-
-            {clientType === 'actual' && (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    الرقم الضريبي (Tax ID) *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="مثال: 102-993-882"
-                    value={taxNumber}
-                    onChange={(e) => setTaxNumber(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    السجل التجاري (Commercial Reg) *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="مثال: CR-88219"
-                    value={commercialReg}
-                    onChange={(e) => setCommercialReg(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                التصنيف والنشاط
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              >
-                <option value="مصنع ومستورد مواد غذائية">مصنع ومستورد مواد غذائية</option>
-                <option value="استيراد وتوزيع خامات صناعية">استيراد وتوزيع خامات صناعية</option>
-                <option value="مصنع معادن وحديد صلب">مصنع معادن وحديد صلب</option>
-                <option value="استيراد وتجارة أجهزة كهربائية">استيراد وتجارة أجهزة كهربائية</option>
-                <option value="حاصلات زراعية وتصدير مبرد">حاصلات زراعية وتصدير مبرد</option>
-                <option value="سيراميك وأدوات صحية">سيراميك وأدوات صحية</option>
-                <option value="مخلص جمركي / وسيط لوجستي">مخلص جمركي / وسيط لوجستي</option>
+          <div>
+            <label className={labelCls}>اسم الشركة (عربي) <span className="text-red-500">*</span></label>
+            <input dir="rtl" required placeholder="شركة دلتا للصناعات الغذائية" value={form.nameAr}
+              onChange={(e) => setForm({ ...form, nameAr: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>نوع الشركة <span className="text-red-500">*</span></label>
+            <select required value={form.companyTypeId} onChange={(e) => setForm({ ...form, companyTypeId: e.target.value })} className={inputCls}>
+              <option value="">— اختر النوع —</option>
+              {companyTypes.filter((t: any) => t.isActive).map((t: any) => (
+                <option key={t.id} value={t.id}>{t.nameAr || t.nameEn}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>قطاع / نوع النشاط <span className="text-red-500">*</span></label>
+            <select required value={form.industrySectorId} onChange={(e) => setForm({ ...form, industrySectorId: e.target.value })} className={inputCls}>
+              <option value="">— اختر النشاط —</option>
+              {sectors.filter((s: any) => s.isActive).map((s: any) => (
+                <option key={s.id} value={s.id}>{s.nameAr || s.nameEn}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>البلد</label>
+            <select value={form.countryCode} onChange={(e) => setForm({ ...form, countryCode: e.target.value, cityId: '' })} className={inputCls}>
+              {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.nameAr}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>المحافظة / المدينة</label>
+            {cities.length > 0 ? (
+              <select value={form.cityId} onChange={(e) => setForm({ ...form, cityId: e.target.value })} className={inputCls}>
+                <option value="">— اختر المدينة —</option>
+                {cities.map((ct: any) => <option key={ct.id} value={ct.id}>{ct.nameAr || ct.nameEn}</option>)}
               </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                المدينة / المحافظة
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: الإسكندرية / المنطقة الحرة"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Contact Person */}
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-brand-600 dark:text-brand-400 mb-3 pb-1 border-b border-slate-100 dark:border-slate-800">
-            <User className="w-4 h-4" />
-            <span>مسؤول التواصل المباشر (Contact Person)</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                الاسم
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: م. هاني السيد"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                رقم المحمول / واتساب *
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: +20 100 999 8888"
-                value={contactMobile}
-                onChange={(e) => setContactMobile(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
-              />
-            </div>
-
-            {clientType === 'actual' && (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    المسمى الوظيفي
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="مثال: مدير سلاسل الإمداد"
-                    value={contactTitle}
-                    onChange={(e) => setContactTitle(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    البريد الإلكتروني
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="مثال: procurement@company.com"
-                    value={contactEmail}
-                    onChange={(e) => setContactEmail(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500 font-mono"
-                  />
-                </div>
-              </>
+            ) : (
+              <input dir="rtl" placeholder="مثال: مدينة 6 أكتوبر / الجيزة" value={form.cityManual}
+                onChange={(e) => setForm({ ...form, cityManual: e.target.value })} className={inputCls} />
             )}
           </div>
+          <div>
+            <label className={labelCls}>رقم التليفون</label>
+            <input dir="ltr" placeholder="+20 100 000 0000" value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>البريد الإلكتروني</label>
+            <input type="email" dir="ltr" placeholder="info@company.com" value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>الموقع الإلكتروني</label>
+            <input dir="ltr" placeholder="www.company.com" value={form.website}
+              onChange={(e) => setForm({ ...form, website: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>اسم المسؤول (Person in Charge)</label>
+            <input dir="rtl" placeholder="مثال: أ. أحمد عبد الله" value={form.personInCharge}
+              onChange={(e) => setForm({ ...form, personInCharge: e.target.value })} className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>موبايل المسؤول</label>
+            <input dir="ltr" placeholder="+20 122 000 0000" value={form.personMobile}
+              onChange={(e) => setForm({ ...form, personMobile: e.target.value })} className={inputCls} />
+          </div>
         </div>
 
-        {/* Section 3: Commodity Interest (Crucial for Quick Leads) */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            {clientType === 'lead' ? 'نوع البضاعة والاهتمام اللوجستي (Commodity & Request)' : 'ملاحظات إضافية'}
-          </label>
-          <textarea
-            rows={2}
-            placeholder={
-              clientType === 'lead'
-                ? 'مثال: العميل مهتم بشحن 5 حاويات 40HQ من ميناء نينغبو إلى السخنة مع التخليص الجمركي'
-                : 'أي شروط دفع خاصة أو متطلبات مستندية...'
-            }
-            value={commodityInterest}
-            onChange={(e) => setCommodityInterest(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-brand-500"
-          />
+          <label className={labelCls}>ملاحظات / نوع البضاعة والاهتمام اللوجستي</label>
+          <textarea rows={2} placeholder="مثال: مهتم بشحن 5 حاويات 40HQ من ميناء نينغبو إلى السخنة مع التخليص"
+            value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className={inputCls} />
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition cursor-pointer"
-          >
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
+          <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+          <p className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+            سيُسجَّل العميل ضمن «المستهدفون (Prospects)» — تُستكمل بياناته الرسمية في المرجعيات بعد قبول أول عرض.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition cursor-pointer">
             إلغاء
           </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-lg transition disabled:opacity-50 cursor-pointer ${
-              clientType === 'actual'
-                ? 'bg-brand-600 hover:bg-brand-500 shadow-brand-600/30'
-                : 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
-            }`}
-          >
+          <button type="submit" disabled={loading}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-600/30 transition disabled:opacity-50 cursor-pointer">
             <Check className="w-4 h-4" />
-            <span>
-              {loading
-                ? 'جاري الحفظ...'
-                : clientType === 'actual'
-                ? 'حفظ العميل الرسمي'
-                : 'تسجيل الليد السريع'}
-            </span>
+            <span>{loading ? 'جاري الحفظ...' : 'تسجيل العميل المستهدف'}</span>
           </button>
         </div>
       </form>
     </Modal>
   );
 };
+
+

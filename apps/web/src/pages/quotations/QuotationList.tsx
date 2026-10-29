@@ -3,6 +3,7 @@ import { FileSpreadsheet, Plus, CheckCircle, ArrowRight, Download } from 'lucide
 import { api } from '../../services/api';
 import { CreateQuotationModal } from './CreateQuotationModal';
 import { exportToCsv } from '../../utils/exportUtils';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 
 export const QuotationList: React.FC = () => {
   const [quotations, setQuotations] = useState<any[]>([]);
@@ -123,9 +124,7 @@ export const QuotationList: React.FC = () => {
                       +${Number(q.totalProfit).toLocaleString()}
                     </td>
                     <td className="py-4 px-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
-                        {q.status}
-                      </span>
+                      <StatusBadge status={q.status} />
                     </td>
                     <td className="py-4 px-4">
                       {q.status !== 'accepted' && (

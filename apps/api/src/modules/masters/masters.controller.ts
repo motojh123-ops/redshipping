@@ -124,6 +124,16 @@ export class MastersController {
     return this.mastersService.downloadEntityDocument(tenantId, id);
   }
 
+  @Patch('documents/:id')
+  @ApiOperation({ summary: 'Update document metadata (editable attachment name, category, expiry date)' })
+  async updateEntityDocument(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.mastersService.updateEntityDocument(tenantId, id, data);
+  }
+
   @Delete('documents/:id')
   async deleteEntityDocument(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.mastersService.deleteEntityDocument(tenantId, id);

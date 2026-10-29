@@ -32,6 +32,8 @@ import {
   Sparkles,
   Layers,
   Contact,
+  Briefcase,
+  Factory,
 } from 'lucide-react';
 import { useThemeStore } from '../../store/themeStore';
 
@@ -189,6 +191,9 @@ export const Sidebar: React.FC = () => {
         { to: '/masters/logistics-categories', labelAr: 'التصنيف اللوجستي (مكتبة)', labelEn: 'Logistics Categories', icon: Layers },
         { to: '/masters/units', labelAr: 'الوحدات — مكتبة شاملة', labelEn: 'Units of Measurement', icon: Ruler },
         { to: '/masters/port-types', labelAr: 'أنواع الموانئ (مكتبة)', labelEn: 'Port Types', icon: Anchor },
+        { to: '/masters/company-types', labelAr: 'أنواع الشركات (مكتبة)', labelEn: 'Company Types', icon: Briefcase },
+        { to: '/masters/industry-sectors', labelAr: 'قطاعات النشاط (مكتبة)', labelEn: 'Industry Sectors', icon: Factory },
+        { to: '/masters/clients', labelAr: 'العملاء الفعليون (من الـ CRM)', labelEn: 'Actual Clients (Master Data)', icon: Users, badge: 'CRM →' },
         { to: '/masters/ports', labelAr: 'سجل الموانئ (UN/LOCODE)', labelEn: 'Ports & Terminals', icon: MapPin, badge: 'Global' },
         { to: '/masters/shipping-lines', labelAr: 'خطوط الملاحة والاتصالات', labelEn: 'Shipping Lines', icon: Ship },
         { to: '/masters/vendors', labelAr: 'الموردين (نقل وتخليص)', labelEn: 'Vendors & Fleet', icon: Truck },

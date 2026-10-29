@@ -18,6 +18,9 @@ import { ChargeItemsPage } from '../pages/masters/ChargeItemsPage';
 import { LogisticsCategoriesPage } from '../pages/masters/LogisticsCategoriesPage';
 import { UnitsPage } from '../pages/masters/UnitsPage';
 import { PortTypesPage } from '../pages/masters/PortTypesPage';
+import { CompanyTypesPage } from '../pages/masters/CompanyTypesPage';
+import { IndustrySectorsPage } from '../pages/masters/IndustrySectorsPage';
+import { ClientsMasterPage } from '../pages/masters/ClientsMasterPage';
 import { PortsPage } from '../pages/masters/PortsPage';
 import { ShippingLinesPage } from '../pages/masters/ShippingLinesPage';
 import { OverseasAgentsPage } from '../pages/masters/OverseasAgentsPage';
@@ -87,6 +90,9 @@ export const AppRoutes: React.FC = () => {
         <Route path="masters/logistics-categories" element={<LogisticsCategoriesPage />} />
         <Route path="masters/units" element={<UnitsPage />} />
         <Route path="masters/port-types" element={<PortTypesPage />} />
+        <Route path="masters/company-types" element={<CompanyTypesPage />} />
+        <Route path="masters/industry-sectors" element={<IndustrySectorsPage />} />
+        <Route path="masters/clients" element={<ClientsMasterPage />} />
         <Route path="masters/ports" element={<PortsPage />} />
         <Route path="masters/shipping-lines" element={<ShippingLinesPage />} />
         <Route path="masters/overseas-agents" element={<OverseasAgentsPage />} />

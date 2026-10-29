@@ -53,6 +53,7 @@ enum IncotermType {
 enum QuotationStatus {
   draft
   sent
+  completed
   accepted
   rejected
   expired
@@ -139,6 +140,8 @@ enum DocumentCategory {
   other
   commercial_reg
   tax_card
+  importer_registry
+  exporter_registry
 }
 
 model Company {
@@ -192,8 +195,13 @@ model Company {
   overseasAgentContacts OverseasAgentContact[]
 
   // ── Pricing module (أسعار وتعرفات — يملكها التسعير حصراً) ──
-  tariffs           Tariff[]
-  itemDefaultRates  ItemDefaultRate[]
+  tariffs          Tariff[]
+  itemDefaultRates ItemDefaultRate[]
+
+  // ── Clients & Ops directory (جلسة 3 — وثيقة العملاء والعمليات) ──
+  companyTypes    CompanyType[]
+  industrySectors IndustrySector[]
+  clientBranches  ClientBranch[]
 
   @@map("companies")
 }
@@ -201,27 +209,27 @@ model Company {
 // ── Pricing module: lane tariffs & per-item default rates ──
 // (الموديول الوحيد الذي يملك أي بيانات أسعار — المواصفة: "فصل التسعير عن المرجعيات")
 model Tariff {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId           String    @map("company_id") @db.Uuid
-  category            String    @db.VarChar(20) // ocean | inland | air | customs
-  carrierCode         String    @map("carrier_code") @db.VarChar(50)
-  carrierName         String    @map("carrier_name") @db.VarChar(150)
-  originPortCode      String    @map("origin_port_code") @db.VarChar(20)
-  originPortName      String    @map("origin_port_name") @db.VarChar(150)
-  destinationPortCode String    @map("destination_port_code") @db.VarChar(20)
-  destinationPortName String    @map("destination_port_name") @db.VarChar(150)
-  containerType       String    @map("container_type") @db.VarChar(20)
-  currency            String    @db.VarChar(3)
-  buyRate             Decimal   @map("buy_rate") @db.Decimal(14, 2)
-  sellRate            Decimal   @map("sell_rate") @db.Decimal(14, 2)
-  transitDaysEstimated Int      @default(25) @map("transit_days_estimated") @db.Integer
-  freeDaysAllowed     Int       @default(14) @map("free_days_allowed") @db.Integer
-  validFrom           DateTime? @map("valid_from") @db.Date
-  validTo             DateTime? @map("valid_to") @db.Date
-  remarks             String?   @db.Text
-  isActive            Boolean   @default(true) @map("is_active")
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId            String    @map("company_id") @db.Uuid
+  category             String    @db.VarChar(20) // ocean | inland | air | customs
+  carrierCode          String    @map("carrier_code") @db.VarChar(50)
+  carrierName          String    @map("carrier_name") @db.VarChar(150)
+  originPortCode       String    @map("origin_port_code") @db.VarChar(20)
+  originPortName       String    @map("origin_port_name") @db.VarChar(150)
+  destinationPortCode  String    @map("destination_port_code") @db.VarChar(20)
+  destinationPortName  String    @map("destination_port_name") @db.VarChar(150)
+  containerType        String    @map("container_type") @db.VarChar(20)
+  currency             String    @db.VarChar(3)
+  buyRate              Decimal   @map("buy_rate") @db.Decimal(14, 2)
+  sellRate             Decimal   @map("sell_rate") @db.Decimal(14, 2)
+  transitDaysEstimated Int       @default(25) @map("transit_days_estimated") @db.Integer
+  freeDaysAllowed      Int       @default(14) @map("free_days_allowed") @db.Integer
+  validFrom            DateTime? @map("valid_from") @db.Date
+  validTo              DateTime? @map("valid_to") @db.Date
+  remarks              String?   @db.Text
+  isActive             Boolean   @default(true) @map("is_active")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -263,8 +271,10 @@ model City {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  ports   Port[]
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ports          Port[]
+  clientBranches ClientBranch[]
+  clients        Client[]
 
   @@unique([companyId, countryCode, nameEn])
   @@index([companyId, countryCode])
@@ -319,6 +329,65 @@ model PortType {
   @@map("port_types")
 }
 
+// ── Clients & Ops directory libraries (جلسة 3) ──
+model CompanyType {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  nameEn    String   @map("name_en") @db.VarChar(100)
+  nameAr    String?  @map("name_ar") @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clients Client[]
+
+  @@unique([companyId, code])
+  @@map("company_types")
+}
+
+model IndustrySector {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String   @db.VarChar(50)
+  nameEn    String   @map("name_en") @db.VarChar(100)
+  nameAr    String?  @map("name_ar") @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clients Client[]
+
+  @@unique([companyId, code])
+  @@map("industry_sectors")
+}
+
+model ClientBranch {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  clientId         String   @map("client_id") @db.Uuid
+  name             String   @db.VarChar(150)
+  address          String?  @db.Text
+  city             String?  @db.VarChar(100)
+  cityId           String?  @map("city_id") @db.Uuid
+  countryCode      String?  @map("country_code") @db.VarChar(2)
+  phone            String?  @db.VarChar(50)
+  email            String?  @db.VarChar(150)
+  isLoadingAddress Boolean  @default(false) @map("is_loading_address")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client           Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  cityRef          City?           @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  contacts         ClientContact[]
+  pickupQuotations Quotation[]     @relation("PickupBranch")
+
+  @@index([companyId, clientId])
+  @@index([companyId, clientId, isActive])
+  @@map("client_branches")
+}
+
 model User {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId    String    @map("company_id") @db.Uuid
@@ -350,30 +419,54 @@ model User {
 }
 
 model Client {
-  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId     String       @map("company_id") @db.Uuid
-  name          String       @db.VarChar(255)
-  tradeName     String?      @map("trade_name") @db.VarChar(255)
-  taxNumber     String?      @map("tax_number") @db.VarChar(100)
-  commercialReg String?      @map("commercial_reg") @db.VarChar(100)
-  status        ClientStatus @default(prospect)
-  salesRepId    String?      @map("sales_rep_id") @db.Uuid
-  category      String?      @db.VarChar(100)
-  address       String?      @db.Text
-  city          String?      @db.VarChar(100)
-  country       String       @default("Egypt") @db.VarChar(100)
-  notes         String?      @db.Text
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId                String       @map("company_id") @db.Uuid
+  name                     String       @db.VarChar(255)
+  nameAr                   String?      @map("name_ar") @db.VarChar(255)
+  tradeName                String?      @map("trade_name") @db.VarChar(255)
+  taxNumber                String?      @map("tax_number") @db.VarChar(100)
+  commercialReg            String?      @map("commercial_reg") @db.VarChar(100)
+  taxCardNumber            String?      @map("tax_card_number") @db.VarChar(100)
+  importerRegistryNumber   String?      @map("importer_registry_number") @db.VarChar(100)
+  commercialRegExpiry      DateTime?    @map("commercial_reg_expiry") @db.Date
+  taxCardExpiry            DateTime?    @map("tax_card_expiry") @db.Date
+  importerRegistryExpiry   DateTime?    @map("importer_registry_expiry") @db.Date
+  status                   ClientStatus @default(prospect)
+  salesRepId               String?      @map("sales_rep_id") @db.Uuid
+  companyTypeId            String?      @map("company_type_id") @db.Uuid
+  industrySectorId         String?      @map("industry_sector_id") @db.Uuid
+  category                 String?      @db.VarChar(100)
+  address                  String?      @db.Text
+  city                     String?      @db.VarChar(100)
+  cityId                   String?      @map("city_id") @db.Uuid
+  country                  String       @default("Egypt") @db.VarChar(100)
+  countryCode              String?      @map("country_code") @db.VarChar(2)
+  phone                    String?      @db.VarChar(50)
+  email                    String?      @db.VarChar(150)
+  website                  String?      @db.VarChar(255)
+  personInCharge           String?      @map("person_in_charge") @db.VarChar(255)
+  notes                    String?      @db.Text
+  convertedAt              DateTime?    @map("converted_at") @db.Timestamptz
+  convertedFromQuotationId String?      @map("converted_from_quotation_id") @db.Uuid
+  createdAt                DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  salesRep      User?           @relation("SalesRepClients", fields: [salesRepId], references: [id])
-  contacts      ClientContact[]
-  quotations    Quotation[]
-  shipments     Shipment[]
-  invoices      Invoice[]
-  crmActivities CrmActivity[]
+  company                Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesRep               User?           @relation("SalesRepClients", fields: [salesRepId], references: [id])
+  companyType            CompanyType?    @relation(fields: [companyTypeId], references: [id])
+  industrySector         IndustrySector? @relation(fields: [industrySectorId], references: [id])
+  cityRef                City?           @relation(fields: [cityId], references: [id])
+  contacts               ClientContact[]
+  branches               ClientBranch[]
+  quotations             Quotation[]
+  convertedFromQuotation Quotation?      @relation("ConvertedClient", fields: [convertedFromQuotationId], references: [id])
+  shipments              Shipment[]
+  invoices               Invoice[]
+  crmActivities          CrmActivity[]
 
+  @@index([companyId, status])
+  @@index([companyId, companyTypeId])
+  @@index([companyId, industrySectorId])
   @@map("clients")
 }
 
@@ -381,6 +474,7 @@ model ClientContact {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId String   @map("company_id") @db.Uuid
   clientId  String   @map("client_id") @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
   name      String   @db.VarChar(255)
   title     String?  @db.VarChar(100)
   phone     String?  @db.VarChar(50)
@@ -390,9 +484,12 @@ model ClientContact {
   notes     String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client  Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  branch  ClientBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
+  @@index([companyId, clientId])
+  @@index([branchId])
   @@map("client_contacts")
 }
 
@@ -416,6 +513,8 @@ model Port {
   destinationQuotations Quotation[] @relation("DestinationPort")
   originShipments       Shipment[]  @relation("ShipmentOriginPort")
   destinationShipments  Shipment[]  @relation("ShipmentDestinationPort")
+
+  clearanceQuotations Quotation[] @relation("ClearancePort")
 
   @@map("ports")
 }
@@ -668,7 +767,7 @@ model Quotation {
   originPortId         String?         @map("origin_port_id") @db.Uuid
   destinationPortId    String?         @map("destination_port_id") @db.Uuid
   shipmentType         ShipmentType    @map("shipment_type")
-  incoterm             IncotermType
+  incoterm             IncotermType    @default(FOB)
   status               QuotationStatus @default(draft)
   validUntil           DateTime        @map("valid_until") @db.Date
   currency             String          @default("USD") @db.VarChar(3)
@@ -676,20 +775,34 @@ model Quotation {
   totalSell            Decimal         @default(0) @map("total_sell") @db.Decimal(14, 2)
   totalProfit          Decimal         @default(0) @map("total_profit") @db.Decimal(14, 2)
   estimatedTransitDays Int?            @map("estimated_transit_days")
+  // ── Clients & Ops offer params (جلسة 3 §4) ──
+  serviceTypes         String[]        @default([]) @map("service_types")
+  clearancePortId      String?         @map("clearance_port_id") @db.Uuid
+  pickupBranchId       String?         @map("pickup_branch_id") @db.Uuid
+  pickupAddressText    String?         @map("pickup_address_text") @db.Text
+  goodsDescription     String?         @map("goods_description") @db.Text
+  containerType        String?         @map("container_type") @db.VarChar(50)
+  containerQty         Decimal?        @map("container_qty") @db.Decimal(10, 2)
+  pricingNotes         String?         @map("pricing_notes") @db.Text
+  specialRequirements  String?         @map("special_requirements") @db.Text
+  pdfUrl               String?         @map("pdf_url") @db.Text
   termsAndConditions   String?         @map("terms_and_conditions") @db.Text
   notes                String?         @db.Text
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  salesRep        User            @relation("SalesRepQuotations", fields: [salesRepId], references: [id])
-  originPort      Port?           @relation("OriginPort", fields: [originPortId], references: [id])
-  destinationPort Port?           @relation("DestinationPort", fields: [destinationPortId], references: [id])
-  parentQuotation Quotation?      @relation("QuotationVersions", fields: [parentQuotationId], references: [id])
-  revisions       Quotation[]     @relation("QuotationVersions")
-  items           QuotationItem[]
-  shipments       Shipment[]
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client           Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  salesRep         User            @relation("SalesRepQuotations", fields: [salesRepId], references: [id])
+  originPort       Port?           @relation("OriginPort", fields: [originPortId], references: [id])
+  destinationPort  Port?           @relation("DestinationPort", fields: [destinationPortId], references: [id])
+  clearancePort    Port?           @relation("ClearancePort", fields: [clearancePortId], references: [id])
+  pickupBranch     ClientBranch?   @relation("PickupBranch", fields: [pickupBranchId], references: [id])
+  parentQuotation  Quotation?      @relation("QuotationVersions", fields: [parentQuotationId], references: [id])
+  revisions        Quotation[]     @relation("QuotationVersions")
+  convertedClients Client[]        @relation("ConvertedClient")
+  items            QuotationItem[]
+  shipments        Shipment[]
 
   @@unique([companyId, quotationNumber, versionNumber])
   @@map("quotations")

@@ -29,6 +29,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { exportToCsv } from '../../utils/exportUtils';
+import { ActiveClientProfileModal } from '../masters/ClientsMasterPage';
 
 /* ─── Demo Data ─── */
 const SERVICE_TYPES = [
@@ -114,6 +115,7 @@ export const LeadsPipelinePage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [convertingClient, setConvertingClient] = useState<{ id: string; name: string; status: string } | null>(null);
 
   const fetchLeads = React.useCallback(() => {
     setIsLoading(true);
@@ -214,11 +216,19 @@ export const LeadsPipelinePage: React.FC = () => {
 
   const handleConvert = (targetType: 'shipment' | 'client') => {
     if (!selectedLead) return;
+    const leadToConvert = selectedLead;
     api
-      .post(`/crm/leads/${selectedLead.id}/convert`, { targetType })
+      .post(`/crm/leads/${leadToConvert.id}/convert`, { targetType })
       .then(() => {
         setSelectedLead(null);
         fetchLeads();
+        if (targetType === 'client') {
+          setConvertingClient({
+            id: leadToConvert.id,
+            name: leadToConvert.client || leadToConvert.title,
+            status: 'active',
+          });
+        }
       })
       .catch(() => alert('تعذر تحويل الفرصة — تأكد من الاتصال بالخادم.'));
   };
@@ -680,6 +690,17 @@ export const LeadsPipelinePage: React.FC = () => {
           </div>
         </div>
       </Modal>
+      {convertingClient && (
+        <ActiveClientProfileModal
+          client={convertingClient}
+          mode="convert"
+          onClose={() => setConvertingClient(null)}
+          onSaved={() => {
+            setConvertingClient(null);
+            fetchLeads();
+          }}
+        />
+      )}
     </div>
   );
 };

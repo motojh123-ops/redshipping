@@ -17,10 +17,12 @@ export class QuotationsService {
     return this.prisma.quotation.findMany({
       where,
       include: {
-        client: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true, status: true } },
         salesRep: { select: { id: true, name: true } },
         originPort: { select: { id: true, code: true, nameEn: true } },
         destinationPort: { select: { id: true, code: true, nameEn: true } },
+        clearancePort: { select: { id: true, code: true, nameEn: true } },
+        pickupBranch: { select: { id: true, name: true, address: true } },
         items: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -35,6 +37,8 @@ export class QuotationsService {
         salesRep: { select: { id: true, name: true, email: true, phone: true } },
         originPort: true,
         destinationPort: true,
+        clearancePort: true,
+        pickupBranch: { include: { cityRef: true } },
         items: { include: { chargeItem: true } },
         revisions: true,
       },
@@ -102,7 +106,9 @@ export class QuotationsService {
       if (isUuid(data.originPortId)) {
         originPortUuid = data.originPortId;
       } else {
-        const port = await this.prisma.port.findFirst({ where: { code: data.originPortId.toUpperCase() } });
+        const port = await this.prisma.port.findFirst({
+          where: { code: data.originPortId.toUpperCase(), OR: [{ companyId: null }, { companyId: tenantId }] },
+        });
         if (port) originPortUuid = port.id;
       }
     }
@@ -112,7 +118,9 @@ export class QuotationsService {
       if (isUuid(data.destinationPortId)) {
         destinationPortUuid = data.destinationPortId;
       } else {
-        const port = await this.prisma.port.findFirst({ where: { code: data.destinationPortId.toUpperCase() } });
+        const port = await this.prisma.port.findFirst({
+          where: { code: data.destinationPortId.toUpperCase(), OR: [{ companyId: null }, { companyId: tenantId }] },
+        });
         if (port) destinationPortUuid = port.id;
       }
     }
@@ -126,6 +134,41 @@ export class QuotationsService {
     const validIncoterms = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'];
     if (!validIncoterms.includes(incoterm)) {
       incoterm = 'FOB';
+    }
+
+    // ── Clients & Ops offer parameters (جلسة 3 §4) ──
+    // Service type: any combination of شحن / تخليص / نقل
+    const SERVICE_TYPES = ['shipping', 'clearance', 'transport'];
+    const rawTypes: string[] = Array.isArray(data.serviceTypes)
+      ? data.serviceTypes.map((s: any) => String(s).toLowerCase())
+      : [];
+    const serviceTypes: string[] = Array.from(new Set(rawTypes)).filter((s: string) => SERVICE_TYPES.includes(s));
+    if (rawTypes.length > 0 && serviceTypes.length === 0) {
+      throw new BadRequestException('serviceTypes must be one or more of: shipping | clearance | transport');
+    }
+
+    // Clearance port (ميناء التخليص) — UUID or port code
+    let clearancePortUuid: string | null = null;
+    if (data.clearancePortId) {
+      if (isUuid(data.clearancePortId)) {
+        clearancePortUuid = data.clearancePortId;
+      } else {
+        const port = await this.prisma.port.findFirst({
+          where: { code: data.clearancePortId.toUpperCase(), OR: [{ companyId: null }, { companyId: tenantId }] },
+        });
+        if (port) clearancePortUuid = port.id;
+      }
+    }
+
+    // Pickup/loading address (عنوان التحميل) — a client branch or free text
+    let pickupBranchUuid: string | null = null;
+    if (data.pickupBranchId) {
+      if (!isUuid(data.pickupBranchId)) throw new BadRequestException('pickupBranchId must be a valid branch id');
+      const branch = await this.prisma.clientBranch.findFirst({
+        where: { id: data.pickupBranchId, clientId: data.clientId, isActive: true },
+      });
+      if (!branch) throw new BadRequestException('عنوان التحميل المختار غير موجود لهذا العميل');
+      pickupBranchUuid = branch.id;
     }
 
     try {
@@ -147,6 +190,16 @@ export class QuotationsService {
           totalSell,
           totalProfit,
           estimatedTransitDays: data.estimatedTransitDays ? Number(data.estimatedTransitDays) : null,
+          serviceTypes,
+          clearancePortId: clearancePortUuid,
+          pickupBranchId: pickupBranchUuid,
+          pickupAddressText: data.pickupAddressText ? String(data.pickupAddressText).trim() : null,
+          goodsDescription: data.goodsDescription ? String(data.goodsDescription).trim() : null,
+          containerType: data.containerType ? String(data.containerType).trim() : null,
+          containerQty: data.containerQty ? Number(data.containerQty) : null,
+          pricingNotes: data.pricingNotes ? String(data.pricingNotes).trim() : null,
+          specialRequirements: data.specialRequirements ? String(data.specialRequirements).trim() : null,
+          pdfUrl: data.pdfUrl ? String(data.pdfUrl).trim() : null,
           termsAndConditions: data.termsAndConditions || null,
           notes: data.notes || null,
           items: {
@@ -177,6 +230,16 @@ export class QuotationsService {
       data: { status: QuotationStatus.ACCEPTED },
     });
 
+    // ── Auto-promotion (جلسة 3 §3): ترقية تلقائية من «مستهدف» إلى «عميل فعلي»
+    // بمجرد قبول أول عرض — مع تسجيل العرض المحوِّل وتاريخ الترقية
+    if (quotation.client && quotation.client.status === 'prospect') {
+      await this.prisma.client.update({
+        where: { id: quotation.clientId },
+        data: { status: 'active', convertedAt: new Date(), convertedFromQuotationId: quotationId },
+      });
+      this.logger.log(`Client ${quotation.clientId} auto-promoted prospect → active (quotation ${quotationId})`);
+    }
+
     // Generate Job File Number
     const year = new Date().getFullYear();
     const latestShipment = await this.prisma.shipment.findFirst({
@@ -204,6 +267,7 @@ export class QuotationsService {
         incoterm: quotation.incoterm as any,
         originPortId: quotation.originPortId,
         destinationPortId: quotation.destinationPortId,
+        cargoDescription: quotation.goodsDescription || null,
         currentStage: ShipmentStage.BOOKING_CONFIRMED,
         events: {
           create: {

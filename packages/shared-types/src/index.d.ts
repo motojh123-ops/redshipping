@@ -38,6 +38,7 @@ export declare enum Incoterm {
 export declare enum QuotationStatus {
     DRAFT = "draft",
     SENT = "sent",
+    COMPLETED = "completed",
     ACCEPTED = "accepted",
     REJECTED = "rejected",
     EXPIRED = "expired"

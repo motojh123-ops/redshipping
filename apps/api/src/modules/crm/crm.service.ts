@@ -126,9 +126,13 @@ function toLeadItem(client: any, activities: any[]): LeadItem {
 export class CrmService {
   constructor(private prisma: PrismaService) {}
 
-  private async loadLead(tenantId: string, id: string) {
+  private async loadLead(tenantId: string, id: string, allowConverted = false) {
     const client = await this.prisma.client.findFirst({
-      where: { id, companyId: tenantId, status: 'prospect' },
+      where: {
+        id,
+        companyId: tenantId,
+        ...(allowConverted ? {} : { status: 'prospect' }),
+      },
       include: {
         salesRep: { select: { name: true } },
         crmActivities: {
@@ -261,7 +265,7 @@ export class CrmService {
     if (stage === 'won' && oldStage !== 'won') {
       await this.prisma.client.update({
         where: { id: lead.id },
-        data: { status: 'active' },
+        data: { status: 'active', convertedAt: new Date() },
       });
     }
 
@@ -276,11 +280,12 @@ export class CrmService {
       },
     });
 
-    return this.findOne(tenantId, id);
+    const updated = await this.loadLead(tenantId, id, true);
+    return toLeadItem(updated, updated.crmActivities || []);
   }
 
   async addActivity(tenantId: string, id: string, activityData: { type: LeadActivity['type']; description: string; user?: string }) {
-    const lead = await this.loadLead(tenantId, id);
+    const lead = await this.loadLead(tenantId, id, true);
 
     await this.prisma.crmActivity.create({
       data: {
@@ -293,17 +298,19 @@ export class CrmService {
       },
     });
 
-    return this.findOne(tenantId, id);
+    const updated = await this.loadLead(tenantId, id, true);
+    return toLeadItem(updated, updated.crmActivities || []);
   }
 
   async convert(tenantId: string, id: string, targetType: 'shipment' | 'client') {
-    const lead = await this.loadLead(tenantId, id);
+    const lead = await this.loadLead(tenantId, id, true);
 
     // Mark the prospect as a real active client
     await this.prisma.client.update({
       where: { id: lead.id },
       data: {
         status: 'active',
+        convertedAt: lead.convertedAt || new Date(),
         category: `${STAGE_KEY}won`,
       },
     });
@@ -319,6 +326,7 @@ export class CrmService {
       },
     });
 
-    return this.findOne(tenantId, id);
+    const updated = await this.loadLead(tenantId, id, true);
+    return toLeadItem(updated, updated.crmActivities || []);
   }
 }
