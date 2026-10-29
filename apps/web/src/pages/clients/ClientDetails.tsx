@@ -15,7 +15,7 @@ import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { NewOfferModal } from './NewOfferModal';
-import { DocsSection, ActiveClientProfileModal } from '../masters/ClientsMasterPage';
+import { DocsSection, ActiveClientProfileModal, computeClientCompliance } from '../masters/ClientsMasterPage';
 
 export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -38,11 +38,59 @@ export const ClientDetails: React.FC = () => {
       // Map the real CRM activities persisted on the client into the tab views
       const acts: any[] = client.crmActivities || [];
       const rawShipments: any[] = client.shipments || [];
+      const rawInvoices: any[] = client.invoices || [];
+      const mappedInvoices = rawInvoices.map((inv: any) => {
+        const rate =
+          Number(inv.exchangeRate || 1) > 1
+            ? Number(inv.exchangeRate)
+            : inv.currency === 'USD'
+            ? 50
+            : 1;
+        const rawTotal = Number(inv.total ?? inv.amount ?? 0);
+        const amountEgp = Math.round(rawTotal * rate);
+        const paidEgp =
+          inv.status === 'paid'
+            ? amountEgp
+            : inv.status === 'partially_paid'
+            ? Math.round(amountEgp * 0.5)
+            : 0;
+        const remainingEgp = inv.status === 'cancelled' ? 0 : Math.max(0, amountEgp - paidEgp);
+        return {
+          ...inv,
+          amount: amountEgp,
+          rawTotal,
+          currency: inv.currency || 'EGP',
+          paid: paidEgp,
+          remaining: remainingEgp,
+          dueDate: inv.dueDate ? String(inv.dueDate).slice(0, 10) : '—',
+          issueDate: inv.issueDate ? String(inv.issueDate).slice(0, 10) : String(inv.createdAt || '').slice(0, 10),
+          jobNo: inv.shipment?.jobFileNumber || null,
+        };
+      });
+      const activeInvoices = mappedInvoices.filter((i) => i.status !== 'cancelled');
+      const calcRevenue =
+        client.totalRevenue !== undefined
+          ? Number(client.totalRevenue)
+          : activeInvoices.reduce((s, i) => s + i.amount, 0);
+      const calcPaid =
+        client.totalPaid !== undefined
+          ? Number(client.totalPaid)
+          : activeInvoices.reduce((s, i) => s + i.paid, 0);
+      const calcOutstanding =
+        client.outstandingBalance !== undefined
+          ? Number(client.outstandingBalance)
+          : Math.max(0, calcRevenue - calcPaid);
+
       setC({
         ...client,
         nameAr: client.nameAr || client.tradeName || '',
         salesPerson: client.salesRep?.name || client.salesPerson || '—',
         createdAt: client.createdAt ? String(client.createdAt).slice(0, 10) : '—',
+        creditLimit: Number(client.creditLimit || 500000),
+        paymentTerms: client.paymentTerms || 'Net 30',
+        totalRevenue: calcRevenue,
+        totalPaid: calcPaid,
+        outstandingBalance: calcOutstanding,
         contacts: client.contacts || [],
         branches: client.branches || [],
         entityDocuments: client.entityDocuments || [],
@@ -57,7 +105,7 @@ export const ClientDetails: React.FC = () => {
           containerNo: s.cargoDescription || s.containerNo || '—',
           eta: s.eta ? String(s.eta).slice(0, 10) : '—',
         })),
-        invoices: client.invoices || [],
+        invoices: mappedInvoices,
         offers: client.quotations || client.offers || [],
         calls: acts
           .filter((a) => a.activityType === 'call')
@@ -113,7 +161,7 @@ export const ClientDetails: React.FC = () => {
 
   const tabs = [
     { key: 'shipments', label: `الشحنات (${c.shipments?.length || 0})`, icon: Ship },
-    { key: 'financials', label: 'الماليات والحد الائتماني', icon: CreditCard },
+    { key: 'financials', label: `الماليات والحد الائتماني (${c.invoices?.length || 0})`, icon: CreditCard },
     { key: 'contacts', label: `جهات الاتصال (${c.contacts?.length || 0})`, icon: Users },
     { key: 'branches', label: `الفروع وعناوين التحميل (${c.branches?.length || 0})`, icon: MapPin },
     { key: 'offers', label: `عروض الأسعار (${c.offers?.length || 0})`, icon: FileSpreadsheet },
@@ -122,6 +170,13 @@ export const ClientDetails: React.FC = () => {
     { key: 'reminders', label: `المتابعات (${c.reminders?.filter((r: any) => !r.completed).length || 0})`, icon: Bell },
     { key: 'attachments', label: `الوثائق والتراخيص (${(c.entityDocuments || c.attachments || []).length})`, icon: FileText },
   ];
+
+  const compliance = computeClientCompliance(c);
+  const creditLimitVal = Number(c.creditLimit || 500000);
+  const usedCreditVal = Number(c.outstandingBalance || 0);
+  const availableCreditVal = Math.max(0, creditLimitVal - usedCreditVal);
+  const creditUsedPct = creditLimitVal > 0 ? Math.min(100, Math.round((usedCreditVal / creditLimitVal) * 100)) : 0;
+  const creditAvailPct = Math.max(0, 100 - creditUsedPct);
 
   const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -289,9 +344,100 @@ export const ClientDetails: React.FC = () => {
           {/* KPI Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard title="إجمالي الشحنات" value={c.totalShipments ?? (c.shipments?.length || 0)} icon={Briefcase} iconColor="text-brand-600" iconBg="bg-brand-50 dark:bg-brand-950/50" />
-            <StatCard title="إجمالي الإيرادات" value={c.totalRevenue ? `${(c.totalRevenue / 1000).toFixed(0)}K EGP` : '—'} icon={CreditCard} iconColor="text-emerald-600" iconBg="bg-emerald-50 dark:bg-emerald-950/50" />
+            <StatCard
+              title="إجمالي الفواتير"
+              value={c.totalRevenue ? `${Number(c.totalRevenue).toLocaleString()} ج.م` : '0 ج.م'}
+              icon={CreditCard}
+              iconColor="text-emerald-600"
+              iconBg="bg-emerald-50 dark:bg-emerald-950/50"
+            />
             <StatCard title="عروض نشطة" value={(c.offers || []).filter((o: any) => !['accepted', 'rejected', 'expired'].includes(o.status)).length} icon={FileSpreadsheet} iconColor="text-amber-600" iconBg="bg-amber-50 dark:bg-amber-950/50" />
-            <StatCard title="حد الائتمان" value={c.creditLimit ? `${(c.creditLimit / 1000).toFixed(0)}K` : '—'} icon={Shield} iconColor="text-purple-600" iconBg="bg-purple-50 dark:bg-purple-950/50" />
+            <StatCard title="حد الائتمان" value={`${(creditLimitVal / 1000).toFixed(0)}K ج.م`} icon={Shield} iconColor="text-purple-600" iconBg="bg-purple-50 dark:bg-purple-950/50" />
+          </div>
+
+          {/* ── Legal & Operational Profile Compliance Progress Bar (مؤشر اكتمال الملف القانوني §4) ── */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs ${
+                    compliance.percent === 100
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                      : compliance.percent >= 60
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                  }`}
+                >
+                  {compliance.percent}%
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      مؤشر اكتمال الملف القانوني والتشغيلي للعميل
+                    </h3>
+                    <span className="text-[11px] font-bold text-slate-400">
+                      ({compliance.doneCount} من {compliance.totalCount} مكتمل)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {compliance.percent === 100
+                      ? 'ملف العميل مكتمل قانونياً وجاهز لكافة العمليات والتخليص الجمركي والفوترة.'
+                      : `ينقص العميل (${compliance.missing.map((m) => m.label).join('، ')}) — اضغط على أي بند ناقص لاستكماله مباشرةً.`}
+                  </p>
+                </div>
+              </div>
+
+              {compliance.percent < 100 && (
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#EA580C] text-white text-xs font-bold shadow-sm shadow-orange-500/20 transition cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  استكمال النواقص الآن ({compliance.missing.length})
+                </button>
+              )}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  compliance.percent === 100
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                    : compliance.percent >= 60
+                    ? 'bg-gradient-to-r from-amber-500 to-[#FF5E1E]'
+                    : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                }`}
+                style={{ width: `${compliance.percent}%` }}
+              />
+            </div>
+
+            {/* 5 Check-items Pills */}
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              {compliance.items.map((item) =>
+                item.done ? (
+                  <span
+                    key={item.key}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>{item.label}</span>
+                    {item.detail && <span className="text-[10px] opacity-75 font-mono">({item.detail})</span>}
+                  </span>
+                ) : (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setShowProfileModal(true)}
+                    title="اضغط لاستكمال هذا البند"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300/70 dark:border-amber-800/60 transition cursor-pointer"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>{item.label} (ناقص — اضغط للإضافة)</span>
+                  </button>
+                ),
+              )}
+            </div>
           </div>
 
           {/* Tab Navigation */}
@@ -371,7 +517,9 @@ export const ClientDetails: React.FC = () => {
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                     <div>
                       <span className="text-xs font-bold text-slate-900 dark:text-white block">كشف الحساب والفواتير الصادرة</span>
-                      <span className="text-[11px] text-slate-400">تسهيل ائتماني معتمد {c.paymentTerms || '—'} بحد أقصى {c.creditLimit ? c.creditLimit.toLocaleString() : '—'} ج.م</span>
+                      <span className="text-[11px] text-slate-400">
+                        تسهيل ائتماني معتمد {c.paymentTerms || 'Net 30'} بحد أقصى {creditLimitVal.toLocaleString()} ج.م
+                      </span>
                     </div>
                     <Link
                       to="/statement-of-account"
@@ -384,40 +532,71 @@ export const ClientDetails: React.FC = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-800/30">
-                      <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 block">إجمالي الفواتير المصدرة</span>
-                      <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono mt-1 block">505,000 ج.م</span>
+                      <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 block">
+                        إجمالي الفواتير المصدرة ({(c.invoices || []).filter((i: any) => i.status !== 'cancelled').length})
+                      </span>
+                      <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono mt-1 block">
+                        {Number(c.totalRevenue || 0).toLocaleString()} ج.م
+                      </span>
                     </div>
                     <div className="p-3.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/30">
                       <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 block">إجمالي المسدد والمحصل</span>
-                      <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">340,000 ج.م</span>
+                      <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
+                        {Number(c.totalPaid || 0).toLocaleString()} ج.م
+                      </span>
                     </div>
                     <div className="p-3.5 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-800/30">
                       <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300 block">المديونية المتبقية المستحقة</span>
-                      <span className="text-base font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-1 block">{c.outstandingBalance ? c.outstandingBalance.toLocaleString() : '—'} ج.م</span>
+                      <span className="text-base font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-1 block">
+                        {Number(c.outstandingBalance || 0).toLocaleString()} ج.م
+                      </span>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    {c.invoices?.map((inv: any) => (
-                      <div key={inv.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">{inv.invoiceNumber}</span>
-                            <StatusBadge status={inv.status} />
+                    {c.invoices?.length ? (
+                      c.invoices.map((inv: any) => (
+                        <div key={inv.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition flex items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Link
+                                to={`/invoices/${inv.id}`}
+                                className="text-xs font-mono font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                {inv.invoiceNumber}
+                              </Link>
+                              <StatusBadge status={inv.status} />
+                              {inv.jobNo && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                  شحنة: {inv.jobNo}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono block">
+                              تاريخ الإصدار: {inv.issueDate || '—'} • الاستحقاق: {inv.dueDate}
+                            </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-mono">تاريخ الاستحقاق: {inv.dueDate}</span>
-                        </div>
 
-                        <div className="text-end">
-                          <span className="text-xs font-bold font-mono text-slate-900 dark:text-white block">
-                            {Number(inv.amount || 0).toLocaleString()} ج.م
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            متبقي: {Number(inv.remaining || 0).toLocaleString()} ج.م
-                          </span>
+                          <div className="text-end shrink-0">
+                            <span className="text-xs font-bold font-mono text-slate-900 dark:text-white block">
+                              {Number(inv.amount || 0).toLocaleString()} ج.م
+                              {inv.currency && inv.currency !== 'EGP' && (
+                                <span className="text-[10px] text-slate-400 ms-1">
+                                  ({Number(inv.rawTotal || 0).toLocaleString()} {inv.currency})
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              مسدد: {Number(inv.paid || 0).toLocaleString()} ج.م • متبقي: {Number(inv.remaining || 0).toLocaleString()} ج.م
+                            </span>
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+                        لا توجد فواتير صادرة لهذا العميل في قاعدة البيانات حتى الآن.
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
@@ -792,27 +971,36 @@ export const ClientDetails: React.FC = () => {
                 <span>الحد الائتماني والمديونية</span>
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
-                Net 30
+                {c.paymentTerms || 'Net 30'}
               </span>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500 font-medium">المستهلك: 280,000 ج.م</span>
-                <span className="font-bold text-slate-900 dark:text-white">500,000 ج.م</span>
+                <span className="text-slate-500 font-medium font-mono">
+                  المستهلك: {usedCreditVal.toLocaleString()} ج.م
+                </span>
+                <span className="font-bold text-slate-900 dark:text-white font-mono">
+                  {creditLimitVal.toLocaleString()} ج.م
+                </span>
               </div>
               <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-500 to-[#FF5E1E] rounded-full" style={{ width: '56%' }} />
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 to-[#FF5E1E] rounded-full transition-all duration-500"
+                  style={{ width: `${creditUsedPct}%` }}
+                />
               </div>
-              <div className="flex justify-between text-[11px] text-slate-400">
-                <span>المتاح: 220,000 ج.م (44%)</span>
-                <span>الاستهلاك: 56%</span>
+              <div className="flex justify-between text-[11px] text-slate-400 font-mono">
+                <span>المتاح: {availableCreditVal.toLocaleString()} ج.م ({creditAvailPct}%)</span>
+                <span>الاستهلاك: {creditUsedPct}%</span>
               </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <span className="text-xs text-slate-500">المديونية المستحقة حالياً:</span>
-              <span className="text-xs font-black text-rose-600 dark:text-rose-400 font-mono">165,000 ج.م</span>
+              <span className="text-xs font-black text-rose-600 dark:text-rose-400 font-mono">
+                {usedCreditVal.toLocaleString()} ج.م
+              </span>
             </div>
 
             <Link

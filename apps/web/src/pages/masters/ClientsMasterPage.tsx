@@ -1754,3 +1754,77 @@ const AddContactModal: React.FC<{
     </Modal>
   );
 };
+
+export interface ComplianceItem {
+  key: 'commercial_reg' | 'tax_card' | 'importer_registry' | 'branches' | 'contacts';
+  label: string;
+  done: boolean;
+  detail?: string;
+}
+
+export function computeClientCompliance(c: any): {
+  percent: number;
+  items: ComplianceItem[];
+  missing: ComplianceItem[];
+  doneCount: number;
+  totalCount: number;
+} {
+  const docs: any[] = c?.entityDocuments || [];
+  const hasDoc = (cat: string) => docs.some((d) => d.category === cat);
+  const branchesCount = c?.branches?.length ?? c?._count?.branches ?? 0;
+  const branchContactsCount = (c?.branches || []).reduce(
+    (sum: number, b: any) => sum + (b?.contacts?.length || 0),
+    0,
+  );
+  const contactsCount = (c?.contacts?.length || 0) + branchContactsCount;
+
+  const hasCR = Boolean(c?.commercialReg || c?.commercialRegister || hasDoc('commercial_reg'));
+  const hasTax = Boolean(c?.taxCardNumber || c?.taxNumber || hasDoc('tax_card'));
+  const hasImp = Boolean(
+    c?.importerRegistryNumber || hasDoc('importer_registry') || hasDoc('exporter_registry'),
+  );
+  const hasBranches = branchesCount > 0;
+  const hasContacts = contactsCount > 0 || Boolean(c?.personInCharge || c?.contactName);
+
+  const items: ComplianceItem[] = [
+    {
+      key: 'commercial_reg',
+      label: 'السجل التجاري',
+      done: hasCR,
+      detail: c?.commercialReg || (hasDoc('commercial_reg') ? 'مرفق موثق' : undefined),
+    },
+    {
+      key: 'tax_card',
+      label: 'البطاقة الضريبية',
+      done: hasTax,
+      detail: c?.taxCardNumber || c?.taxNumber || (hasDoc('tax_card') ? 'مرفق موثق' : undefined),
+    },
+    {
+      key: 'importer_registry',
+      label: 'سجل المستوردين',
+      done: hasImp,
+      detail:
+        c?.importerRegistryNumber ||
+        (hasDoc('importer_registry') || hasDoc('exporter_registry') ? 'مرفق موثق' : undefined),
+    },
+    {
+      key: 'branches',
+      label: 'الفروع وعناوين التحميل',
+      done: hasBranches,
+      detail: hasBranches ? `${branchesCount} فرع` : undefined,
+    },
+    {
+      key: 'contacts',
+      label: 'مسؤول التواصل (Person in Charge)',
+      done: hasContacts,
+      detail: contactsCount > 0 ? `${contactsCount} مسؤول` : c?.personInCharge || undefined,
+    },
+  ];
+
+  const doneCount = items.filter((i) => i.done).length;
+  const totalCount = items.length;
+  const percent = Math.round((doneCount / totalCount) * 100);
+  const missing = items.filter((i) => !i.done);
+
+  return { percent, items, missing, doneCount, totalCount };
+}

@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { CreateClientModal } from './CreateClientModal';
-import { ActiveClientProfileModal } from '../masters/ClientsMasterPage';
+import { ActiveClientProfileModal, computeClientCompliance } from '../masters/ClientsMasterPage';
 import { exportToCsv } from '../../utils/exportUtils';
 
 export interface ClientItem {
@@ -425,6 +425,7 @@ export const ClientList: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
           {filteredClients.map((client) => {
             const isActual = client.status === 'active';
+            const comp = computeClientCompliance(client);
 
             return (
               <div
@@ -492,12 +493,57 @@ export const ClientList: React.FC = () => {
 
                   {/* Legal & Meta Information */}
                   <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                    {/* Compliance Progress Bar (مؤشر اكتمال الملف القانوني §4) */}
+                    <div
+                      onClick={() => (isActual ? setEditingActiveClient(client) : handleStartConversion(client))}
+                      title="اضغط لاستكمال البنود الناقصة (السجل التجاري / البطاقة الضريبية / سجل المستوردين / الفروع / مسؤولي التواصل)"
+                      className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/80 hover:border-[#FF5E1E]/40 transition cursor-pointer space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                          اكتمال الملف القانوني ({comp.doneCount}/{comp.totalCount})
+                        </span>
+                        <span
+                          className={`font-black font-mono ${
+                            comp.percent === 100
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : comp.percent >= 60
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {comp.percent}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            comp.percent === 100
+                              ? 'bg-emerald-500'
+                              : comp.percent >= 60
+                              ? 'bg-amber-500'
+                              : 'bg-rose-500'
+                          }`}
+                          style={{ width: `${comp.percent}%` }}
+                        />
+                      </div>
+                      {comp.missing.length > 0 ? (
+                        <div className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
+                          ناقص: {comp.missing.map((m) => m.label).join(' • ')} (اضغط للاستكمال)
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                          مكتمل قانونياً وتجارياً ✅
+                        </div>
+                      )}
+                    </div>
+
                     {isActual ? (
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
                         <span>
-                          س.ت: <strong className="font-mono text-slate-900 dark:text-slate-200">{client.commercialReg}</strong> • ضريبي:{' '}
-                          <strong className="font-mono text-slate-900 dark:text-slate-200">{client.taxNumber}</strong>
+                          س.ت: <strong className="font-mono text-slate-900 dark:text-slate-200">{client.commercialReg || '—'}</strong> • ضريبي:{' '}
+                          <strong className="font-mono text-slate-900 dark:text-slate-200">{client.taxNumber || '—'}</strong>
                         </span>
                       </div>
                     ) : (
@@ -608,60 +654,96 @@ export const ClientList: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {filteredClients.map((c) => (
-                  <tr
-                    key={c.id}
-                    onClick={() => navigate(`/clients/${c.id}`)}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer"
-                  >
-                    <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                      <div>{c.name}</div>
-                      {c.tradeName && <div className="text-[10px] text-slate-400 font-mono">{c.tradeName}</div>}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {c.status === 'active' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          فعلي ✓
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-                          مستهدف
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">{c.category || '—'}</td>
-                    <td className="py-3.5 px-4 font-mono text-slate-700 dark:text-slate-300">
-                      {c.commercialReg ? (
-                        <div>
-                          <div>س.ت: {c.commercialReg}</div>
-                          <div className="text-[10px] text-slate-400">ض: {c.taxNumber}</div>
+                {filteredClients.map((c) => {
+                  const comp = computeClientCompliance(c);
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => navigate(`/clients/${c.id}`)}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer"
+                    >
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
+                        <div>{c.name}</div>
+                        {c.tradeName && <div className="text-[10px] text-slate-400 font-mono">{c.tradeName}</div>}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {c.status === 'active' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                            فعلي ✓
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                            مستهدف
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">{c.category || '—'}</td>
+                      <td className="py-3.5 px-4">
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (c.status === 'active') setEditingActiveClient(c);
+                            else handleStartConversion(c);
+                          }}
+                          className="space-y-1 min-w-[140px]"
+                          title={comp.missing.length ? `ناقص: ${comp.missing.map((m) => m.label).join('، ')}` : 'مكتمل 100%'}
+                        >
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-500">اكتمال الملف</span>
+                            <span
+                              className={`font-bold font-mono ${
+                                comp.percent === 100
+                                  ? 'text-emerald-600'
+                                  : comp.percent >= 60
+                                  ? 'text-amber-600'
+                                  : 'text-rose-600'
+                              }`}
+                            >
+                              {comp.percent}%
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                comp.percent === 100
+                                  ? 'bg-emerald-500'
+                                  : comp.percent >= 60
+                                  ? 'bg-amber-500'
+                                  : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${comp.percent}%` }}
+                            />
+                          </div>
+                          {c.commercialReg && (
+                            <div className="text-[10px] font-mono text-slate-400">س.ت: {c.commercialReg}</div>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-amber-600 dark:text-amber-400 text-[11px]">غير مستكمل</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{c.city || '—'}</td>
-                    <td className="py-3.5 px-4 text-slate-800 dark:text-slate-200">
-                      <div>{c.contactName || '—'}</div>
-                      {c.phone && <div className="text-[10px] text-slate-400 font-mono">{c.phone}</div>}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{(typeof c.salesRep === 'object' ? c.salesRep?.name : c.salesRep) || '—'}</td>
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
-                      {c.totalRevenue ? `${(c.totalRevenue / 1000).toLocaleString()}K EGP` : '—'}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/clients/${c.id}`);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-[#FF5E1E] hover:text-white transition font-bold text-[11px]"
-                      >
-                        الملف الكامل
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{c.city || '—'}</td>
+                      <td className="py-3.5 px-4 text-slate-800 dark:text-slate-200">
+                        <div>{c.contactName || c.contacts?.[0]?.name || '—'}</div>
+                        {(c.phone || c.contacts?.[0]?.mobile) && (
+                          <div className="text-[10px] text-slate-400 font-mono">{c.phone || c.contacts?.[0]?.mobile}</div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{(typeof c.salesRep === 'object' ? c.salesRep?.name : c.salesRep) || '—'}</td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
+                        {c.totalRevenue ? `${Number(c.totalRevenue).toLocaleString()} ج.م` : '0 ج.م'}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/clients/${c.id}`);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-[#FF5E1E] hover:text-white transition font-bold text-[11px]"
+                        >
+                          الملف الكامل
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

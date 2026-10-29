@@ -26,7 +26,7 @@ const CLIENT_INCLUDE = {
 export class ClientsService {
   private readonly logger = new Logger(ClientsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async findAll(tenantId: string, query?: { status?: any; search?: string; full?: string }) {
     const where: any = { companyId: tenantId };
@@ -49,23 +49,61 @@ export class ClientsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (query?.full === 'tree' && list.length > 0) {
+    if (list.length > 0) {
       const ids = list.map((c) => c.id);
-      const docs = await this.prisma.entityDocument.findMany({
-        where: { companyId: tenantId, entityType: 'client', entityId: { in: ids } },
-        select: {
-          id: true, entityId: true, category: true, fileName: true,
-          fileSize: true, mimeType: true, expiryDate: true, createdAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      const [docs, invoices] = await Promise.all([
+        this.prisma.entityDocument.findMany({
+          where: { companyId: tenantId, entityType: 'client', entityId: { in: ids } },
+          select: {
+            id: true, entityId: true, category: true, fileName: true,
+            fileSize: true, mimeType: true, expiryDate: true, createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.invoice.findMany({
+          where: { companyId: tenantId, clientId: { in: ids }, status: { not: 'cancelled' } },
+          select: {
+            clientId: true, status: true, total: true, currency: true, exchangeRate: true,
+          },
+        }),
+      ]);
+
       const docsByClient = new Map<string, any[]>();
       for (const d of docs) {
         const arr = docsByClient.get(d.entityId) || [];
         arr.push(d);
         docsByClient.set(d.entityId, arr);
       }
-      return list.map((c) => ({ ...c, entityDocuments: docsByClient.get(c.id) || [] }));
+
+      const finByClient = new Map<string, { billed: number; paid: number }>();
+      for (const inv of invoices) {
+        const rate = Number(inv.exchangeRate || 1) > 1
+          ? Number(inv.exchangeRate)
+          : inv.currency === 'USD'
+          ? 50
+          : 1;
+        const amountEgp = Math.round(Number(inv.total || 0) * rate);
+        const cur = finByClient.get(inv.clientId) || { billed: 0, paid: 0 };
+        cur.billed += amountEgp;
+        if (inv.status === 'paid') {
+          cur.paid += amountEgp;
+        } else if (inv.status === 'partially_paid') {
+          cur.paid += Math.round(amountEgp * 0.5);
+        }
+        finByClient.set(inv.clientId, cur);
+      }
+
+      return list.map((c) => {
+        const fin = finByClient.get(c.id) || { billed: 0, paid: 0 };
+        return {
+          ...c,
+          entityDocuments: docsByClient.get(c.id) || [],
+          totalShipments: c._count?.shipments ?? 0,
+          totalRevenue: fin.billed,
+          totalPaid: fin.paid,
+          outstandingBalance: Math.max(0, fin.billed - fin.paid),
+        };
+      });
     }
 
     return list;
@@ -100,6 +138,13 @@ export class ClientsService {
             shippingLine: true,
           },
         },
+        invoices: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            shipment: { select: { id: true, jobFileNumber: true } },
+          },
+        },
       },
     });
 
@@ -118,7 +163,33 @@ export class ClientsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return { ...client, entityDocuments };
+    const activeInvoices = (client.invoices || []).filter((inv: any) => inv.status !== 'cancelled');
+    let totalRevenue = 0;
+    let totalPaid = 0;
+    for (const inv of activeInvoices) {
+      const rate = Number(inv.exchangeRate || 1) > 1
+        ? Number(inv.exchangeRate)
+        : inv.currency === 'USD'
+        ? 50
+        : 1;
+      const amountEgp = Math.round(Number(inv.total || 0) * rate);
+      totalRevenue += amountEgp;
+      if (inv.status === 'paid') {
+        totalPaid += amountEgp;
+      } else if (inv.status === 'partially_paid') {
+        totalPaid += Math.round(amountEgp * 0.5);
+      }
+    }
+    const outstandingBalance = Math.max(0, totalRevenue - totalPaid);
+
+    return {
+      ...client,
+      entityDocuments,
+      totalShipments: client._count?.shipments ?? client.shipments?.length ?? 0,
+      totalRevenue,
+      totalPaid,
+      outstandingBalance,
+    };
   }
 
   /** Validate a tenant-scoped FK (company type / industry sector / city) */
@@ -207,17 +278,17 @@ export class ClientsService {
           cityId,
           contacts: contactList.length > 0
             ? {
-                create: contactList.map((c: any) => ({
-                  companyId: tenantId,
-                  name: String(c.name || rest.name || '').trim(),
-                  title: c.title ? String(c.title).trim() : null,
-                  phone: c.phone ? String(c.phone).trim() : null,
-                  mobile: c.mobile ? String(c.mobile).trim() : null,
-                  email: c.email ? String(c.email).trim() : null,
-                  isPrimary: Boolean(c.isPrimary),
-                  notes: c.notes ? String(c.notes).trim() : null,
-                })),
-              }
+              create: contactList.map((c: any) => ({
+                companyId: tenantId,
+                name: String(c.name || rest.name || '').trim(),
+                title: c.title ? String(c.title).trim() : null,
+                phone: c.phone ? String(c.phone).trim() : null,
+                mobile: c.mobile ? String(c.mobile).trim() : null,
+                email: c.email ? String(c.email).trim() : null,
+                isPrimary: Boolean(c.isPrimary),
+                notes: c.notes ? String(c.notes).trim() : null,
+              })),
+            }
             : undefined,
         },
         include: CLIENT_INCLUDE,
