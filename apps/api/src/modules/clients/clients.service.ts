@@ -51,22 +51,20 @@ export class ClientsService {
 
     if (list.length > 0) {
       const ids = list.map((c) => c.id);
-      const [docs, invoices] = await Promise.all([
-        this.prisma.entityDocument.findMany({
-          where: { companyId: tenantId, entityType: 'client', entityId: { in: ids } },
-          select: {
-            id: true, entityId: true, category: true, fileName: true,
-            fileSize: true, mimeType: true, expiryDate: true, createdAt: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        }),
-        this.prisma.invoice.findMany({
-          where: { companyId: tenantId, clientId: { in: ids }, status: { not: 'cancelled' } },
-          select: {
-            clientId: true, status: true, total: true, currency: true, exchangeRate: true,
-          },
-        }),
-      ]);
+      const docs = await this.prisma.entityDocument.findMany({
+        where: { companyId: tenantId, entityType: 'client', entityId: { in: ids } },
+        select: {
+          id: true, entityId: true, category: true, fileName: true,
+          fileSize: true, mimeType: true, expiryDate: true, createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const invoices = await this.prisma.invoice.findMany({
+        where: { companyId: tenantId, clientId: { in: ids }, status: { not: 'cancelled' } },
+        select: {
+          clientId: true, status: true, total: true, currency: true, exchangeRate: true,
+        },
+      });
 
       const docsByClient = new Map<string, any[]>();
       for (const d of docs) {
