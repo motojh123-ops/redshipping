@@ -121,18 +121,20 @@ export const ClientList: React.FC = () => {
     return clients.filter((c) => {
       if (activeTab === 'prospect' && c.status !== 'prospect') return false;
       if (activeTab === 'active' && c.status !== 'active') return false;
-      if (categoryFilter !== 'all' && !String(c.category || '').includes(categoryFilter)) return false;
+      const catText = `${c.category || ''} ${c.companyType?.nameAr || ''} ${c.industrySector?.nameAr || ''}`;
+      if (categoryFilter !== 'all' && !catText.includes(categoryFilter)) return false;
 
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
-        const matchName = c.name.toLowerCase().includes(term);
+        const matchName = (c.name || '').toLowerCase().includes(term);
+        const matchNameAr = (c.nameAr || '').toLowerCase().includes(term);
         const matchTrade = c.tradeName?.toLowerCase().includes(term);
         const matchTax = c.taxNumber?.toLowerCase().includes(term);
         const matchCR = c.commercialReg?.toLowerCase().includes(term);
         const matchCity = String(c.city || '').toLowerCase().includes(term);
         const matchPhone = c.phone?.toLowerCase().includes(term);
         const matchContact = c.contactName?.toLowerCase().includes(term);
-        if (!matchName && !matchTrade && !matchTax && !matchCR && !matchCity && !matchPhone && !matchContact) {
+        if (!matchName && !matchNameAr && !matchTrade && !matchTax && !matchCR && !matchCity && !matchPhone && !matchContact) {
           return false;
         }
       }
@@ -447,22 +449,30 @@ export const ClientList: React.FC = () => {
                             : 'bg-gradient-to-br from-amber-500 to-orange-500 text-white'
                         }`}
                       >
-                        {client.name.charAt(0)}
+                        {(client.nameAr || client.name || '؟').charAt(0)}
                       </div>
                       <div>
                         <Link
                           to={`/clients/${client.id}`}
                           className="font-black text-slate-900 dark:text-white text-base hover:text-brand-600 transition block leading-snug"
                         >
-                          {client.name}
+                          {client.nameAr || client.name}
                         </Link>
-                        {client.tradeName && client.tradeName !== client.name && (
+                        {client.nameAr && client.name && client.nameAr !== client.name ? (
+                          <span className="text-[11px] text-slate-400 font-mono block mt-0.5">
+                            {client.name}
+                          </span>
+                        ) : client.tradeName && client.tradeName !== client.name ? (
                           <span className="text-[11px] text-slate-400 font-mono block mt-0.5">
                             {client.tradeName}
                           </span>
-                        )}
+                        ) : null}
                         <span className="text-xs text-brand-600 dark:text-brand-400 font-bold block mt-1">
-                          {client.category || client.companyType?.nameAr || client.companyType?.nameEn || '—'}
+                          {(!client.category?.startsWith('lead:stage:') && client.category) ||
+                            [client.companyType?.nameAr || client.companyType?.nameEn, client.industrySector?.nameAr || client.industrySector?.nameEn]
+                              .filter(Boolean)
+                              .join(' — ') ||
+                            '—'}
                         </span>
                       </div>
                     </div>
@@ -484,12 +494,18 @@ export const ClientList: React.FC = () => {
                   </div>
 
                   {/* Commodity / Demand for Leads */}
-                  {!isActual && (client.commodityInterest || client.notes) && (
-                    <div className="p-3 rounded-2xl bg-amber-100/50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-xs leading-relaxed border border-amber-200/60 dark:border-amber-800/40">
-                      <span className="font-bold block mb-0.5">الاهتمام التشغيلي للشحنات:</span>
-                      <span>{client.commodityInterest || client.notes}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    const cleanNote = (client.commodityInterest || client.notes || '')
+                      .split('\n')
+                      .filter((l) => l && !l.startsWith('lead:meta:') && !l.startsWith('lead:stage:'))
+                      .join(' • ');
+                    return !isActual && cleanNote ? (
+                      <div className="p-3 rounded-2xl bg-amber-100/50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-xs leading-relaxed border border-amber-200/60 dark:border-amber-800/40">
+                        <span className="font-bold block mb-0.5">الاهتمام التشغيلي للشحنات:</span>
+                        <span>{cleanNote}</span>
+                      </div>
+                    ) : null;
+                  })()}
 
                   {/* Legal & Meta Information */}
                   <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800/80">
@@ -663,8 +679,12 @@ export const ClientList: React.FC = () => {
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer"
                     >
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                        <div>{c.name}</div>
-                        {c.tradeName && <div className="text-[10px] text-slate-400 font-mono">{c.tradeName}</div>}
+                        <div>{c.nameAr || c.name}</div>
+                        {c.nameAr && c.name && c.nameAr !== c.name ? (
+                          <div className="text-[10px] text-slate-400 font-mono">{c.name}</div>
+                        ) : c.tradeName ? (
+                          <div className="text-[10px] text-slate-400 font-mono">{c.tradeName}</div>
+                        ) : null}
                       </td>
                       <td className="py-3.5 px-4">
                         {c.status === 'active' ? (
@@ -677,7 +697,13 @@ export const ClientList: React.FC = () => {
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">{c.category || '—'}</td>
+                      <td className="py-3.5 px-4 text-brand-600 dark:text-brand-400 font-semibold">
+                        {(!c.category?.startsWith('lead:stage:') && c.category) ||
+                          [c.companyType?.nameAr || c.companyType?.nameEn, c.industrySector?.nameAr || c.industrySector?.nameEn]
+                            .filter(Boolean)
+                            .join(' — ') ||
+                          '—'}
+                      </td>
                       <td className="py-3.5 px-4">
                         <div
                           onClick={(e) => {

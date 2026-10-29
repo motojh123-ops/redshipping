@@ -1,0 +1,230 @@
+ring    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId                String    @map("company_id") @db.Uuid
+  shipmentId               String    @unique @map("shipment_id") @db.Uuid
+  acidNumber               String?   @map("acid_number") @db.VarChar(19)
+  acidIssueDate            DateTime? @map("acid_issue_date") @db.Date
+  acidExpiryDate           DateTime? @map("acid_expiry_date") @db.Date
+  customsCertificateNumber String?   @map("customs_certificate_number") @db.VarChar(50)
+  customsBrokerId          String?   @map("customs_broker_id") @db.Uuid
+  customsValueDeclared     Decimal?  @map("customs_value_declared") @db.Decimal(14, 2)
+  dutiesPaid               Decimal?  @map("duties_paid") @db.Decimal(14, 2)
+  vatPaid                  Decimal?  @map("vat_paid") @db.Decimal(14, 2)
+  inspectionDate           DateTime? @map("inspection_date") @db.Date
+  releaseDate              DateTime? @map("release_date") @db.Date
+  status                   String    @default("acid_requested") @db.VarChar(50)
+  nafezaVerifiedAt         DateTime? @map("nafeza_verified_at") @db.Timestamptz
+  notes                    String?   @db.Text
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  customsBroker User?    @relation(fields: [customsBrokerId], references: [id])
+
+  @@map("customs_dossiers")
+}
+
+model Invoice {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String        @map("company_id") @db.Uuid
+  invoiceNumber String        @map("invoice_number") @db.VarChar(50)
+  shipmentId    String?       @map("shipment_id") @db.Uuid
+  clientId      String        @map("client_id") @db.Uuid
+  invoiceType   InvoiceType   @map("invoice_type")
+  status        InvoiceStatus @default(draft)
+  currency      String        @default("USD") @db.VarChar(3)
+  exchangeRate  Decimal       @default(1.0000) @map("exchange_rate") @db.Decimal(10, 4)
+  subtotal      Decimal       @default(0) @db.Decimal(14, 2)
+  taxAmount     Decimal       @default(0) @map("tax_amount") @db.Decimal(14, 2)
+  total         Decimal       @default(0) @db.Decimal(14, 2)
+  issueDate     DateTime?     @map("issue_date") @db.Date
+  dueDate       DateTime?     @map("due_date") @db.Date
+  notes         String?       @db.Text
+  createdById   String?       @map("created_by_id") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipment  Shipment?     @relation(fields: [shipmentId], references: [id])
+  client    Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation(fields: [createdById], references: [id])
+  items     InvoiceItem[]
+
+  @@unique([companyId, invoiceNumber])
+  @@map("invoices")
+}
+
+model DispatchTrip {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  shipmentId       String?   @map("shipment_id") @db.Uuid
+  tripNumber       String    @map("trip_number") @db.VarChar(50)
+  clientName       String    @map("client_name") @db.VarChar(255)
+  containerNumber  String?   @map("container_number") @db.VarChar(20)
+  containerType    String?   @map("container_type") @db.VarChar(50)
+  pickupLocation   String?   @map("pickup_location") @db.VarChar(255)
+  deliveryLocation String?   @map("delivery_location") @db.VarChar(255)
+  driverName       String?   @map("driver_name") @db.VarChar(150)
+  driverPhone      String?   @map("driver_phone") @db.VarChar(50)
+  truckPlate       String?   @map("truck_plate") @db.VarChar(50)
+  truckType        String?   @map("truck_type") @db.VarChar(100)
+  status           String    @default("scheduled") @db.VarChar(30)
+  scheduledDate    DateTime? @map("scheduled_date") @db.Date
+  departureTime    String?   @map("departure_time") @db.VarChar(10)
+  estimatedArrival String?   @map("estimated_arrival") @db.VarChar(10)
+  actualArrival    String?   @map("actual_arrival") @db.VarChar(10)
+  costRate         Decimal   @default(0) @map("cost_rate") @db.Decimal(12, 2)
+  sellRate         Decimal   @default(0) @map("sell_rate") @db.Decimal(12, 2)
+  currency         String    @default("EGP") @db.VarChar(3)
+  waybillNumber    String?   @map("waybill_number") @db.VarChar(50)
+  notes            String?   @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+  driverId String?   @map("driver_id") @db.Uuid
+  driver   Driver?   @relation(fields: [driverId], references: [id])
+
+  @@unique([companyId, tripNumber])
+  @@map("dispatch_trips")
+}
+
+model Driver {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  name          String    @db.VarChar(255)
+  phone         String?   @db.VarChar(50)
+  nationalId    String?   @map("national_id") @db.VarChar(50)
+  licenseNumber String?   @map("license_number") @db.VarChar(50)
+  licenseExpiry DateTime? @map("license_expiry") @db.Date
+  truckPlate    String?   @map("truck_plate") @db.VarChar(50)
+  trailerPlate  String?   @map("trailer_plate") @db.VarChar(50)
+  truckType     String?   @map("truck_type") @db.VarChar(100)
+  vendorId      String?   @map("vendor_id") @db.Uuid
+  notes         String?   @db.Text
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor  Vendor?        @relation(fields: [vendorId], references: [id])
+  trips   DispatchTrip[]
+
+  @@map("drivers")
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  type      String   @db.VarChar(30)
+  severity  String   @default("info") @db.VarChar(20)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  link      String?  @db.VarChar(255)
+  entityId  String?  @map("entity_id") @db.VarChar(64)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isRead, createdAt])
+  @@map("notifications")
+}
+
+model InvoiceItem {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  invoiceId    String   @map("invoice_id") @db.Uuid
+  chargeItemId String?  @map("charge_item_id") @db.Uuid
+  description  String   @db.VarChar(255)
+  quantity     Decimal  @default(1) @db.Decimal(10, 2)
+  unitPrice    Decimal  @default(0) @map("unit_price") @db.Decimal(12, 2)
+  totalPrice   Decimal  @default(0) @map("total_price") @db.Decimal(14, 2)
+  currency     String   @default("USD") @db.VarChar(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice    Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  chargeItem ChargeItem? @relation(fields: [chargeItemId], references: [id])
+
+  @@map("invoice_items")
+}
+
+model CrmActivity {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String       @map("company_id") @db.Uuid
+  clientId     String       @map("client_id") @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  activityType ActivityType @map("activity_type")
+  subject      String?      @db.VarChar(255)
+  body         String?      @db.Text
+  scheduledAt  DateTime?    @map("scheduled_at") @db.Timestamptz
+  completedAt  DateTime?    @map("completed_at") @db.Timestamptz
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("crm_activities")
+}
+
+model EntityDocument {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String           @map("company_id") @db.Uuid
+  entityType       String           @map("entity_type") @db.VarChar(50)
+  entityId         String           @map("entity_id") @db.Uuid
+  category         DocumentCategory
+  fileName         String           @map("file_name") @db.VarChar(255)
+  fileSize         Int              @map("file_size")
+  mimeType         String           @map("mime_type") @db.VarChar(100)
+  storageKey       String           @map("storage_key") @db.Text
+  publicUrl        String?          @map("public_url") @db.Text
+  /// base64 payload for direct DB storage (Workers have no filesystem)
+  data             String?          @map("data") @db.Text
+  expiryDate       DateTime?        @map("expiry_date") @db.Date
+  ocrExtractedText String?          @map("ocr_extracted_text") @db.Text
+  uploadedById     String           @map("uploaded_by_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation(fields: [uploadedById], references: [id])
+
+  @@map("entity_documents")
+}
+
+model ScheduledReminder {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  title          String   @db.VarChar(255)
+  entityType     String?  @map("entity_type") @db.VarChar(50)
+  entityId       String?  @map("entity_id") @db.Uuid
+  dueAt          DateTime @map("due_at") @db.Timestamptz
+  assignedUserId String   @map("assigned_user_id") @db.Uuid
+  isCompleted    Boolean  @default(false) @map("is_completed")
+  priority       String   @default("normal") @db.VarChar(20)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedUser User    @relation(fields: [assignedUserId], references: [id])
+
+  @@map("scheduled_reminders")
+}
+
+model AuditLog {
+  id        BigInt   @default(autoincrement())
+  companyId String   @map("company_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String   @db.VarChar(20)
+  tableName String   @map("table_name") @db.VarChar(100)
+  recordId  String   @map("record_id") @db.Uuid
+  oldData   Json?    @map("old_data")
+  newData   Json?    @map("new_data")
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([id, createdAt])
+  @@map("audit_logs")
+}

@@ -59,6 +59,7 @@ interface CrmLeadMeta {
 const VALID_STAGES = ['new', 'contacted', 'quoted', 'negotiation', 'won', 'lost'] as const;
 
 function stageFromClient(client: any): LeadItem['stage'] {
+  if (client.status === 'active') return 'won';
   const cat = client.category || '';
   if (cat.startsWith(STAGE_KEY)) {
     const s = cat.slice(STAGE_KEY.length);
@@ -67,9 +68,17 @@ function stageFromClient(client: any): LeadItem['stage'] {
   return 'new';
 }
 
+function toIsoDate(val: any, fallback = ''): string {
+  if (!val) return fallback;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  const s = String(val);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 function metaFromClient(client: any): CrmLeadMeta {
   try {
-    const note = (client.notes || '').split('\n').find((l: string) => l.startsWith(META_KEY));
+    const lines = (client.notes || '').split('\n').filter((l: string) => l.startsWith(META_KEY));
+    const note = lines[lines.length - 1];
     if (note) return { ...defaultMeta(), ...JSON.parse(note.slice(META_KEY.length)) };
   } catch {
     // fall through to defaults
@@ -92,10 +101,16 @@ function defaultMeta(): CrmLeadMeta {
 function toLeadItem(client: any, activities: any[]): LeadItem {
   const meta = metaFromClient(client);
   const stage = stageFromClient(client);
+  const today = new Date().toISOString().slice(0, 10);
+  const createdDate = toIsoDate(client.createdAt, today);
+  const displayClient = client.nameAr || client.tradeName || client.name;
+  const rawCat = client.category || '';
+  const cleanCat = rawCat.startsWith(STAGE_KEY) ? '' : rawCat;
+
   return {
     id: client.id,
-    title: meta.title || `${client.category?.includes('مصنع') ? 'توريد' : 'شحن'} — ${client.name}`,
-    client: client.tradeName || client.name,
+    title: meta.title || `${cleanCat.includes('مصنع') ? 'توريد' : 'شحن'} — ${displayClient}`,
+    client: displayClient,
     clientId: client.id,
     clientType: meta.clientType,
     serviceType: meta.serviceType,
@@ -105,8 +120,8 @@ function toLeadItem(client: any, activities: any[]): LeadItem {
     currency: meta.currency,
     salesPerson: client.salesRep?.name || meta.salesPerson || 'فريق المبيعات',
     stage,
-    expectedCloseDate: meta.expectedCloseDate || client.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-    createdAt: client.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    expectedCloseDate: meta.expectedCloseDate || createdDate,
+    createdAt: createdDate,
     priority: meta.priority,
     notes: (client.notes || '')
       .split('\n')
@@ -116,7 +131,7 @@ function toLeadItem(client: any, activities: any[]): LeadItem {
       id: a.id,
       type: a.activityType,
       description: a.body || a.subject || '',
-      date: a.createdAt?.slice(0, 10) || '',
+      date: toIsoDate(a.createdAt, ''),
       user: a.user?.name || '—',
     })),
   };
@@ -126,7 +141,13 @@ function toLeadItem(client: any, activities: any[]): LeadItem {
 export class CrmService {
   constructor(private prisma: PrismaService) {}
 
-  private async loadLead(tenantId: string, id: string, allowConverted = false) {
+  private async resolveUserId(tenantId: string, userId?: string): Promise<string | null> {
+    if (userId) return userId;
+    const u = await this.prisma.user.findFirst({ where: { companyId: tenantId }, select: { id: true } });
+    return u?.id || null;
+  }
+
+  private async loadLead(tenantId: string, id: string, allowConverted = true) {
     const client = await this.prisma.client.findFirst({
       where: {
         id,
@@ -135,6 +156,8 @@ export class CrmService {
       },
       include: {
         salesRep: { select: { name: true } },
+        companyType: { select: { nameAr: true, nameEn: true } },
+        industrySector: { select: { nameAr: true, nameEn: true } },
         crmActivities: {
           include: { user: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },
@@ -148,11 +171,23 @@ export class CrmService {
   }
 
   async findAll(tenantId: string, query?: { stage?: string; salesPerson?: string; search?: string }) {
-    const where: any = { companyId: tenantId, status: 'prospect' };
+    const where: any = {
+      companyId: tenantId,
+      OR: [
+        { status: 'prospect' },
+        { category: { startsWith: STAGE_KEY } },
+        { convertedAt: { not: null } },
+      ],
+    };
     if (query?.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { tradeName: { contains: query.search, mode: 'insensitive' } },
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { nameAr: { contains: query.search, mode: 'insensitive' } },
+            { tradeName: { contains: query.search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
@@ -160,6 +195,8 @@ export class CrmService {
       where,
       include: {
         salesRep: { select: { name: true } },
+        companyType: { select: { nameAr: true, nameEn: true } },
+        industrySector: { select: { nameAr: true, nameEn: true } },
         crmActivities: {
           include: { user: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },
@@ -180,7 +217,7 @@ export class CrmService {
   }
 
   async findOne(tenantId: string, id: string) {
-    const client = await this.loadLead(tenantId, id);
+    const client = await this.loadLead(tenantId, id, true);
     return toLeadItem(client, client.crmActivities || []);
   }
 
@@ -203,7 +240,7 @@ export class CrmService {
     };
   }
 
-  async create(tenantId: string, data: any) {
+  async create(tenantId: string, data: any, userId?: string) {
     const meta: CrmLeadMeta = {
       serviceType: data.serviceType || 'sea_fcl',
       origin: data.origin || '—',
@@ -217,22 +254,55 @@ export class CrmService {
       title: data.title,
     };
 
-    const client = await this.prisma.client.create({
-      data: {
-        companyId: tenantId,
-        name: String(data.client || data.title || 'عميل محتمل').trim(),
-        status: 'prospect',
-        category: `${STAGE_KEY}new`,
-        notes: [data.notes, `${META_KEY}${JSON.stringify(meta)}`].filter(Boolean).join('\n'),
-      },
-    });
+    const companyName = String(data.client || data.name || data.nameAr || data.title || 'عميل محتمل').trim();
+    const companyNameAr = data.nameAr
+      ? String(data.nameAr).trim()
+      : /[\u0600-\u06FF]/.test(companyName)
+      ? companyName
+      : null;
 
-    if (data.title || data.notes) {
+    let targetClient: any = null;
+    if (data.clientId) {
+      targetClient = await this.prisma.client.findFirst({
+        where: { id: String(data.clientId), companyId: tenantId },
+      });
+    }
+
+    if (targetClient) {
+      const existingNotes = (targetClient.notes || '')
+        .split('\n')
+        .filter((l: string) => l && !l.startsWith(META_KEY) && !l.startsWith(STAGE_KEY));
+      if (data.notes) existingNotes.push(String(data.notes).trim());
+      existingNotes.push(`${META_KEY}${JSON.stringify(meta)}`);
+
+      targetClient = await this.prisma.client.update({
+        where: { id: targetClient.id },
+        data: {
+          category: targetClient.status === 'active' ? `${STAGE_KEY}won` : `${STAGE_KEY}new`,
+          notes: existingNotes.filter(Boolean).join('\n'),
+        },
+      });
+    } else {
+      targetClient = await this.prisma.client.create({
+        data: {
+          companyId: tenantId,
+          name: companyName,
+          nameAr: companyNameAr,
+          status: 'prospect',
+          category: `${STAGE_KEY}new`,
+          salesRepId: userId || undefined,
+          notes: [data.notes ? String(data.notes).trim() : '', `${META_KEY}${JSON.stringify(meta)}`].filter(Boolean).join('\n'),
+        },
+      });
+    }
+
+    const resolvedUid = await this.resolveUserId(tenantId, userId);
+    if ((data.title || data.notes) && resolvedUid) {
       await this.prisma.crmActivity.create({
         data: {
           companyId: tenantId,
-          clientId: client.id,
-          userId: (await this.prisma.user.findFirst({ where: { companyId: tenantId } }))!.id,
+          clientId: targetClient.id,
+          userId: resolvedUid,
           activityType: 'note',
           subject: 'lead:created',
           body: data.title || data.notes || 'تم إنشاء فرصة جديدة',
@@ -240,69 +310,74 @@ export class CrmService {
       });
     }
 
-    return this.findOne(tenantId, client.id);
+    return this.findOne(tenantId, targetClient.id);
   }
 
-  async updateStage(tenantId: string, id: string, stage: LeadItem['stage'], user?: string) {
+  async updateStage(tenantId: string, id: string, stage: LeadItem['stage'], userId?: string) {
     if (!(VALID_STAGES as readonly string[]).includes(stage)) {
       throw new NotFoundException(`Invalid lead stage '${stage}'`);
     }
-    const lead = await this.loadLead(tenantId, id);
+    const lead = await this.loadLead(tenantId, id, true);
     const oldStage = stageFromClient(lead);
 
     const notesLines = (lead.notes || '').split('\n');
-    const metaLine = notesLines.find((l: string) => l.startsWith(META_KEY)) || `${META_KEY}${JSON.stringify(defaultMeta())}`;
+    const metaLines = notesLines.filter((l: string) => l.startsWith(META_KEY));
+    const metaLine = metaLines[metaLines.length - 1] || `${META_KEY}${JSON.stringify(defaultMeta())}`;
+    const cleanNotes = notesLines.filter((l: string) => l && !l.startsWith(STAGE_KEY) && !l.startsWith(META_KEY));
 
     await this.prisma.client.update({
       where: { id: lead.id },
       data: {
         category: `${STAGE_KEY}${stage}`,
-        notes: [notesLines.filter((l: string) => !l.startsWith(STAGE_KEY)).join('\n'), metaLine].filter(Boolean).join('\n'),
+        notes: [...cleanNotes, metaLine].filter(Boolean).join('\n'),
+        ...(stage === 'won' && oldStage !== 'won'
+          ? { status: 'active', convertedAt: lead.convertedAt || new Date() }
+          : stage !== 'won' && lead.status === 'active'
+          ? { status: 'prospect' }
+          : {}),
       },
     });
 
-    // When a lead is won, promote the client to active
-    if (stage === 'won' && oldStage !== 'won') {
-      await this.prisma.client.update({
-        where: { id: lead.id },
-        data: { status: 'active', convertedAt: new Date() },
+    const resolvedUid = await this.resolveUserId(tenantId, userId);
+    if (resolvedUid) {
+      await this.prisma.crmActivity.create({
+        data: {
+          companyId: tenantId,
+          clientId: lead.id,
+          userId: resolvedUid,
+          activityType: 'note',
+          subject: 'lead:stage',
+          body: `تم تغيير مرحلة الفرصة من "${oldStage}" إلى "${stage}"`,
+        },
       });
     }
 
-    await this.prisma.crmActivity.create({
-      data: {
-        companyId: tenantId,
-        clientId: lead.id,
-        userId: (await this.prisma.user.findFirst({ where: { companyId: tenantId } }))!.id,
-        activityType: 'note',
-        subject: 'lead:stage',
-        body: `تم تغيير مرحلة الفرصة من "${oldStage}" إلى "${stage}"`,
-      },
-    });
-
     const updated = await this.loadLead(tenantId, id, true);
     return toLeadItem(updated, updated.crmActivities || []);
   }
 
-  async addActivity(tenantId: string, id: string, activityData: { type: LeadActivity['type']; description: string; user?: string }) {
+  async addActivity(tenantId: string, id: string, activityData: { type: LeadActivity['type']; description: string; userId?: string }) {
     const lead = await this.loadLead(tenantId, id, true);
+    const resolvedUid = await this.resolveUserId(tenantId, activityData.userId);
 
-    await this.prisma.crmActivity.create({
-      data: {
-        companyId: tenantId,
-        clientId: lead.id,
-        userId: (await this.prisma.user.findFirst({ where: { companyId: tenantId } }))!.id,
-        activityType: activityData.type || 'note',
-        subject: 'lead:activity',
-        body: activityData.description,
-      },
-    });
+    if (resolvedUid) {
+      await this.prisma.crmActivity.create({
+        data: {
+          companyId: tenantId,
+          clientId: lead.id,
+          userId: resolvedUid,
+          activityType: activityData.type || 'note',
+          subject: 'lead:activity',
+          body: activityData.description,
+        },
+      });
+    }
 
     const updated = await this.loadLead(tenantId, id, true);
     return toLeadItem(updated, updated.crmActivities || []);
   }
 
-  async convert(tenantId: string, id: string, targetType: 'shipment' | 'client') {
+  async convert(tenantId: string, id: string, targetType: 'shipment' | 'client', userId?: string) {
     const lead = await this.loadLead(tenantId, id, true);
 
     // Mark the prospect as a real active client
@@ -315,16 +390,19 @@ export class CrmService {
       },
     });
 
-    await this.prisma.crmActivity.create({
-      data: {
-        companyId: tenantId,
-        clientId: lead.id,
-        userId: (await this.prisma.user.findFirst({ where: { companyId: tenantId } }))!.id,
-        activityType: 'note',
-        subject: 'lead:converted',
-        body: `تم تحويل الفرصة بنجاح إلى ${targetType === 'shipment' ? 'ملف شحنة تشغيلية' : 'عميل معتمد في النظام'}`,
-      },
-    });
+    const resolvedUid = await this.resolveUserId(tenantId, userId);
+    if (resolvedUid) {
+      await this.prisma.crmActivity.create({
+        data: {
+          companyId: tenantId,
+          clientId: lead.id,
+          userId: resolvedUid,
+          activityType: 'note',
+          subject: 'lead:converted',
+          body: `تم تحويل الفرصة بنجاح إلى ${targetType === 'shipment' ? 'ملف شحنة تشغيلية' : 'عميل معتمد في النظام'}`,
+        },
+      });
+    }
 
     const updated = await this.loadLead(tenantId, id, true);
     return toLeadItem(updated, updated.crmActivities || []);

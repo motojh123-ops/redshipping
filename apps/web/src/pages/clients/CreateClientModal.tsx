@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { Check, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '../../services/api';
 
 interface CreateClientModalProps {
@@ -37,8 +38,30 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, on
 
   useEffect(() => {
     if (!isOpen) return;
-    api.get('/masters/libraries/company-types').then((r: any) => setCompanyTypes(Array.isArray(r) ? r : r?.data || [])).catch(() => {});
-    api.get('/masters/libraries/industry-sectors').then((r: any) => setSectors(Array.isArray(r) ? r : r?.data || [])).catch(() => {});
+    let cancelled = false;
+    (async () => {
+      try {
+        const rTypes: any = await api.get('/masters/libraries/company-types');
+        if (!cancelled) {
+          const list = Array.isArray(rTypes) ? rTypes : rTypes?.data || [];
+          setCompanyTypes(list);
+        }
+      } catch {
+        // non-blocking
+      }
+      try {
+        const rSectors: any = await api.get('/masters/libraries/industry-sectors');
+        if (!cancelled) {
+          const list = Array.isArray(rSectors) ? rSectors : rSectors?.data || [];
+          setSectors(list);
+        }
+      } catch {
+        // non-blocking
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -57,15 +80,35 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.nameAr.trim()) { alert('اسم الشركة / المنشأة مطلوب بالعربي والإنجليزي'); return; }
-    if (!form.companyTypeId || !form.industrySectorId) { alert('نوع الشركة وقطاع النشاط مطلوبان (من المرجعيات)'); return; }
+    const cleanNameEn = form.name.trim();
+    const cleanNameAr = form.nameAr.trim();
+    if (!cleanNameEn && !cleanNameAr) {
+      toast.error('يرجى إدخال اسم الشركة (بالعربية أو الإنجليزية)');
+      return;
+    }
+    if (companyTypes.length > 0 && !form.companyTypeId) {
+      toast.error('يرجى اختيار نوع الشركة');
+      return;
+    }
+    if (sectors.length > 0 && !form.industrySectorId) {
+      toast.error('يرجى اختيار قطاع / نوع النشاط');
+      return;
+    }
     setLoading(true);
     try {
+      const selectedType = companyTypes.find((t: any) => t.id === form.companyTypeId);
+      const selectedSector = sectors.find((s: any) => s.id === form.industrySectorId);
+      const categoryLabel = [selectedType?.nameAr || selectedType?.nameEn, selectedSector?.nameAr || selectedSector?.nameEn]
+        .filter(Boolean)
+        .join(' — ');
+
       await api.post('/clients', {
-        name: form.name.trim(),
-        nameAr: form.nameAr.trim(),
-        companyTypeId: form.companyTypeId,
-        industrySectorId: form.industrySectorId,
+        name: cleanNameEn || cleanNameAr,
+        nameAr: cleanNameAr || cleanNameEn,
+        tradeName: cleanNameAr && cleanNameEn ? cleanNameAr : undefined,
+        companyTypeId: form.companyTypeId || undefined,
+        industrySectorId: form.industrySectorId || undefined,
+        category: categoryLabel || undefined,
         countryCode: form.countryCode,
         cityId: form.cityId || undefined,
         city: form.cityId ? undefined : (form.cityManual.trim() || undefined),
@@ -79,11 +122,12 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, on
         notes: form.notes || undefined,
         type: 'lead',
       });
+      toast.success('تم تسجيل العميل بنجاح');
       reset();
       onSuccess();
       onClose();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'تعذر حفظ العميل — حاول مجدداً');
+      toast.error(err?.message || err?.response?.data?.message || 'تعذر حفظ العميل — حاول مجدداً');
     } finally {
       setLoading(false);
     }
@@ -102,29 +146,29 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, on
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>اسم الشركة (إنجليزي) <span className="text-red-500">*</span></label>
-            <input dir="ltr" required placeholder="Delta Food Industries" value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
-          </div>
-          <div>
             <label className={labelCls}>اسم الشركة (عربي) <span className="text-red-500">*</span></label>
-            <input dir="rtl" required placeholder="شركة دلتا للصناعات الغذائية" value={form.nameAr}
+            <input dir="rtl" placeholder="شركة دلتا للصناعات الغذائية" value={form.nameAr}
               onChange={(e) => setForm({ ...form, nameAr: e.target.value })} className={inputCls} />
           </div>
           <div>
+            <label className={labelCls}>اسم الشركة (إنجليزي) <span className="text-slate-400 font-normal text-[10px]">(اختياري إذا أُدخل بالعربي)</span></label>
+            <input dir="ltr" placeholder="Delta Food Industries" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
+          </div>
+          <div>
             <label className={labelCls}>نوع الشركة <span className="text-red-500">*</span></label>
-            <select required value={form.companyTypeId} onChange={(e) => setForm({ ...form, companyTypeId: e.target.value })} className={inputCls}>
+            <select value={form.companyTypeId} onChange={(e) => setForm({ ...form, companyTypeId: e.target.value })} className={inputCls}>
               <option value="">— اختر النوع —</option>
-              {companyTypes.filter((t: any) => t.isActive).map((t: any) => (
+              {companyTypes.filter((t: any) => t.isActive !== false).map((t: any) => (
                 <option key={t.id} value={t.id}>{t.nameAr || t.nameEn}</option>
               ))}
             </select>
           </div>
           <div>
             <label className={labelCls}>قطاع / نوع النشاط <span className="text-red-500">*</span></label>
-            <select required value={form.industrySectorId} onChange={(e) => setForm({ ...form, industrySectorId: e.target.value })} className={inputCls}>
+            <select value={form.industrySectorId} onChange={(e) => setForm({ ...form, industrySectorId: e.target.value })} className={inputCls}>
               <option value="">— اختر النشاط —</option>
-              {sectors.filter((s: any) => s.isActive).map((s: any) => (
+              {sectors.filter((s: any) => s.isActive !== false).map((s: any) => (
                 <option key={s.id} value={s.id}>{s.nameAr || s.nameEn}</option>
               ))}
             </select>
@@ -202,5 +246,3 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({ isOpen, on
     </Modal>
   );
 };
-
-

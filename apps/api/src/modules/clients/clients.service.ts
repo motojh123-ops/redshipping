@@ -194,9 +194,15 @@ export class ClientsService {
 
   /** Map request body → client scalar fields (quick entry §2 + master completion §5) */
   private clientScalar(rest: any): any {
+    const primaryName = String(rest.name || rest.nameAr || '').trim();
+    const arabicName = rest.nameAr
+      ? String(rest.nameAr).trim()
+      : /[\u0600-\u06FF]/.test(primaryName)
+      ? primaryName
+      : null;
     const data: any = {
-      name: String(rest.name || '').trim(),
-      nameAr: rest.nameAr ? String(rest.nameAr).trim() : null,
+      name: primaryName,
+      nameAr: arabicName,
       tradeName: rest.tradeName ? String(rest.tradeName).trim() : null,
       taxNumber: rest.taxNumber ? String(rest.taxNumber).trim() : null,
       commercialReg: rest.commercialReg ? String(rest.commercialReg).trim() : null,

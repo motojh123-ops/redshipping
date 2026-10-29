@@ -41,8 +41,8 @@ export class CrmController {
   @Post('leads')
   @Roles(UserRole.SUPER_ADMIN, UserRole.COMPANY_ADMIN, UserRole.SALES_REP, UserRole.OPS_OFFICER)
   @ApiOperation({ summary: 'Create a new sales lead in the CRM pipeline' })
-  async create(@TenantId() tenantId: string, @Body() data: any) {
-    return this.crmService.create(tenantId, data);
+  async create(@TenantId() tenantId: string, @Body() data: any, @CurrentUser() user: RequestUser) {
+    return this.crmService.create(tenantId, data, user?.id);
   }
 
   @Patch('leads/:id/stage')
@@ -54,7 +54,7 @@ export class CrmController {
     @Body('stage') stage: LeadItem['stage'],
     @CurrentUser() user: RequestUser,
   ) {
-    return this.crmService.updateStage(tenantId, id, stage, user?.email || 'sales_rep');
+    return this.crmService.updateStage(tenantId, id, stage, user?.id);
   }
 
   @Post('leads/:id/activities')
@@ -65,7 +65,7 @@ export class CrmController {
     @Body() body: { type: LeadActivity['type']; description: string },
     @CurrentUser() user: RequestUser,
   ) {
-    return this.crmService.addActivity(tenantId, id, { ...body, user: user?.email || 'sales_rep' });
+    return this.crmService.addActivity(tenantId, id, { ...body, userId: user?.id });
   }
 
   @Post('leads/:id/convert')
@@ -75,7 +75,8 @@ export class CrmController {
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body('targetType') targetType: 'shipment' | 'client',
+    @CurrentUser() user: RequestUser,
   ) {
-    return this.crmService.convert(tenantId, id, targetType || 'client');
+    return this.crmService.convert(tenantId, id, targetType || 'client', user?.id);
   }
 }

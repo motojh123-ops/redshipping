@@ -30,6 +30,7 @@ import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { exportToCsv } from '../../utils/exportUtils';
 import { ActiveClientProfileModal } from '../masters/ClientsMasterPage';
+import { toast } from 'sonner';
 
 /* ─── Demo Data ─── */
 const SERVICE_TYPES = [
@@ -140,11 +141,24 @@ export const LeadsPipelinePage: React.FC = () => {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [filterStage, setFilterStage] = useState<string>('all');
   const [filterSales, setFilterSales] = useState<string>('all');
+  const [existingClients, setExistingClients] = useState<Array<{ id: string; name: string; nameAr?: string | null }>>([]);
+
+  useEffect(() => {
+    if (!showNewLeadModal) return;
+    api
+      .get('/clients')
+      .then((res: any) => {
+        const list = Array.isArray(res) ? res : res?.data || [];
+        setExistingClients(list);
+      })
+      .catch(() => {});
+  }, [showNewLeadModal]);
 
   // New-lead form state (real POST /crm/leads)
   const [newLeadForm, setNewLeadForm] = useState({
     title: '',
     client: '',
+    clientId: '',
     serviceType: 'sea_fcl',
     priority: 'medium',
     origin: '',
@@ -163,10 +177,14 @@ export const LeadsPipelinePage: React.FC = () => {
   const handleCreateLead = () => {
     if (!newLeadForm.client.trim() || !newLeadForm.title.trim()) return;
     setIsSavingLead(true);
+    const matchedClient = existingClients.find(
+      (c) => (c.nameAr || c.name) === newLeadForm.client.trim() || c.name === newLeadForm.client.trim(),
+    );
     api
       .post('/crm/leads', {
         title: newLeadForm.title.trim(),
         client: newLeadForm.client.trim(),
+        clientId: newLeadForm.clientId || matchedClient?.id || undefined,
         serviceType: newLeadForm.serviceType,
         priority: newLeadForm.priority,
         origin: newLeadForm.origin.trim() || undefined,
@@ -177,10 +195,12 @@ export const LeadsPipelinePage: React.FC = () => {
         notes: newLeadForm.notes.trim() || undefined,
       })
       .then(() => {
+        toast.success('تمت إضافة الفرصة بنجاح');
         setShowNewLeadModal(false);
         setNewLeadForm({
           title: '',
           client: '',
+          clientId: '',
           serviceType: 'sea_fcl',
           priority: 'medium',
           origin: '',
@@ -192,7 +212,7 @@ export const LeadsPipelinePage: React.FC = () => {
         });
         fetchLeads();
       })
-      .catch(() => alert('تعذر حفظ الفرصة — تأكد من الاتصال بالخادم.'))
+      .catch((err: any) => toast.error(err?.message || 'تعذر حفظ الفرصة — تأكد من الاتصال بالخادم.'))
       .finally(() => setIsSavingLead(false));
   };
 
@@ -205,12 +225,13 @@ export const LeadsPipelinePage: React.FC = () => {
         description: activityForm.description.trim(),
       })
       .then((updated: any) => {
+        toast.success('تم تسجيل النشاط');
         if (updated) setSelectedLead(updated as Lead);
         setShowActivityModal(false);
         setActivityForm({ type: 'call', description: '' });
         fetchLeads();
       })
-      .catch(() => alert('تعذر إضافة النشاط — تأكد من الاتصال بالخادم.'))
+      .catch((err: any) => toast.error(err?.message || 'تعذر إضافة النشاط — تأكد من الاتصال بالخادم.'))
       .finally(() => setIsSavingActivity(false));
   };
 
@@ -228,9 +249,11 @@ export const LeadsPipelinePage: React.FC = () => {
             name: leadToConvert.client || leadToConvert.title,
             status: 'active',
           });
+        } else {
+          toast.success('تم تحويل الفرصة بنجاح');
         }
       })
-      .catch(() => alert('تعذر تحويل الفرصة — تأكد من الاتصال بالخادم.'));
+      .catch((err: any) => toast.error(err?.message || 'تعذر تحويل الفرصة — تأكد من الاتصال بالخادم.'));
   };
 
   // KPI calculations
@@ -581,14 +604,26 @@ export const LeadsPipelinePage: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">اسم العميل *</label>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">اسم الشركة / العميل *</label>
               <input
                 type="text"
+                list="crm-existing-clients-list"
                 value={newLeadForm.client}
-                onChange={(e) => setNewLeadForm((f) => ({ ...f, client: e.target.value }))}
-                placeholder="مثال: شركة النيل للصناعات"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const match = existingClients.find((c) => (c.nameAr || c.name) === val || c.name === val);
+                  setNewLeadForm((f) => ({ ...f, client: val, clientId: match?.id || '' }));
+                }}
+                placeholder="اختر شركة مسجلة أو اكتب اسم شركة جديدة..."
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
               />
+              <datalist id="crm-existing-clients-list">
+                {existingClients.map((c) => (
+                  <option key={c.id} value={c.nameAr || c.name}>
+                    {c.nameAr && c.name && c.nameAr !== c.name ? `${c.nameAr} — ${c.name}` : c.name}
+                  </option>
+                ))}
+              </datalist>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
