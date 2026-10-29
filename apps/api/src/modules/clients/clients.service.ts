@@ -97,7 +97,7 @@ export class ClientsService {
           include: {
             originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
             destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
-            shippingLine: { select: { id: true, code: true, name: true, nameAr: true } },
+            shippingLine: true,
           },
         },
       },

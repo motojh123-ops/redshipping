@@ -53,7 +53,7 @@ export const ClientDetails: React.FC = () => {
           status: s.currentStage || s.status || 'in_transit',
           pol: s.originPort?.nameEn || s.pol || s.vesselName || '—',
           pod: s.destinationPort?.nameEn || s.pod || s.voyageNumber || '—',
-          line: s.shippingLine?.name || s.vesselName || s.line || '—',
+          line: s.shippingLine?.nameEn || s.shippingLine?.name || s.vesselName || s.line || '—',
           containerNo: s.cargoDescription || s.containerNo || '—',
           eta: s.eta ? String(s.eta).slice(0, 10) : '—',
         })),
