@@ -93,7 +93,12 @@ export class ClientsService {
         },
         shipments: {
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 10,
+          include: {
+            originPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+            destinationPort: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+            shippingLine: { select: { id: true, code: true, name: true, nameAr: true } },
+          },
         },
       },
     });

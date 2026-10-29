@@ -25,16 +25,38 @@ export const ClientDetails: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'shipments' | 'financials' | 'contacts' | 'branches' | 'calls' | 'meetings' | 'reminders' | 'offers' | 'attachments'>('shipments');
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Modal states (MUST be declared before any conditional early return!)
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logType, setLogType] = useState<'call' | 'meeting' | 'reminder'>('call');
+  const [logForm, setLogForm] = useState({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
+  const [convertedToast] = useState(false);
+  const [savingLog, setSavingLog] = useState(false);
+  const [showOfferModal, setShowOfferModal] = useState(false);
+
   React.useEffect(() => {
     if (client) {
       // Map the real CRM activities persisted on the client into the tab views
       const acts: any[] = client.crmActivities || [];
+      const rawShipments: any[] = client.shipments || [];
       setC({
         ...client,
+        nameAr: client.nameAr || client.tradeName || '',
+        salesPerson: client.salesRep?.name || client.salesPerson || '—',
+        createdAt: client.createdAt ? String(client.createdAt).slice(0, 10) : '—',
         contacts: client.contacts || [],
         branches: client.branches || [],
         entityDocuments: client.entityDocuments || [],
-        shipments: client.shipments || [],
+        shipments: rawShipments.map((s: any) => ({
+          ...s,
+          jobNo: s.jobFileNumber || s.jobNo || '—',
+          type: String(s.shipmentType || s.type || 'FCL').toUpperCase(),
+          status: s.currentStage || s.status || 'in_transit',
+          pol: s.originPort?.nameEn || s.pol || s.vesselName || '—',
+          pod: s.destinationPort?.nameEn || s.pod || s.voyageNumber || '—',
+          line: s.shippingLine?.name || s.vesselName || s.line || '—',
+          containerNo: s.cargoDescription || s.containerNo || '—',
+          eta: s.eta ? String(s.eta).slice(0, 10) : '—',
+        })),
         invoices: client.invoices || [],
         offers: client.quotations || client.offers || [],
         calls: acts
@@ -72,13 +94,9 @@ export const ClientDetails: React.FC = () => {
     }
   }, [client]);
 
-  // Modal states
-  const [showLogModal, setShowLogModal] = useState(false);
-  const [logType, setLogType] = useState<'call' | 'meeting' | 'reminder'>('call');
-  const [logForm, setLogForm] = useState({ title: '', notes: '', date: '', contact: '', priority: 'medium' });
-  const [convertedToast] = useState(false);
-
-  if (loading) return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل من قاعدة البيانات..." />;
+  if (loading || (client && !c)) {
+    return <LoadingSpinner fullPage label="جاري تحميل بيانات العميل من قاعدة البيانات..." />;
+  }
 
   if (!c) {
     return (
@@ -104,8 +122,6 @@ export const ClientDetails: React.FC = () => {
     { key: 'reminders', label: `المتابعات (${c.reminders?.filter((r: any) => !r.completed).length || 0})`, icon: Bell },
     { key: 'attachments', label: `الوثائق والتراخيص (${(c.entityDocuments || c.attachments || []).length})`, icon: FileText },
   ];
-
-  const [savingLog, setSavingLog] = useState(false);
 
   const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,8 +211,6 @@ export const ClientDetails: React.FC = () => {
 
   // ── Clients & Ops (جلسة 3 §3): العرض يُنشأ من ملف العميل،
   // والترقية إلى «فعلي» تتم تلقائياً عند قبول أول عرض (quotations/:id/accept)
-  const [showOfferModal, setShowOfferModal] = useState(false);
-
   const handleAcceptOffer = async (offerId: string) => {
     if (!window.confirm('قبول العرض وتحويله إلى ملف عملية (Job File)؟ سيُرقّى العميل تلقائياً إلى «فعلي».')) return;
     try {
