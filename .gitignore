@@ -64,3 +64,6 @@ Thumbs.db
 .freebuff/
 
 .vercel
+
+.wrangler/
+_schema_tail.txt
